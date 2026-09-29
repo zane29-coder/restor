@@ -24,7 +24,7 @@ export class PlatformResource {
   listTenants(
     query?: PaginationQuery & { status?: TenantStatus },
   ): Promise<Paginated<Tenant>> {
-    return this.http.get<Paginated<Tenant>>('platform/tenants', { query });
+    return this.http.getPaginated<Tenant>('platform/tenants', { query });
   }
 
   getTenant(id: string): Promise<Tenant> {

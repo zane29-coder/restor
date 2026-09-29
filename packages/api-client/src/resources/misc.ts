@@ -22,7 +22,7 @@ export class CustomersResource {
   constructor(private readonly http: HttpClient) {}
 
   list(query?: PaginationQuery & { segment?: string }): Promise<Paginated<Customer>> {
-    return this.http.get<Paginated<Customer>>('customers', { query });
+    return this.http.getPaginated<Customer>('customers', { query });
   }
 
   get(id: string): Promise<Customer> {
@@ -57,7 +57,7 @@ export class MarketingResource {
   constructor(private readonly http: HttpClient) {}
 
   listPromotions(query?: PaginationQuery): Promise<Paginated<Promotion>> {
-    return this.http.get<Paginated<Promotion>>('promotions', { query });
+    return this.http.getPaginated<Promotion>('promotions', { query });
   }
 
   createPromotion(payload: unknown): Promise<Promotion> {
@@ -69,7 +69,7 @@ export class MarketingResource {
   }
 
   listPromoCodes(query?: PaginationQuery): Promise<Paginated<PromoCode>> {
-    return this.http.get<Paginated<PromoCode>>('promo-codes', { query });
+    return this.http.getPaginated<PromoCode>('promo-codes', { query });
   }
 
   createPromoCode(payload: unknown): Promise<PromoCode> {
@@ -163,6 +163,6 @@ export class AuditResource {
       dateTo?: string;
     },
   ): Promise<Paginated<AuditLog>> {
-    return this.http.get<Paginated<AuditLog>>('audit', { query });
+    return this.http.getPaginated<AuditLog>('audit', { query });
   }
 }

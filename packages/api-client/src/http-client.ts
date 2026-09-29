@@ -1,6 +1,8 @@
 import {
   isApiSuccess,
   type ApiResponse,
+  type Paginated,
+  type ResponseMeta,
   type TokenPair,
 } from '@restor/shared-types';
 import { RestorApiError } from './errors';
@@ -44,6 +46,14 @@ export interface RequestOptions {
   timeoutMs?: number;
   /** Sent as `Idempotency-Key`; the POS uses it to make retries safe. */
   idempotencyKey?: string;
+  /**
+   * Receives the envelope's `meta` block on success.
+   *
+   * Internal: {@link HttpClient.getPaginated} uses it to recover the paging
+   * counters, which the envelope keeps beside the rows rather than inside
+   * them. Callers should use `getPaginated` rather than this directly.
+   */
+  onMeta?: (meta: ResponseMeta | undefined) => void;
 }
 
 type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -111,6 +121,43 @@ export class HttpClient {
 
   get<T>(path: string, options?: RequestOptions): Promise<T> {
     return this.request<T>('GET', path, undefined, options);
+  }
+
+  /**
+   * A list endpoint, put back together into the shape its type promises.
+   *
+   * The server splits a page across the envelope (TZ §43): the rows go in
+   * `data` and the paging counters in `meta.pagination`, so that a caller
+   * reading a list never has to reach through two levels. The cost is that a
+   * plain `get<Paginated<T>>` returns a bare array while TypeScript believes
+   * it has `{ items, pagination }` — `.items` is then `undefined` at runtime
+   * and every list silently renders empty. Rejoining the two halves here is
+   * what makes the declared type true.
+   */
+  async getPaginated<T>(path: string, options?: RequestOptions): Promise<Paginated<T>> {
+    let meta: ResponseMeta | undefined;
+
+    const items = await this.request<T[]>('GET', path, undefined, {
+      ...options,
+      onMeta: (received) => {
+        meta = received;
+      },
+    });
+
+    const rows = items ?? [];
+    return {
+      items: rows,
+      // A server that sent no pagination block still gets a usable page rather
+      // than `undefined` counters leaking into the UI.
+      pagination: meta?.pagination ?? {
+        page: 1,
+        limit: rows.length,
+        total: rows.length,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false,
+      },
+    };
   }
 
   post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
@@ -199,10 +246,13 @@ export class HttpClient {
       this.onUnauthorized?.();
     }
 
-    return this.unwrap<T>(response);
+    return this.unwrap<T>(response, options.onMeta);
   }
 
-  private async unwrap<T>(response: Response): Promise<T> {
+  private async unwrap<T>(
+    response: Response,
+    onMeta?: (meta: ResponseMeta | undefined) => void,
+  ): Promise<T> {
     const requestId = response.headers.get('x-request-id') ?? undefined;
 
     if (response.status === 204) {
@@ -223,6 +273,7 @@ export class HttpClient {
     }
 
     if (isApiSuccess(payload)) {
+      onMeta?.(payload.meta);
       return payload.data;
     }
 

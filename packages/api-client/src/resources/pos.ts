@@ -41,7 +41,7 @@ export class CashResource {
   listShifts(
     query?: PaginationQuery & { branchId?: string; cashRegisterId?: string },
   ): Promise<Paginated<CashShift>> {
-    return this.http.get<Paginated<CashShift>>('cash/shifts', { query });
+    return this.http.getPaginated<CashShift>('cash/shifts', { query });
   }
 
   /** Manual cash in/out during a shift. */

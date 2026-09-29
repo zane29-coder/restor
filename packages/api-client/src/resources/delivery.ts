@@ -2,12 +2,14 @@ import type {
   CashHandover,
   Courier,
   CourierJob,
+  CourierProfile,
   CourierStatus,
   CourierTransaction,
   CourierWallet,
   Paginated,
   PaginationQuery,
   ReportLocationRequest,
+  UpdateCourierProfileRequest,
 } from '@restor/shared-types';
 import type { HttpClient } from '../http-client';
 
@@ -18,7 +20,7 @@ export class CouriersResource {
   list(
     query?: PaginationQuery & { branchId?: string; status?: CourierStatus },
   ): Promise<Paginated<Courier>> {
-    return this.http.get<Paginated<Courier>>('couriers', { query });
+    return this.http.getPaginated<Courier>('couriers', { query });
   }
 
   get(id: string): Promise<Courier> {
@@ -46,7 +48,7 @@ export class CouriersResource {
     courierId: string,
     query?: PaginationQuery,
   ): Promise<Paginated<CourierTransaction>> {
-    return this.http.get<Paginated<CourierTransaction>>(
+    return this.http.getPaginated<CourierTransaction>(
       `couriers/${courierId}/wallet/transactions`,
       { query },
     );
@@ -60,7 +62,7 @@ export class CouriersResource {
   listHandovers(query?: PaginationQuery & { branchId?: string; courierId?: string }): Promise<
     Paginated<CashHandover>
   > {
-    return this.http.get<Paginated<CashHandover>>('handovers', { query });
+    return this.http.getPaginated<CashHandover>('handovers', { query });
   }
 }
 
@@ -72,6 +74,16 @@ export class CouriersResource {
  */
 export class CourierAppResource {
   constructor(private readonly http: HttpClient) {}
+
+  /** Profile plus today's delivery count and earnings. */
+  myProfile(): Promise<CourierProfile> {
+    return this.http.get<CourierProfile>('courier/me');
+  }
+
+  /** Changes the number customers call — never the login phone. */
+  updateMyProfile(payload: UpdateCourierProfileRequest): Promise<CourierProfile> {
+    return this.http.patch<CourierProfile>('courier/me', payload);
+  }
 
   /** Jobs assigned to the signed-in courier (TZ §23). */
   myJobs(): Promise<CourierJob[]> {
@@ -114,8 +126,25 @@ export class CourierAppResource {
     return this.http.get<CourierWallet>('courier/wallet');
   }
 
-  /** Courier declaring cash handed to the cashier; awaits confirmation. */
-  declareHandover(amount: number, branchId: string): Promise<CashHandover> {
+  /** My wallet movements, newest first — the courier's own statement. */
+  myTransactions(query?: PaginationQuery): Promise<Paginated<CourierTransaction>> {
+    return this.http.getPaginated<CourierTransaction>('courier/wallet/transactions', {
+      query,
+    });
+  }
+
+  /**
+   * Courier declaring cash handed to the cashier; awaits confirmation.
+   *
+   * `branchId` is optional: the server falls back to the courier's own branch,
+   * which is what the app almost always wants.
+   */
+  declareHandover(amount: number, branchId?: string): Promise<CashHandover> {
     return this.http.post<CashHandover>('courier/handovers', { amount, branchId });
+  }
+
+  /** My hand-offs and whether a cashier has confirmed them yet. */
+  myHandovers(): Promise<Paginated<CashHandover>> {
+    return this.http.getPaginated<CashHandover>('courier/handovers');
   }
 }

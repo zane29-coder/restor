@@ -44,7 +44,7 @@ export class CatalogResource {
   listProducts(
     query?: PaginationQuery & { categoryId?: string; branchId?: string; isActive?: boolean },
   ): Promise<Paginated<Product>> {
-    return this.http.get<Paginated<Product>>('products', { query });
+    return this.http.getPaginated<Product>('products', { query });
   }
 
   getProduct(id: string): Promise<Product> {

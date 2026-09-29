@@ -21,7 +21,7 @@ export class BranchesResource {
   constructor(private readonly http: HttpClient) {}
 
   list(query?: PaginationQuery & { isActive?: boolean }): Promise<Paginated<Branch>> {
-    return this.http.get<Paginated<Branch>>('branches', { query });
+    return this.http.getPaginated<Branch>('branches', { query });
   }
 
   /** Lightweight list for pickers and branch switchers. */
@@ -53,7 +53,7 @@ export class EmployeesResource {
   list(
     query?: PaginationQuery & { branchId?: string; roleId?: string; isActive?: boolean },
   ): Promise<Paginated<Employee>> {
-    return this.http.get<Paginated<Employee>>('employees', { query });
+    return this.http.getPaginated<Employee>('employees', { query });
   }
 
   get(id: string): Promise<Employee> {

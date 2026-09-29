@@ -20,7 +20,7 @@ export class OrdersResource {
   constructor(private readonly http: HttpClient) {}
 
   list(query?: OrderListQuery): Promise<Paginated<Order>> {
-    return this.http.get<Paginated<Order>>('orders', { query });
+    return this.http.getPaginated<Order>('orders', { query });
   }
 
   get(id: string): Promise<Order> {
