@@ -77,33 +77,57 @@ EOF
 
 # ---------------------------------------------------------------- signing
 
-# Expo's template ships a release buildType that signs with the DEBUG key, and
-# the debug keystore is regenerated per machine -- so a release built that way
-# cannot be updated from any other machine. Repoint it at the real keystore.
+# Expo's template ships only a DEBUG signing config, and points the release
+# buildType at it. The debug keystore is regenerated per machine, so a release
+# built that way cannot be updated from anywhere else.
 #
-# The anchor is the template's own comment, not the signingConfig line: the
-# debug buildType has a byte-identical signingConfig line, so matching on that
-# alone would patch the wrong one.
+# Two edits are needed, and BOTH must happen: declaring a `release` signing
+# config, and pointing the release buildType at it. Doing only the second is
+# worse than doing neither -- gradle fails evaluating a signingConfig that was
+# never declared.
 patch_signing() {
   python3 - "$APP/android/app/build.gradle" <<'PY'
 import pathlib, sys
 
 gradle = pathlib.Path(sys.argv[1])
-comment = '// see https://reactnative.dev/docs/signed-apk-android.'
-old = comment + '\n            signingConfig signingConfigs.debug'
-new = comment + '\n            signingConfig signingConfigs.release'
-
 src = gradle.read_text()
-if new in src:
-    print('signing: already patched')
-    sys.exit(0)
 
-hits = src.count(old)
-if hits != 1:
-    sys.exit(f'signing: anchor matched {hits} times, expected 1 -- refusing to edit')
+# --- 1. declare the release signing config -------------------------------
+DECLARE_ANCHOR = '    signingConfigs {\n'
+DECLARE = DECLARE_ANCHOR + '''        release {
+            storeFile file(RESTOR_UPLOAD_STORE_FILE)
+            storePassword RESTOR_UPLOAD_STORE_PASSWORD
+            keyAlias RESTOR_UPLOAD_KEY_ALIAS
+            keyPassword RESTOR_UPLOAD_KEY_PASSWORD
+        }
+'''
 
-gradle.write_text(src.replace(old, new))
-print('signing: release buildType now uses the RESTOR keystore')
+if 'RESTOR_UPLOAD_STORE_FILE' not in src:
+    if src.count(DECLARE_ANCHOR) != 1:
+        sys.exit('signing: could not find a unique signingConfigs block')
+    src = src.replace(DECLARE_ANCHOR, DECLARE, 1)
+    print('signing: declared signingConfigs.release')
+else:
+    print('signing: signingConfigs.release already declared')
+
+# --- 2. make the release buildType use it --------------------------------
+# The anchor is the template's own comment, not the signingConfig line: the
+# debug buildType has a byte-identical line, so matching on that alone would
+# patch the wrong one.
+COMMENT = '// see https://reactnative.dev/docs/signed-apk-android.'
+OLD = COMMENT + '\n            signingConfig signingConfigs.debug'
+NEW = COMMENT + '\n            signingConfig signingConfigs.release'
+
+if NEW in src:
+    print('signing: release buildType already points at it')
+else:
+    hits = src.count(OLD)
+    if hits != 1:
+        sys.exit(f'signing: buildType anchor matched {hits} times, expected 1')
+    src = src.replace(OLD, NEW, 1)
+    print('signing: release buildType now uses the RESTOR keystore')
+
+gradle.write_text(src)
 PY
 }
 
