@@ -174,9 +174,9 @@ button {
   border: none;
   background: var(--primary-light);
   color: var(--primary-dark);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* ---------------- Cart bar ---------------- */
@@ -278,9 +278,10 @@ button {
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .totals {

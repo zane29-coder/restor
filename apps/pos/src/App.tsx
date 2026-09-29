@@ -10,6 +10,7 @@ import {
 } from '@restor/shared-types';
 import { addMoney, formatMoney, multiplyMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
+import { IconDot, IconLogout, IconMinus, IconPlus } from '@restor/ui';
 import { api, loadBranchId, saveBranchId } from './api';
 import { enqueue, flushQueue, queueSize } from './offline-queue';
 import { LoginScreen } from './LoginScreen';
@@ -261,18 +262,20 @@ export function App() {
         <div className="pos__spacer" />
         {/* The cashier has to know instantly whether a sale reached the server. */}
         <span
-          className="pos__chip"
+          className="pos__chip pos__chip--status"
           style={{ background: isOnline ? 'rgb(22 163 74 / 35%)' : 'rgb(220 38 38 / 40%)' }}
         >
-          {isOnline ? '● Onlayn' : '● Oflayn'}
+          <IconDot size={9} style={{ color: isOnline ? '#4ade80' : '#f87171' }} />
+          {isOnline ? 'Onlayn' : 'Oflayn'}
         </span>
         {pending > 0 && <span className="pos__chip">Navbatda: {pending}</span>}
         <button
           type="button"
-          className="pos__chip"
+          className="pos__chip pos__chip--status"
           style={{ border: 'none', color: '#fff' }}
           onClick={() => void api.auth.logout().then(() => setIsAuthenticated(false))}
         >
+          <IconLogout size={15} />
           Chiqish
         </button>
       </header>
@@ -353,7 +356,7 @@ export function App() {
                       onClick={() => changeQuantity(line.key, -1)}
                       aria-label="Kamaytirish"
                     >
-                      −
+                      <IconMinus size={17} strokeWidth={2.25} />
                     </button>
                     <strong style={{ minWidth: 20, textAlign: 'center' }}>{line.quantity}</strong>
                     <button
@@ -362,7 +365,7 @@ export function App() {
                       onClick={() => changeQuantity(line.key, 1)}
                       aria-label="Koʻpaytirish"
                     >
-                      +
+                      <IconPlus size={17} strokeWidth={2.25} />
                     </button>
                   </div>
                 </div>

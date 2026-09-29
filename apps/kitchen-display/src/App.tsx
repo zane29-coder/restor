@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { BranchSummary, KitchenTicket } from '@restor/shared-types';
 import { RestorApiError } from '@restor/api-client';
+import { IconCheckCircle } from '@restor/ui';
 import { api, loadBranchId, saveBranchId } from './api';
 import { LoginScreen } from './LoginScreen';
 import { TicketCard } from './TicketCard';
@@ -173,10 +174,10 @@ export function App() {
 
       {tickets.length === 0 ? (
         <div className="kds__empty">
-          <div>
-            <p style={{ fontSize: 30, margin: '0 0 8px' }}>✓</p>
+          <div style={{ display: 'grid', justifyItems: 'center', gap: 10 }}>
+            <IconCheckCircle size={46} strokeWidth={1.5} style={{ color: '#4ade80' }} />
             <p style={{ margin: 0 }}>Hamma buyurtma tayyor</p>
-            <p style={{ fontSize: 15, marginTop: 8 }}>{branchName}</p>
+            <p style={{ fontSize: 15, margin: 0 }}>{branchName}</p>
           </div>
         </div>
       ) : (

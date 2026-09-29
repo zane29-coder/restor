@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Permission } from '@restor/shared-types';
 import { formatMoney } from '@restor/shared-utils';
+import { IconClose, IconPlus } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ErrorState, Empty, Loading } from '../components/States';
@@ -90,7 +91,17 @@ export function MenuPage() {
 
         {can(Permission.PRODUCTS_CREATE) && (
           <button type="button" className="btn" onClick={() => setIsCreating((value) => !value)}>
-            {isCreating ? 'Bekor qilish' : '+ Mahsulot'}
+            {isCreating ? (
+              <>
+                <IconClose size={16} />
+                Bekor qilish
+              </>
+            ) : (
+              <>
+                <IconPlus size={16} />
+                Mahsulot
+              </>
+            )}
           </button>
         )}
       </div>

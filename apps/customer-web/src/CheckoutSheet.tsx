@@ -9,6 +9,7 @@ import {
 } from '@restor/shared-types';
 import { formatMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
+import { IconAlert, IconMinus, IconPlus } from '@restor/ui';
 import { api } from './api';
 import type { CartApi } from './useCart';
 
@@ -153,7 +154,7 @@ export function CheckoutSheet({
                 onClick={() => cart.changeQuantity(line.key, -1)}
                 aria-label="Kamaytirish"
               >
-                −
+                <IconMinus size={16} strokeWidth={2.25} />
               </button>
               <strong style={{ minWidth: 18, textAlign: 'center' }}>{line.quantity}</strong>
               <button
@@ -162,7 +163,7 @@ export function CheckoutSheet({
                 onClick={() => cart.changeQuantity(line.key, 1)}
                 aria-label="Koʻpaytirish"
               >
-                +
+                <IconPlus size={16} strokeWidth={2.25} />
               </button>
             </div>
           </div>
@@ -268,8 +269,13 @@ export function CheckoutSheet({
               <span>{formatMoney(preview.total)}</span>
             </div>
             {preview.warnings.map((warning) => (
-              <p key={warning} className="muted" style={{ fontSize: 13, margin: 0 }}>
-                ⚠ {warning}
+              <p
+                key={warning}
+                className="muted"
+                style={{ fontSize: 13, margin: 0, display: 'flex', alignItems: 'flex-start', gap: 6 }}
+              >
+                <IconAlert size={15} style={{ marginTop: 1 }} />
+                {warning}
               </p>
             ))}
           </div>

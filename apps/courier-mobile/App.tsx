@@ -246,7 +246,17 @@ function JobCard({
 
       <Text style={[styles.label, { marginTop: 10 }]}>Manzil</Text>
       <Text style={styles.value}>{job.address}</Text>
-      {job.comment && <Text style={styles.sub}>✎ {job.comment}</Text>}
+      {/*
+        A typographic label rather than an icon: rendering SVG in React Native
+        needs `react-native-svg`, a native dependency not worth adding for one
+        glyph. The uppercase tag reads as a field label, which is what it is.
+      */}
+      {job.comment && (
+        <Text style={styles.sub}>
+          <Text style={styles.noteTag}>IZOH </Text>
+          {job.comment}
+        </Text>
+      )}
 
       <Text style={[styles.label, { marginTop: 10 }]}>Tarkibi</Text>
       <Text style={styles.sub}>{job.itemsSummary}</Text>
@@ -421,6 +431,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, color: '#6B7280' },
   value: { fontSize: 15, fontWeight: '600', color: '#111827', marginTop: 2 },
   sub: { fontSize: 13, color: '#6B7280', marginTop: 2 },
+  noteTag: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: '#B45309' },
 
   amountRow: {
     flexDirection: 'row',

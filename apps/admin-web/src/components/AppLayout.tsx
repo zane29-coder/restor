@@ -1,21 +1,31 @@
+import type { ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Permission } from '@restor/shared-types';
+import {
+  IconBranch,
+  IconDashboard,
+  IconLogout,
+  IconMenu,
+  IconOrders,
+  IconUsers,
+  type IconProps,
+} from '@restor/ui';
 import { useAuth } from '../lib/auth';
 
 interface NavItem {
   to: string;
   label: string;
-  icon: string;
+  Icon: ComponentType<IconProps>;
   /** Hidden unless the user holds this permission (TZ §5). */
   permission?: Permission;
 }
 
 const NAV: NavItem[] = [
-  { to: '/', label: 'Dashboard', icon: '▤' },
-  { to: '/orders', label: 'Buyurtmalar', icon: '🧾', permission: Permission.ORDERS_VIEW },
-  { to: '/menu', label: 'Menyu', icon: '🍔', permission: Permission.PRODUCTS_VIEW },
-  { to: '/branches', label: 'Filiallar', icon: '🏪', permission: Permission.BRANCHES_VIEW },
-  { to: '/employees', label: 'Xodimlar', icon: '👥', permission: Permission.EMPLOYEES_VIEW },
+  { to: '/', label: 'Dashboard', Icon: IconDashboard },
+  { to: '/orders', label: 'Buyurtmalar', Icon: IconOrders, permission: Permission.ORDERS_VIEW },
+  { to: '/menu', label: 'Menyu', Icon: IconMenu, permission: Permission.PRODUCTS_VIEW },
+  { to: '/branches', label: 'Filiallar', Icon: IconBranch, permission: Permission.BRANCHES_VIEW },
+  { to: '/employees', label: 'Xodimlar', Icon: IconUsers, permission: Permission.EMPLOYEES_VIEW },
 ];
 
 const TITLES: Record<string, string> = {
@@ -40,15 +50,15 @@ export function AppLayout() {
         </div>
 
         <nav>
-          {visible.map((item) => (
+          {visible.map(({ to, label, Icon }) => (
             <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
+              key={to}
+              to={to}
+              end={to === '/'}
               className={({ isActive }) => `nav-link${isActive ? ' nav-link--active' : ''}`}
             >
-              <span aria-hidden="true">{item.icon}</span>
-              {item.label}
+              <Icon size={18} />
+              {label}
             </NavLink>
           ))}
         </nav>
@@ -65,6 +75,7 @@ export function AppLayout() {
           <div className="row">
             <span className="muted">{user?.tenantSlug ?? 'platform'}</span>
             <button type="button" className="btn btn--ghost" onClick={() => void logout()}>
+              <IconLogout size={16} />
               Chiqish
             </button>
           </div>

@@ -10,6 +10,7 @@ import {
 } from '@restor/shared-types';
 import { addMoney, formatMoney, multiplyMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
+import { IconCheckCircle, IconMinus, IconPlus, IconTelegram } from '@restor/ui';
 import { api, tenantSlug } from './api';
 import { getWebApp, haptic, isInsideTelegram } from './telegram';
 
@@ -214,9 +215,9 @@ export function App() {
   if (authError) {
     return (
       <div className="center">
-        <div>
-          <p style={{ fontSize: 34, margin: '0 0 10px' }}>🤖</p>
-          <p>{authError}</p>
+        <div style={{ display: 'grid', justifyItems: 'center', gap: 12 }}>
+          <IconTelegram size={40} strokeWidth={1.5} style={{ color: 'var(--primary)' }} />
+          <p style={{ margin: 0 }}>{authError}</p>
         </div>
       </div>
     );
@@ -228,7 +229,11 @@ export function App() {
     return (
       <div className="center">
         <div>
-          <p style={{ fontSize: 42, margin: '0 0 10px' }}>✓</p>
+          <IconCheckCircle
+            size={48}
+            strokeWidth={1.5}
+            style={{ color: 'var(--primary)', margin: '0 auto 12px' }}
+          />
           <h1 style={{ fontSize: 19, margin: '0 0 6px', color: 'var(--text)' }}>
             Buyurtma qabul qilindi
           </h1>
@@ -267,12 +272,20 @@ export function App() {
                 <div className="muted" style={{ fontSize: 12 }}>{formatMoney(line.unitPrice)}</div>
               </div>
               <div className="qty">
-                <button type="button" onClick={() => changeQuantity(line.key, -1)} aria-label="−">
-                  −
+                <button
+                  type="button"
+                  onClick={() => changeQuantity(line.key, -1)}
+                  aria-label="Kamaytirish"
+                >
+                  <IconMinus size={15} strokeWidth={2.25} />
                 </button>
                 <strong style={{ minWidth: 16, textAlign: 'center' }}>{line.quantity}</strong>
-                <button type="button" onClick={() => changeQuantity(line.key, 1)} aria-label="+">
-                  +
+                <button
+                  type="button"
+                  onClick={() => changeQuantity(line.key, 1)}
+                  aria-label="Koʻpaytirish"
+                >
+                  <IconPlus size={15} strokeWidth={2.25} />
                 </button>
               </div>
             </div>
@@ -433,7 +446,9 @@ export function App() {
                 )}
               </span>
             </div>
-            <span className="item__add" aria-hidden="true">+</span>
+            <span className="item__add">
+              <IconPlus size={19} strokeWidth={2.25} />
+            </span>
           </button>
         ))}
       </div>

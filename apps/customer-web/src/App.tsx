@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { BranchMenu, BranchSummary, Order } from '@restor/shared-types';
 import { formatMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
+import { IconCheckCircle, IconPlus } from '@restor/ui';
 import { api } from './api';
 import { useCart } from './useCart';
 import { CheckoutSheet } from './CheckoutSheet';
@@ -190,7 +191,9 @@ export function App() {
                     </div>
                   )}
                 </div>
-                <span className="product__add" aria-hidden="true">+</span>
+                <span className="product__add">
+                  <IconPlus size={20} strokeWidth={2.25} />
+                </span>
               </button>
             ))}
           </>
@@ -227,7 +230,11 @@ function OrderPlaced({ order, onDone }: { order: Order; onDone: () => void }) {
   return (
     <div className="center">
       <div style={{ maxWidth: 360 }}>
-        <p style={{ fontSize: 46, margin: '0 0 10px' }}>✓</p>
+        <IconCheckCircle
+          size={52}
+          strokeWidth={1.5}
+          style={{ color: 'var(--primary)', margin: '0 auto 14px' }}
+        />
         <h1 style={{ fontSize: 22, margin: '0 0 6px', color: 'var(--text)' }}>
           Buyurtma qabul qilindi
         </h1>

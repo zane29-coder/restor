@@ -1,6 +1,6 @@
 import { KitchenTicketStatus, type KitchenTicket } from '@restor/shared-types';
 import { formatElapsed } from '@restor/shared-utils';
-import { kdsUrgencyFor } from '@restor/ui';
+import { IconNote, kdsUrgencyFor } from '@restor/ui';
 
 /**
  * One ticket card (TZ §21).
@@ -47,12 +47,22 @@ export function TicketCard({
             {item.modifiers.length > 0 && (
               <div className="ticket__modifiers">+ {item.modifiers.join(', ')}</div>
             )}
-            {item.comment && <div className="ticket__modifiers">✎ {item.comment}</div>}
+            {item.comment && (
+              <div className="ticket__modifiers ticket__note">
+                <IconNote size={15} />
+                {item.comment}
+              </div>
+            )}
           </li>
         ))}
       </ul>
 
-      {ticket.comment && <p className="ticket__comment">✎ {ticket.comment}</p>}
+      {ticket.comment && (
+        <p className="ticket__comment ticket__note">
+          <IconNote size={17} />
+          {ticket.comment}
+        </p>
+      )}
 
       <div className="ticket__actions">
         {isQueued ? (

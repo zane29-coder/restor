@@ -145,9 +145,9 @@ button {
   border: none;
   background: var(--primary-light);
   color: var(--primary);
-  font-size: 21px;
-  font-weight: 700;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cart-line {
@@ -171,9 +171,9 @@ button {
   border: 1px solid var(--border);
   background: var(--surface);
   color: inherit;
-  font-size: 17px;
-  font-weight: 700;
-  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .totals {

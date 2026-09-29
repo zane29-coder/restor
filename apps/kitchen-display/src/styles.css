@@ -198,6 +198,14 @@ button {
   color: #fde68a;
 }
 
+/* Icon and text on one baseline, with the text wrapping under itself rather
+   than under the icon. */
+.ticket__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
 .ticket__actions {
   display: grid;
   grid-auto-flow: column;

@@ -78,6 +78,13 @@ button {
   font-size: 13px;
 }
 
+/* Chips that carry an icon next to their label. */
+.pos__chip--status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .pos__body {
   display: grid;
   grid-template-columns: 1fr var(--cart-width);
@@ -231,9 +238,10 @@ button {
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--surface);
-  font-size: 19px;
-  font-weight: 700;
-  line-height: 1;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .cart__total-line {

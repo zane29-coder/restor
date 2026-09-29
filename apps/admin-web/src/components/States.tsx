@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { IconAlert, IconInbox } from '@restor/ui';
 import { RestorApiError } from '../lib/api';
 
 export function Loading({ label = 'Yuklanmoqda…' }: { label?: string }) {
@@ -31,7 +32,10 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 
   return (
     <div className="card">
-      <div className="alert alert--error">{message}</div>
+      <div className="alert alert--error" style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <IconAlert size={16} style={{ marginTop: 1 }} />
+        {message}
+      </div>
       {requestId && (
         <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
           Request ID: <code>{requestId}</code>
@@ -49,8 +53,9 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 export function Empty({ title, description }: { title: string; description?: ReactNode }) {
   return (
     <div className="card center" style={{ minHeight: 180 }}>
-      <div style={{ textAlign: 'center' }}>
-        <p style={{ fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>{title}</p>
+      <div style={{ display: 'grid', justifyItems: 'center', gap: 10, textAlign: 'center' }}>
+        <IconInbox size={34} strokeWidth={1.5} style={{ color: 'var(--border)' }} />
+        <p style={{ fontWeight: 600, color: 'var(--text)', margin: 0 }}>{title}</p>
         {description && <p className="muted" style={{ margin: 0 }}>{description}</p>}
       </div>
     </div>

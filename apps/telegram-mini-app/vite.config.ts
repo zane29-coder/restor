@@ -6,6 +6,7 @@ const WORKSPACE_PACKAGES = [
   '@restor/api-client',
   '@restor/shared-types',
   '@restor/shared-utils',
+  '@restor/ui',
 ];
 
 export default defineConfig({
