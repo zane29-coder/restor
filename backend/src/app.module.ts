@@ -20,6 +20,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { CouriersModule } from './modules/couriers/couriers.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { HealthModule } from './modules/health/health.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
@@ -122,6 +123,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
     // --- Phase 4: Telegram ---
     NotificationsModule,
     TelegramModule,
+
+    // --- Phase 8: delivery ---
+    CouriersModule,
   ],
   providers: [
     /**

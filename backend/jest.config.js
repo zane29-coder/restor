@@ -11,7 +11,20 @@ module.exports = {
   rootDir: '.',
   roots: ['<rootDir>/tests/unit', '<rootDir>/src'],
   testRegex: '.*\\.spec\\.ts$',
-  transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }] },
+  transform: {
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        tsconfig: 'tsconfig.json',
+        // Transpile only. Type errors are caught by `npm run typecheck`, which
+        // does it once for the whole program; making every Jest worker
+        // type-check the program again is what exhausted memory here and got
+        // workers killed with SIGTERM.
+        isolatedModules: true,
+        diagnostics: false,
+      },
+    ],
+  },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
@@ -20,11 +33,8 @@ module.exports = {
   clearMocks: true,
   testTimeout: 15_000,
 
-  // Jest spawns one worker per core by default. ts-jest compiles the whole
-  // program in each of them, and on an 8-core machine that is enough memory
-  // pressure for the OS to start killing workers with SIGTERM — which surfaces
-  // as "Test suite failed to run" rather than as an out-of-memory error.
-  // Two workers is still parallel and comfortably within budget.
-  maxWorkers: 2,
+  // Jest spawns one worker per core by default; with transpile-only above,
+  // half the cores is plenty and leaves memory headroom on a shared machine.
+  maxWorkers: '50%',
   workerIdleMemoryLimit: '512MB',
 };
