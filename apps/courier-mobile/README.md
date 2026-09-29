@@ -5,13 +5,18 @@ The courier's phone app (TZ §23-§26). React Native + Expo, built as an APK.
 ## Why this is not an npm workspace
 
 Expo resolves its own native modules, and npm's hoisting breaks that linking.
-The app installs independently and `metro.config.js` tells Metro where the
-shared packages are.
+So this app keeps its own complete `node_modules` and pulls the shared
+packages in with `file:` links rather than workspace ranges — a `*` range
+would send npm looking for `@restor/shared-types` on the public registry.
+
+Those links resolve to each package's **`dist/`**, the same compiled output
+the web apps consume. After editing a shared package, rebuild it or the app
+will not see the change.
 
 ## Install
 
 ```bash
-# From the repository root, once:
+# From the repository root, once — the file: links point at dist/
 npm install && npm run build:packages
 
 # Then:
@@ -25,28 +30,81 @@ npm install
 npx expo start
 ```
 
-Press `a` for an Android emulator, or scan the QR code with Expo Go.
+Scan the QR code with **Expo Go** ([Android](https://play.google.com/store/apps/details?id=host.exp.exponent)
+· [iOS](https://apps.apple.com/app/expo-go/id982107779)). The phone must be on
+the same Wi-Fi as this machine; `npx expo start --tunnel` works across networks
+if it is not.
 
-`src/api.ts` defaults to `http://10.0.2.2:3000/api/v1` — the Android
-emulator's alias for the host machine. On a physical device, set your LAN IP
-in `app.json` under `expo.extra.apiUrl`.
+> Current Expo Go builds support only the newest SDKs and refuse this app
+> (SDK 51) with "only supports SDK NN". For a phone, build the APK — see
+> [Building the APK](#building-the-apk). Expo Go still works from an older
+> build, and the Android emulator is unaffected.
+
+Point the app at a backend in `app.json` → `expo.extra.apiUrl`:
+
+| Target | Value |
+| --- | --- |
+| Deployed | `https://restore-1.duckdns.org/api/v1` |
+| Local, physical phone | `http://<your-LAN-IP>:3000/api/v1` |
+| Local, Android emulator | `http://10.0.2.2:3000/api/v1` |
+
+`localhost` never works from a phone — it resolves to the phone itself.
 
 Sign in with the seeded courier: `+998906666666` / `Restor2026dev`,
 restaurant `demo`.
 
-## Building the APK
+### Verifying it bundles without a device
 
 ```bash
-npm install -g eas-cli
-eas login
-eas build:configure
-
-npm run build:apk    # APK, for direct distribution
-npm run build:aab    # AAB, for Google Play
+npx expo export --platform android --output-dir .expo-export
 ```
 
-Set the production API URL in `app.json` (`expo.extra.apiUrl`) before
-building.
+Proves Metro resolves everything, including the linked packages. Faster than
+waiting for a phone to fail.
+
+## Building the APK
+
+Couriers install a real APK. Expo Go is a development tool — it tracks only
+recent SDKs, so it stops opening this app the moment it falls behind, and
+asking a courier to install a second app to run the first one is not a
+deployment.
+
+The build runs on the Linux build host (`75.119.148.246`), which carries JDK 17
+and Android SDK 34:
+
+```bash
+# Upload the app and the compiled shared packages:
+tar -czf courier-src.tgz --exclude=node_modules --exclude=.expo \
+  apps/courier-mobile \
+  packages/{shared-types,shared-utils,api-client}/{dist,package.json}
+scp courier-src.tgz root@75.119.148.246:/tmp/
+ssh root@75.119.148.246 'tar -xzf /tmp/courier-src.tgz -C /opt/restor-build'
+
+# Then:
+ssh root@75.119.148.246 '/opt/restor-build/build-courier-apk.sh build'
+```
+
+The script lives at [`infrastructure/deployment/build-courier-apk.sh`](../../infrastructure/deployment/build-courier-apk.sh);
+`setup` installs the toolchain and only needs running once.
+
+Set `expo.extra.apiUrl` in `app.json` **before** building — it is baked into
+the binary and cannot be changed afterwards without a rebuild.
+
+### The keystore
+
+`/opt/restor-build/restor-courier.keystore` signs every release, and a copy is
+in `release/` locally (gitignored — a signing key does not belong in a repo).
+
+**Back it up somewhere off both machines.** It cannot be regenerated: an update
+signed with a different key installs as a different app, and every courier
+would have to uninstall and reinstall, losing their session. Google Play will
+not accept a key change at all.
+
+### EAS as an alternative
+
+`eas build --platform android --profile preview` builds the same APK in the
+cloud and needs a free Expo account — useful if the build host is unavailable,
+but it uses its own managed keystore unless you upload this one.
 
 ## Screens
 

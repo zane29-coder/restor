@@ -83,6 +83,7 @@ apps/courier-mobile/ios/*.xcodeproj/xcuserdata/
 # ---- Expo ----
 .expo/
 .expo-shared/
+.expo-export/
 apps/courier-mobile/expo-env.d.ts
 
 # ---- Desktop wrappers (POS) ----

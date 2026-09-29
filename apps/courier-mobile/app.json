@@ -40,7 +40,7 @@
       ]
     ],
     "extra": {
-      "apiUrl": "https://api.restor.uz/api/v1"
+      "apiUrl": "https://restore-1.duckdns.org/api/v1"
     }
   }
 }
