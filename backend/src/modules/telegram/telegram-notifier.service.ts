@@ -228,6 +228,7 @@ export class TelegramNotifierService {
           comment: true,
           tableNumber: true,
           paymentStatus: true,
+          estimatedReadyAt: true,
           branch: { select: { name: true } },
           payments: { select: { method: true }, take: 1 },
         },
@@ -251,6 +252,7 @@ export class TelegramNotifierService {
         discountTotal: order.discountTotal,
         paymentLabel: order.payments[0]?.method ?? null,
         paymentStatus: order.paymentStatus,
+        estimatedReadyAt: order.estimatedReadyAt?.toISOString() ?? null,
       };
     });
   }

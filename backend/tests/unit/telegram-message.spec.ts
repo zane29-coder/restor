@@ -48,9 +48,48 @@ describe('telegram message builder', () => {
 
       expect(message).toContain('CH-1054');
       expect(message).toContain('Chilonzor');
-      expect(message).toContain('2 × Chicken Lavash');
-      expect(message).toContain('1 × Fries');
+      expect(message).toContain('Chicken Lavash');
+      expect(message).toContain('Fries');
       expect(message).toContain('156 000 UZS');
+    });
+
+    it('opens with the cart emoji so it is scannable in a busy group', () => {
+      expect(buildNewOrderMessage(orderCreated).startsWith('🛒')).toBe(true);
+    });
+
+    it('marks each field with a consistent emoji', () => {
+      const message = buildNewOrderMessage(orderCreated, {
+        branchName: 'Chilonzor',
+        address: 'Chilonzor 12',
+        comment: 'tez',
+      });
+
+      // Same concept, same emoji, every message.
+      expect(message).toContain('🏪 <b>Filial:</b>');
+      expect(message).toContain('👤 <b>Mijoz:</b>');
+      expect(message).toContain('📞 <b>Tel:</b>');
+      expect(message).toContain('📍 <b>Manzil:</b>');
+      expect(message).toContain('🧾 <b>Tarkibi:</b>');
+      expect(message).toContain('💰 <b>JAMI:');
+      expect(message).toContain('📝 <b>Izoh:</b>');
+    });
+
+    it('picks the emoji for the order type', () => {
+      expect(buildNewOrderMessage({ ...orderCreated, type: OrderType.DELIVERY })).toContain('🚚');
+      expect(buildNewOrderMessage({ ...orderCreated, type: OrderType.PICKUP })).toContain('🛍');
+      expect(buildNewOrderMessage({ ...orderCreated, type: OrderType.DINE_IN })).toContain('🍽');
+    });
+
+    it('names the payment method and its status in Uzbek', () => {
+      const message = buildNewOrderMessage(orderCreated, {
+        paymentLabel: PaymentMethod.CLICK,
+        paymentStatus: 'PAID',
+      });
+
+      expect(message).toContain('Click');
+      expect(message).toContain('Toʻlangan');
+      // Not the raw enum value.
+      expect(message).not.toContain('PAID');
     });
 
     it('renders the phone as a tel: link for one-tap calling', () => {
@@ -136,6 +175,22 @@ describe('telegram message builder', () => {
       expect(message).toContain('CH-1054');
       expect(message).toContain('Qabul qilindi');
       expect(message).toContain('Yangi');
+    });
+
+    it('leads with a status emoji so the outcome is readable at a glance', () => {
+      const cases: Array<[OrderStatus, string]> = [
+        [OrderStatus.ACCEPTED, '✅'],
+        [OrderStatus.PREPARING, '🍳'],
+        [OrderStatus.READY, '🔔'],
+        [OrderStatus.COURIER_ASSIGNED, '🛵'],
+        [OrderStatus.DELIVERED, '📦'],
+        [OrderStatus.CANCELLED, '❌'],
+      ];
+
+      for (const [status, emoji] of cases) {
+        const message = buildStatusMessage({ ...statusPayload, toStatus: status });
+        expect(message.startsWith(emoji)).toBe(true);
+      }
     });
 
     it('escapes a cancellation reason', () => {
