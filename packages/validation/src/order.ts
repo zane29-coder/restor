@@ -51,8 +51,12 @@ export const createOrderSchema = z
     deliveryAddress: deliveryAddressSchema.optional(),
     addressId: uuidSchema.optional(),
     tableId: uuidSchema.optional(),
-    promoCode: z.string().trim().max(40).optional(),
-    comment: z.string().trim().max(1000).optional(),
+    // `nullish`, not `optional`: a client building this payload from a form
+    // naturally writes `comment: value || null`, and rejecting that is a
+    // papercut with no upside — an absent comment and a null one mean the
+    // same thing here.
+    promoCode: z.string().trim().max(40).nullish(),
+    comment: z.string().trim().max(1000).nullish(),
     paymentMethod: paymentMethodSchema.optional(),
     /** Idempotency key; the POS always sends one so a retry cannot duplicate. */
     clientUuid: z.string().uuid().optional(),

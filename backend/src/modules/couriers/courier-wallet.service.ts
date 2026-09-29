@@ -40,13 +40,43 @@ export class CourierWalletService {
     private readonly audit: AuditService,
   ) {}
 
+  /**
+   * Loads a wallet THROUGH its courier.
+   *
+   * `courier_wallets` has no `tenantId` column, so the Prisma scoping
+   * extension cannot filter it — querying the table directly would return any
+   * tenant's wallet to anyone who knew a courier id. `Courier` IS scoped, so
+   * going through it makes a cross-tenant read return nothing.
+   *
+   * This is the "child table" boundary documented at the top of
+   * `tenant-scope.extension.ts`, and the reason that comment exists.
+   */
   async getWallet(courierId: string): Promise<CourierWallet> {
-    const wallet = await this.prisma.db.courierWallet.findFirst({ where: { courierId } });
-    if (!wallet) throw AppException.notFound('Courier wallet');
+    const courier = await this.prisma.db.courier.findFirst({
+      where: { id: courierId, deletedAt: null },
+      include: { wallet: true },
+    });
+
+    // 404 rather than 403 for a courier in another tenant: confirming that the
+    // id exists elsewhere is itself a leak.
+    if (!courier) throw AppException.notFound('Courier', ErrorCode.COURIER_NOT_FOUND);
+
+    const wallet = courier.wallet ?? (await this.createWallet(courierId));
     return toWallet(wallet);
   }
 
-  /** Creates the wallet lazily, so an older courier row is not a special case. */
+  /** Creates a wallet for a courier that predates the wallet table. */
+  private async createWallet(courierId: string) {
+    return this.prisma.db.courierWallet.create({ data: { courierId } });
+  }
+
+  /**
+   * Creates the wallet lazily, so an older courier row is not a special case.
+   *
+   * Callers must have already established that the courier belongs to the
+   * current tenant — every one of them loads the courier first through a
+   * scoped query. See {@link getWallet} for why that matters.
+   */
   async ensureWallet(courierId: string, tx?: PrismaTransaction): Promise<{ id: string }> {
     const client = tx ?? this.prisma.db;
 
