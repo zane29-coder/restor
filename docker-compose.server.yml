@@ -1,0 +1,83 @@
+# =============================================================================
+# RESTOR — deployment onto a SHARED server that already runs other sites.
+#
+#   docker compose -f docker-compose.server.yml --env-file .env.server up -d
+#
+# Differs from docker-compose.prod.yml in one important way: it runs NO nginx
+# and claims NO public port. The host's existing nginx — which is already
+# serving other applications on 80/443 — proxies to the API on loopback.
+#
+# Port choices are forced by what the host already uses:
+#   3000 → another Node app        ⇒ API on 127.0.0.1:3100
+#   5432 → faceid-db-1             ⇒ Postgres has NO host port at all
+#   5433 → crm_sms_postgres        ⇒ (reachable only on this compose network)
+#
+# Binding to 127.0.0.1 rather than 0.0.0.0 keeps the API off the public
+# internet even though the host firewall may allow the port.
+# =============================================================================
+
+name: restor
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [restor_internal]
+    # No `ports:` — the host already has 5432 and 5433 taken, and nothing
+    # outside this network needs the database.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [restor_internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: production
+    restart: unless-stopped
+    env_file: [./backend/.env.server]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public&connection_limit=20
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    ports:
+      # Loopback only: the host nginx proxies here, nothing else can reach it.
+      - "127.0.0.1:${API_HOST_PORT:-3100}:3000"
+    volumes:
+      # Product images (STORAGE_PROVIDER=LOCAL). Bind-mounted so the host
+      # nginx can serve them directly without going through Node.
+      - ./storage:/app/backend/storage
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [restor_internal]
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  restor_internal:
+    driver: bridge

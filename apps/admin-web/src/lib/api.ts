@@ -13,7 +13,8 @@ const baseUrl = import.meta.env.VITE_API_URL ?? '/api/v1';
 
 let onUnauthorized: () => void = () => {
   // Default before the router mounts: a full reload lands on the login screen.
-  window.location.href = '/login';
+  // Uses BASE_URL so it still works when the app is served under /admin/.
+  window.location.href = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/login`;
 };
 
 /** Lets the router replace the hard reload with a soft navigation. */

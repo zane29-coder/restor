@@ -1,6 +1,18 @@
 # End-to-end smoke test against a running RESTOR API.
+#
+#   pwsh backend/tests/smoke.ps1
+#   pwsh backend/tests/smoke.ps1 -BaseUrl https://restore-1.duckdns.org/api/v1
+#
+# Against a remote deployment the suite creates a tenant and an order, so point
+# it at staging or a test host — not at a live production database.
+param(
+  [string]$BaseUrl = $env:RESTOR_API_URL
+)
+
 $ErrorActionPreference = 'Stop'
-$API = 'http://localhost:3000/api/v1'
+if (-not $BaseUrl) { $BaseUrl = 'http://localhost:3000/api/v1' }
+$API = $BaseUrl.TrimEnd('/')
+Write-Host "Target: $API`n" -ForegroundColor Cyan
 $pass = 0; $fail = 0
 
 function Check($name, $condition, $detail = '') {

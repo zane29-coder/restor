@@ -30,7 +30,13 @@ if (!container) throw new Error('#root is missing from index.html');
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      {/*
+        The app is served at `/` in development but under `/admin/` in
+        production (one domain, path-based routing). Vite injects the build's
+        `--base` as BASE_URL, so the router follows it automatically instead of
+        needing a second, hand-maintained constant.
+      */}
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
         <AuthProvider>
           <App />
         </AuthProvider>

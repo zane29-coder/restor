@@ -43,7 +43,11 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/ packages/
 COPY backend/ backend/
 
-RUN npm run build:packages \
+# `build:packages:api`, not `build:packages`: the deps stage installs only the
+# three packages the backend imports, so building @restor/ui here would fail on
+# its missing React types — and pulling React into the API image to fix that
+# would be worse than the bug.
+RUN npm run build:packages:api \
  && npx prisma generate --schema backend/prisma/schema.prisma \
  && npm run build --workspace=backend
 

@@ -20,6 +20,8 @@
   ],
   "scripts": {
     "build:packages": "npm run build --workspace=@restor/shared-types --workspace=@restor/shared-utils --workspace=@restor/validation --workspace=@restor/api-client --workspace=@restor/ui",
+    "comment:build:packages:api": "Only what the backend imports. @restor/ui and api-client are React/browser packages; building them in the API image would require pulling React into it for no benefit.",
+    "build:packages:api": "npm run build --workspace=@restor/shared-types --workspace=@restor/shared-utils --workspace=@restor/validation",
     "build": "npm run build:packages && npm run build --workspace=backend",
     "build:all": "npm run build:packages && npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

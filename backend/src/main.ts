@@ -39,6 +39,10 @@ async function bootstrap(): Promise<void> {
       // The API serves JSON, not HTML; CSP belongs on the web apps.
       contentSecurityPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      // TLS terminates at the reverse proxy, so the proxy owns HSTS. Leaving
+      // it on here emits a second, differently-configured header on every
+      // proxied response.
+      strictTransportSecurity: false,
     }),
   );
   app.use(compression());
