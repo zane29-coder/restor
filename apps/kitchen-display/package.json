@@ -1,0 +1,29 @@
+{
+  "name": "@restor/kitchen-display",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RESTOR Kitchen Display System — touchscreen ticket board (TZ §21, §22).",
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5176",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 5176",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@restor/api-client": "0.1.0",
+    "@restor/shared-types": "0.1.0",
+    "@restor/shared-utils": "0.1.0",
+    "@restor/ui": "0.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.17",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

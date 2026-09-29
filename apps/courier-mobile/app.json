@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "RESTOR Kuryer",
+    "slug": "restor-courier",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "restorcourier",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1F2937"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "uz.restor.courier",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Kuryer joylashuvi dispetcherga xaritada koʻrsatiladi.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Yetkazib berish vaqtida joylashuv fon rejimida ham yuboriladi."
+      }
+    },
+    "android": {
+      "package": "uz.restor.courier",
+      "versionCode": 1,
+      "adaptiveIcon": { "backgroundColor": "#FF6B00" },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "INTERNET",
+        "CALL_PHONE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Yetkazib berish vaqtida joylashuvingiz dispetcherga koʻrinadi."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://api.restor.uz/api/v1"
+    }
+  }
+}

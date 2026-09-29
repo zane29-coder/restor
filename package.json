@@ -1,0 +1,46 @@
+{
+  "name": "restor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RESTOR — Restaurant Operating System. Multi-tenant ordering, POS, delivery and management platform.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20.11.0",
+    "npm": ">=10.0.0"
+  },
+  "comment:workspaces": "apps/courier-mobile is intentionally NOT a workspace: Expo/Metro resolves its own node_modules and hoisting breaks native module linking. It installs independently (see its README).",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "apps/admin-web",
+    "apps/customer-web",
+    "apps/telegram-mini-app",
+    "apps/pos",
+    "apps/kitchen-display"
+  ],
+  "scripts": {
+    "build:packages": "npm run build --workspace=@restor/shared-types --workspace=@restor/shared-utils --workspace=@restor/validation --workspace=@restor/api-client --workspace=@restor/ui",
+    "build": "npm run build:packages && npm run build --workspace=backend",
+    "build:all": "npm run build:packages && npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:backend": "npm run start:dev --workspace=backend",
+    "dev:admin": "npm run dev --workspace=@restor/admin-web",
+    "dev:customer": "npm run dev --workspace=@restor/customer-web",
+    "dev:miniapp": "npm run dev --workspace=@restor/telegram-mini-app",
+    "dev:pos": "npm run dev --workspace=@restor/pos",
+    "dev:kds": "npm run dev --workspace=@restor/kitchen-display",
+    "db:generate": "npm run db:generate --workspace=backend",
+    "db:migrate": "npm run db:migrate --workspace=backend",
+    "db:seed": "npm run db:seed --workspace=backend",
+    "db:reset": "npm run db:reset --workspace=backend",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

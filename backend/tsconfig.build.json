@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The base config includes `prisma/` so the seed is typechecked, which
+    // pushes rootDir up to the package root and would emit `dist/src/main.js`.
+    // The build narrows it back to `src`, so the entry point is `dist/main.js`.
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "prisma", "tests", "**/*.spec.ts", "**/*.test.ts"]
+}

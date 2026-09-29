@@ -1,0 +1,28 @@
+{
+  "name": "@restor/ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Design tokens and the few React primitives every RESTOR web app genuinely shares.",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@restor/shared-types": "0.1.0"
+  },
+  "peerDependencies": {
+    "react": "^18.3.1 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.17",
+    "react": "^18.3.1",
+    "typescript": "^5.7.2"
+  }
+}

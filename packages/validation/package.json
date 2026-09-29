@@ -1,0 +1,28 @@
+{
+  "name": "@restor/validation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zod schemas shared by the backend validation pipe and every client form.",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@restor/shared-types": "0.1.0",
+    "@restor/shared-utils": "0.1.0"
+  },
+  "peerDependencies": {
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "zod": "^3.24.1"
+  }
+}

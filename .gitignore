@@ -1,0 +1,100 @@
+# ---- Dependencies ----
+node_modules/
+.pnp/
+.pnp.js
+.yarn/
+
+# ---- Build output ----
+dist/
+build/
+out/
+.next/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+# ---- Environment / secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+!debug.keystore
+google-services.json
+GoogleService-Info.plist
+secrets/
+
+# ---- Logs ----
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ---- Testing / coverage ----
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+
+# ---- Prisma ----
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# ---- Local databases (POS offline) ----
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# ---- Uploads (local storage driver) ----
+backend/storage/
+uploads/
+
+# ---- Built web bundles published for nginx ----
+infrastructure/nginx/www/
+infrastructure/nginx/conf.d-bootstrap/
+
+# ---- Database dumps ----
+infrastructure/database/backups/*
+!infrastructure/database/backups/.gitkeep
+
+# ---- Android build artifacts ----
+apps/courier-mobile/android/.gradle/
+apps/courier-mobile/android/build/
+apps/courier-mobile/android/app/build/
+apps/courier-mobile/android/local.properties
+apps/courier-mobile/android/.cxx/
+*.apk
+*.aab
+*.hprof
+
+# ---- iOS build artifacts ----
+apps/courier-mobile/ios/Pods/
+apps/courier-mobile/ios/build/
+apps/courier-mobile/ios/*.xcworkspace/xcuserdata/
+apps/courier-mobile/ios/*.xcodeproj/xcuserdata/
+*.ipa
+*.dSYM.zip
+
+# ---- Expo ----
+.expo/
+.expo-shared/
+apps/courier-mobile/expo-env.d.ts
+
+# ---- Desktop wrappers (POS) ----
+apps/pos/desktop/target/
+apps/pos/desktop/gen/
+
+# ---- Editors / OS ----
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.recommended.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp

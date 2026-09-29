@@ -1,0 +1,427 @@
+/*
+ * Admin panel styling.
+ *
+ * Plain CSS with custom properties rather than a utility framework: the
+ * palette has to be overridable per tenant at RUNTIME for white labelling
+ * (TZ §49), which a build-time framework config cannot do.
+ */
+
+:root {
+  --primary: #ff6b00;
+  --primary-dark: #d95a00;
+  --primary-light: #fff1e6;
+  --secondary: #1f2937;
+
+  --success: #16a34a;
+  --success-light: #dcfce7;
+  --warning: #f59e0b;
+  --warning-light: #fef3c7;
+  --danger: #dc2626;
+  --danger-light: #fee2e2;
+
+  --text: #111827;
+  --text-muted: #6b7280;
+  --bg: #f9fafb;
+  --surface: #ffffff;
+  --surface-alt: #f3f4f6;
+  --border: #e5e7eb;
+
+  --radius: 10px;
+  --shadow-sm: 0 1px 2px rgb(17 24 39 / 6%);
+  --shadow-md: 0 4px 12px rgb(17 24 39 / 8%);
+
+  --sidebar-width: 236px;
+  --header-height: 60px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ---------------- Layout ---------------- */
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--secondary);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  gap: 4px;
+}
+
+.sidebar__brand {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 8px 12px 20px;
+  color: #fff;
+}
+
+.sidebar__brand span {
+  color: var(--primary);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: rgb(255 255 255 / 72%);
+  font-weight: 500;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.nav-link:hover {
+  background: rgb(255 255 255 / 8%);
+  color: #fff;
+}
+
+.nav-link--active {
+  background: var(--primary);
+  color: #fff;
+}
+
+.sidebar__footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  font-size: 12px;
+  color: rgb(255 255 255 / 60%);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* lets wide tables scroll instead of stretching the grid */
+}
+
+.header {
+  height: var(--header-height);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  gap: 16px;
+}
+
+.header__title {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.content {
+  padding: 24px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------------- Components ---------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+.stat__label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+
+.stat__value {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 0;
+  /* Tabular figures stop the number jittering as it updates. */
+  font-variant-numeric: tabular-nums;
+}
+
+.stat__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 500;
+  min-height: 38px;
+  transition: opacity 120ms ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--surface-alt);
+}
+
+.btn--danger {
+  background: var(--danger);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.field label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.field input,
+.field select {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+.field__error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 720px;
+}
+
+th,
+td {
+  padding: 11px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  background: var(--surface-alt);
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover {
+  background: var(--surface-alt);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.alert {
+  padding: 11px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.alert--error {
+  background: var(--danger-light);
+  color: #991b1b;
+}
+
+.alert--info {
+  background: var(--primary-light);
+  color: #9a3412;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* ---------------- Login ---------------- */
+
+.login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: linear-gradient(140deg, var(--secondary) 0%, #111827 100%);
+}
+
+.login__card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 30px;
+  box-shadow: var(--shadow-md);
+}
+
+.login__brand {
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  margin: 0 0 4px;
+}
+
+.login__brand span {
+  color: var(--primary);
+}
+
+.login__sub {
+  text-align: center;
+  color: var(--text-muted);
+  margin: 0 0 22px;
+  font-size: 13px;
+}
+
+/* ---------------- States ---------------- */
+
+.center {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  color: var(--text-muted);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ---------------- Responsive ---------------- */
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+    align-items: center;
+  }
+
+  .sidebar__brand,
+  .sidebar__footer {
+    display: none;
+  }
+
+  .nav-link {
+    white-space: nowrap;
+  }
+
+  .content {
+    padding: 16px;
+  }
+}

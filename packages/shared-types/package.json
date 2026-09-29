@@ -1,0 +1,20 @@
+{
+  "name": "@restor/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared API contracts, enums and RBAC catalog for every RESTOR client and the backend.",
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,1847 @@
+// =============================================================================
+// RESTOR — database schema (TZ §40)
+//
+// Conventions used throughout:
+//
+//  * IDs are UUIDs. Anything a human says out loud (an order number) gets a
+//    separate, readable field — see `Order.number` / `Order.displayNumber`.
+//  * MONEY IS ALWAYS `Int`, in the currency's minor unit. UZS has no subunit,
+//    so 156 000 UZS is stored as 156000. Floats never touch a price; see
+//    `@restor/shared-utils/money` for the arithmetic helpers.
+//  * Every tenant-owned table carries `tenantId` and indexes it first. The
+//    Prisma client extension in `src/database/tenant-scope.extension.ts`
+//    injects that filter automatically, so a forgotten `where` cannot leak
+//    another company's data (TZ §53).
+//  * Enums mirror `@restor/shared-types/enums` one-for-one. Change one and you
+//    must change the other in the same commit.
+//  * Records referenced by history (users, products) are deactivated, not
+//    deleted, so a six-month-old order still renders correctly.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  EXPIRED
+  CANCELLED
+}
+
+enum Currency {
+  UZS
+  USD
+}
+
+enum OrderStatus {
+  NEW
+  ACCEPTED
+  PREPARING
+  READY
+  WAITING_COURIER
+  COURIER_ASSIGNED
+  ON_DELIVERY
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum OrderType {
+  DELIVERY
+  PICKUP
+  DINE_IN
+  TABLE
+}
+
+enum OrderSource {
+  TELEGRAM_MINI_APP
+  TELEGRAM_BOT
+  WEB
+  POS
+  QR_TABLE
+  CALL_CENTER
+  ADMIN
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TERMINAL
+  CLICK
+  PAYME
+  QR
+  BONUS
+}
+
+enum PaymentTransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentTransactionType {
+  CHARGE
+  REFUND
+}
+
+enum CashShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashTransactionType {
+  SALE
+  REFUND
+  CASH_IN
+  CASH_OUT
+  COURIER_HANDOVER
+  OPENING_FLOAT
+  WITHDRAWAL
+}
+
+enum CourierStatus {
+  OFFLINE
+  AVAILABLE
+  ON_DELIVERY
+  BREAK
+}
+
+enum VehicleType {
+  FOOT
+  BICYCLE
+  SCOOTER
+  MOTORCYCLE
+  CAR
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  ACCEPTED
+  PICKED_UP
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum CourierTransactionType {
+  CASH_RECEIVED
+  DELIVERY_INCOME
+  EXPENSE
+  HANDOVER
+  ADJUSTMENT
+}
+
+enum HandoverStatus {
+  PENDING
+  CONFIRMED
+  DISPUTED
+  CANCELLED
+}
+
+enum PromotionType {
+  PERCENTAGE_DISCOUNT
+  FIXED_DISCOUNT
+  BUY_X_GET_Y
+  COMBO
+  HAPPY_HOUR
+  FREE_DELIVERY
+}
+
+enum PromoCodeType {
+  PERCENTAGE
+  FIXED
+  FREE_DELIVERY
+}
+
+enum LoyaltyTransactionType {
+  EARN
+  REDEEM
+  EXPIRE
+  ADJUSTMENT
+  REFERRAL_BONUS
+}
+
+enum TelegramEvent {
+  NEW_ORDER
+  ORDER_ACCEPTED
+  ORDER_CANCELLED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  KITCHEN_READY
+  COURIER_ASSIGNED
+  ORDER_DELIVERED
+  DELIVERY_PROBLEM
+  WAITER_CALL
+  SHIFT_CLOSED
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  PUSH
+  SMS
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum KitchenTicketStatus {
+  QUEUED
+  IN_PROGRESS
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum WaiterCallType {
+  CALL_WAITER
+  REQUEST_BILL
+}
+
+enum WaiterCallStatus {
+  PENDING
+  ACKNOWLEDGED
+  RESOLVED
+  CANCELLED
+}
+
+enum StorageProvider {
+  LOCAL
+  S3
+  MINIO
+}
+
+// =============================================================================
+// TENANTS & BILLING (TZ §4, §6)
+// =============================================================================
+
+model Tenant {
+  id        String       @id @default(uuid()) @db.Uuid
+  name      String       @db.VarChar(120)
+  slug      String       @unique @db.VarChar(80)
+  status    TenantStatus @default(TRIAL)
+  legalName String?      @db.VarChar(200)
+  phone     String?      @db.VarChar(20)
+  email     String?      @db.VarChar(255)
+  currency  Currency     @default(UZS)
+  timezone  String       @default("Asia/Tashkent") @db.VarChar(64)
+  locale    String       @default("uz") @db.VarChar(10)
+
+  // --- White label (TZ §49) ---
+  logoUrl        String? @db.VarChar(2048)
+  faviconUrl     String? @db.VarChar(2048)
+  primaryColor   String  @default("#FF6B00") @db.VarChar(9)
+  secondaryColor String  @default("#1F2937") @db.VarChar(9)
+  /// Custom ordering domain. Unique so two tenants cannot claim the same host.
+  domain         String? @unique @db.VarChar(255)
+  companyName    String? @db.VarChar(120)
+
+  blockedAt   DateTime?
+  blockReason String?   @db.VarChar(500)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  subscriptions   Subscription[]
+  users           User[]
+  roles           Role[]
+  branches        Branch[]
+  employees       Employee[]
+  customers       Customer[]
+  categories      Category[]
+  products        Product[]
+  modifierGroups  ModifierGroup[]
+  orders          Order[]
+  payments        Payment[]
+  cashRegisters   CashRegister[]
+  cashShifts      CashShift[]
+  cashTransactions CashTransaction[]
+  couriers        Courier[]
+  courierTransactions CourierTransaction[]
+  cashHandovers   CashHandover[]
+  deliveries      Delivery[]
+  promotions      Promotion[]
+  promoCodes      PromoCode[]
+  loyaltyPrograms LoyaltyProgram[]
+  loyaltyAccounts LoyaltyAccount[]
+  telegramConfigs TelegramConfig[]
+  tables          RestaurantTable[]
+  waiterCalls     WaiterCall[]
+  kitchenStations KitchenStation[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  files           FileAsset[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("tenants")
+}
+
+model Plan {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique @db.VarChar(32)
+  name        String   @db.VarChar(80)
+  description String?  @db.VarChar(500)
+  price       Int      @default(0)
+  currency    Currency @default(UZS)
+  periodDays  Int      @default(30)
+
+  /// `null` on any limit means unlimited.
+  maxBranches     Int?
+  maxEmployees    Int?
+  maxPosTerminals Int?
+  maxBots         Int?
+  maxStorageMb    Int?
+
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id       String             @id @default(uuid()) @db.Uuid
+  tenantId String             @db.Uuid
+  planId   String             @db.Uuid
+  status   SubscriptionStatus @default(TRIAL)
+
+  startsAt    DateTime  @default(now())
+  endsAt      DateTime
+  cancelledAt DateTime?
+
+  /// Limits frozen at purchase time: changing the plan later must not silently
+  /// re-limit a tenant that is already paying under the old terms.
+  maxBranches     Int?
+  maxEmployees    Int?
+  maxPosTerminals Int?
+  maxBots         Int?
+  maxStorageMb    Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([endsAt])
+  @@map("subscriptions")
+}
+
+// =============================================================================
+// IDENTITY & RBAC (TZ §5, §52)
+// =============================================================================
+
+model User {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `null` ONLY for SUPER_ADMIN, who lives outside every tenant. This is what
+  /// lets the tenant-scoping extension run unscoped for platform staff.
+  tenantId String? @db.Uuid
+
+  phone        String  @db.VarChar(20)
+  email        String? @db.VarChar(255)
+  /// Argon2id hash. Never logged, never returned by the API.
+  passwordHash String  @db.VarChar(255)
+  fullName     String  @db.VarChar(120)
+  avatarUrl    String? @db.VarChar(2048)
+
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  /// Consecutive failed logins; reset on success. Feeds the lockout check.
+  failedLoginAttempts Int      @default(0)
+  lockedUntil         DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant        Tenant?        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  roles         UserRole[]
+  refreshTokens RefreshToken[]
+  employee      Employee?
+  courier       Courier?
+
+  ordersCreated       Order[]               @relation("OrderCreatedBy")
+  orderStatusChanges  OrderStatusHistory[]
+  paymentsReceived    Payment[]             @relation("PaymentReceivedBy")
+  shiftsOpened        CashShift[]           @relation("ShiftOpenedBy")
+  shiftsClosed        CashShift[]           @relation("ShiftClosedBy")
+  cashTransactions    CashTransaction[]
+  courierTransactions CourierTransaction[]
+  handoversConfirmed  CashHandover[]        @relation("HandoverCashier")
+  waiterCallsHandled  WaiterCall[]
+  auditLogs           AuditLog[]
+  filesUploaded       FileAsset[]
+
+  /// Phone is the login key and must be unique WITHIN a tenant — the same
+  /// person may legitimately work for two different restaurants.
+  @@unique([tenantId, phone])
+  @@index([tenantId, isActive])
+  @@index([phone])
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+
+  /// SHA-256 of the token. A database dump therefore does not hand out sessions.
+  tokenHash String    @unique @db.VarChar(64)
+  expiresAt DateTime
+  revokedAt DateTime?
+  /// Set when this token was rotated away; detects refresh-token replay.
+  replacedByTokenHash String? @db.VarChar(64)
+
+  userAgent String? @db.VarChar(500)
+  ip        String? @db.VarChar(64)
+  deviceId  String? @db.VarChar(128)
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model Role {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// `null` for the built-in roles every tenant shares.
+  tenantId    String? @db.Uuid
+  code        String  @db.VarChar(40)
+  name        String  @db.VarChar(80)
+  description String? @db.VarChar(300)
+  /// System roles cannot be renamed or deleted by a tenant admin.
+  isSystem    Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant      Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("roles")
+}
+
+model Permission {
+  id          String  @id @default(uuid()) @db.Uuid
+  /// Dotted `resource.action`, e.g. `orders.cancel`. Mirrors the shared catalog.
+  code        String  @unique @db.VarChar(80)
+  group       String  @db.VarChar(40)
+  description String? @db.VarChar(300)
+
+  createdAt DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@index([group])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @db.Uuid
+  permissionId String @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+
+  /// Scopes the role to one branch. `null` means every branch of the tenant.
+  branchId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([branchId])
+  @@map("user_roles")
+}
+
+// =============================================================================
+// BRANCHES & STAFF (TZ §8)
+// =============================================================================
+
+model Branch {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  name    String  @db.VarChar(120)
+  slug    String  @db.VarChar(80)
+  address String  @db.VarChar(500)
+  phone   String? @db.VarChar(20)
+
+  /// Stored as Float: 7 decimal places is ~1 cm, far beyond what GPS delivers.
+  latitude  Float?
+  longitude Float?
+
+  deliveryRadiusM    Int?
+  minOrderAmount     Int     @default(0)
+  deliveryPrice      Int     @default(0)
+  averagePrepMinutes Int     @default(20)
+  timezone           String  @default("Asia/Tashkent") @db.VarChar(64)
+
+  /// Short code for human-readable order numbers, e.g. `CH` → `CH-1054`.
+  orderPrefix String? @db.VarChar(8)
+
+  isActive       Boolean @default(true)
+  acceptsDelivery Boolean @default(true)
+  acceptsPickup   Boolean @default(true)
+  acceptsDineIn   Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  workingHours     BranchWorkingHours[]
+  employees        Employee[]
+  userRoles        UserRole[]
+  productSettings  ProductBranch[]
+  orders           Order[]
+  orderSequences   OrderSequence[]
+  payments         Payment[]
+  cashRegisters    CashRegister[]
+  cashShifts       CashShift[]
+  cashTransactions CashTransaction[]
+  couriers         Courier[]
+  deliveries       Delivery[]
+  cashHandovers    CashHandover[]
+  telegramConfigs  TelegramConfig[]
+  telegramRoutes   TelegramRoute[]
+  tables           RestaurantTable[]
+  waiterCalls      WaiterCall[]
+  kitchenStations  KitchenStation[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive])
+  @@map("branches")
+}
+
+model BranchWorkingHours {
+  id       String @id @default(uuid()) @db.Uuid
+  branchId String @db.Uuid
+
+  /// ISO-8601 weekday: 1 = Monday … 7 = Sunday.
+  dayOfWeek Int
+  /// `HH:mm` local to the branch. `closesAt <= opensAt` means it runs past
+  /// midnight, which is normal for a late-night fast food branch.
+  opensAt   String  @db.VarChar(5)
+  closesAt  String  @db.VarChar(5)
+  isClosed  Boolean @default(false)
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, dayOfWeek])
+  @@map("branch_working_hours")
+}
+
+model Employee {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  userId   String  @unique @db.Uuid
+  branchId String? @db.Uuid
+
+  employeeCode String?   @db.VarChar(32)
+  position     String?   @db.VarChar(80)
+  hiredAt      DateTime?
+  firedAt      DateTime?
+  isActive     Boolean   @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId, branchId, isActive])
+  @@map("employees")
+}
+
+// =============================================================================
+// CUSTOMERS / CRM (TZ §31)
+// =============================================================================
+
+model Customer {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  phone            String  @db.VarChar(20)
+  fullName         String? @db.VarChar(120)
+  telegramId       String? @db.VarChar(32)
+  telegramUsername String? @db.VarChar(64)
+  email            String? @db.VarChar(255)
+  birthDate        DateTime? @db.Date
+  language         String  @default("uz") @db.VarChar(10)
+  isBlocked        Boolean @default(false)
+
+  /// Denormalised aggregates, recomputed when an order reaches DELIVERED.
+  /// Kept on the row so the customer list does not aggregate orders per page.
+  ordersCount  Int       @default(0)
+  totalSpent   Int       @default(0)
+  averageCheck Int       @default(0)
+  lastOrderAt  DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  addresses      CustomerAddress[]
+  orders         Order[]
+  promoCodeUsages PromoCodeUsage[]
+  loyaltyAccount LoyaltyAccount?
+
+  @@unique([tenantId, phone])
+  @@unique([tenantId, telegramId])
+  @@index([tenantId, lastOrderAt])
+  @@index([tenantId, totalSpent])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id         String @id @default(uuid()) @db.Uuid
+  customerId String @db.Uuid
+
+  label     String? @db.VarChar(60)
+  address   String  @db.VarChar(500)
+  latitude  Float?
+  longitude Float?
+  entrance  String? @db.VarChar(20)
+  floor     String? @db.VarChar(20)
+  apartment String? @db.VarChar(20)
+  landmark  String? @db.VarChar(200)
+  comment   String? @db.VarChar(500)
+  isDefault Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+// =============================================================================
+// MENU (TZ §9)
+// =============================================================================
+
+model Category {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  parentId String? @db.Uuid
+
+  name        String  @db.VarChar(255)
+  slug        String  @db.VarChar(80)
+  description String? @db.VarChar(2000)
+  imageUrl    String? @db.VarChar(2048)
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Category[] @relation("CategoryTree")
+  products Product[]
+  kitchenStations KitchenStationCategory[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isActive, sortOrder])
+  @@map("categories")
+}
+
+model Product {
+  id         String @id @default(uuid()) @db.Uuid
+  tenantId   String @db.Uuid
+  categoryId String @db.Uuid
+
+  name        String  @db.VarChar(255)
+  slug        String  @db.VarChar(80)
+  description String? @db.VarChar(2000)
+  imageUrl    String? @db.VarChar(2048)
+
+  price         Int
+  /// When set and lower than `price`, this is what the customer is charged.
+  discountPrice Int?
+  /// Minutes the kitchen needs — feeds the KDS timer and the customer ETA.
+  preparationTime Int  @default(10)
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+
+  variants       ProductVariant[]
+  modifierGroups ProductModifierGroup[]
+  branchSettings ProductBranch[]
+  orderItems     OrderItem[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, categoryId, isActive])
+  @@index([tenantId, isActive, sortOrder])
+  @@map("products")
+}
+
+model ProductVariant {
+  id        String @id @default(uuid()) @db.Uuid
+  productId String @db.Uuid
+
+  name String  @db.VarChar(80)
+  sku  String? @db.VarChar(64)
+  /// Signed delta against the product price: a Small size may be cheaper.
+  priceDelta Int    @default(0)
+  isDefault  Boolean @default(false)
+  sortOrder  Int     @default(0)
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@index([productId, isActive])
+  @@map("product_variants")
+}
+
+model ModifierGroup {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  name String @db.VarChar(255)
+  /// `minSelect: 1, maxSelect: 1` renders as a radio group; otherwise checkboxes.
+  minSelect Int     @default(0)
+  maxSelect Int     @default(1)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modifiers Modifier[]
+  products  ProductModifierGroup[]
+
+  @@index([tenantId, isActive])
+  @@map("modifier_groups")
+}
+
+model Modifier {
+  id      String @id @default(uuid()) @db.Uuid
+  groupId String @db.Uuid
+
+  name      String  @db.VarChar(80)
+  price     Int     @default(0)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  group          ModifierGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  orderItemLinks OrderItemModifier[]
+
+  @@index([groupId, isActive])
+  @@map("modifiers")
+}
+
+model ProductModifierGroup {
+  productId       String @db.Uuid
+  modifierGroupId String @db.Uuid
+  sortOrder       Int    @default(0)
+
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  modifierGroup ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@id([productId, modifierGroupId])
+  @@index([modifierGroupId])
+  @@map("product_modifier_groups")
+}
+
+model ProductBranch {
+  productId String @db.Uuid
+  branchId  String @db.Uuid
+
+  isAvailable Boolean @default(true)
+  /// Temporary "we ran out" flag the floor staff toggles; distinct from
+  /// `isAvailable`, which is the long-term "this branch does not sell it".
+  isStopListed  Boolean @default(false)
+  priceOverride Int?
+
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([productId, branchId])
+  @@index([branchId, isAvailable, isStopListed])
+  @@map("product_branches")
+}
+
+// =============================================================================
+// ORDERS (TZ §12, §13, §41)
+// =============================================================================
+
+/// Per-branch order counter. `periodKey` is `"ALL"` for a never-resetting
+/// sequence, or a date like `"2026-09-28"` for branches that restart daily.
+/// Incremented with a locking UPDATE inside the order transaction, so two
+/// concurrent tills can never take the same number.
+model OrderSequence {
+  id        String @id @default(uuid()) @db.Uuid
+  branchId  String @db.Uuid
+  periodKey String @db.VarChar(16)
+  lastNumber Int   @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, periodKey])
+  @@map("order_sequences")
+}
+
+model Order {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  /// Sequential within the branch; `displayNumber` is what people say.
+  number        Int
+  displayNumber String @db.VarChar(24)
+
+  type          OrderType
+  source        OrderSource
+  status        OrderStatus   @default(NEW)
+  paymentStatus PaymentStatus @default(UNPAID)
+
+  customerId    String? @db.Uuid
+  /// Snapshotted so an order still shows who placed it after a CRM edit.
+  customerName  String? @db.VarChar(120)
+  customerPhone String? @db.VarChar(20)
+
+  subtotal      Int @default(0)
+  discountTotal Int @default(0)
+  deliveryFee   Int @default(0)
+  serviceFee    Int @default(0)
+  total         Int @default(0)
+  paidTotal     Int @default(0)
+  refundedTotal Int @default(0)
+
+  // --- Delivery target, denormalised so address edits don't rewrite history ---
+  addressLabel     String? @db.VarChar(60)
+  addressText      String? @db.VarChar(500)
+  addressLatitude  Float?
+  addressLongitude Float?
+  addressEntrance  String? @db.VarChar(20)
+  addressFloor     String? @db.VarChar(20)
+  addressApartment String? @db.VarChar(20)
+  addressLandmark  String? @db.VarChar(200)
+  addressComment   String? @db.VarChar(500)
+
+  tableId     String? @db.Uuid
+  tableNumber String? @db.VarChar(20)
+
+  courierId   String? @db.Uuid
+  promoCodeId String? @db.Uuid
+
+  comment      String? @db.VarChar(1000)
+  cancelReason String? @db.VarChar(500)
+
+  estimatedReadyAt DateTime?
+  scheduledFor     DateTime?
+  acceptedAt       DateTime?
+  readyAt          DateTime?
+  deliveredAt      DateTime?
+  cancelledAt      DateTime?
+
+  createdByUserId String? @db.Uuid
+
+  /// Idempotency key from the client. A POS replaying a queued offline order
+  /// sends the same value; the unique index turns the replay into a no-op
+  /// instead of a duplicate order (TZ §18).
+  clientUuid String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id])
+  customer  Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  courier   Courier?   @relation(fields: [courierId], references: [id], onDelete: SetNull)
+  table     RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  promoCode PromoCode? @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  createdBy User?      @relation("OrderCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  items           OrderItem[]
+  statusHistory   OrderStatusHistory[]
+  payments        Payment[]
+  delivery        Delivery?
+  cashTransactions CashTransaction[]
+  courierTransactions CourierTransaction[]
+  promoCodeUsage  PromoCodeUsage?
+  appliedPromotions OrderPromotion[]
+  loyaltyTransactions LoyaltyTransaction[]
+  kitchenTickets  KitchenTicket[]
+
+  @@unique([branchId, number])
+  @@unique([tenantId, clientUuid])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([branchId, status, createdAt])
+  @@index([customerId, createdAt])
+  @@index([courierId, status])
+  @@index([tenantId, paymentStatus])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @db.Uuid
+  productId String? @db.Uuid
+  variantId String? @db.Uuid
+
+  /// Name and price are snapshots: later menu edits must not rewrite a printed
+  /// receipt or a six-month-old report.
+  name        String  @db.VarChar(255)
+  variantName String? @db.VarChar(80)
+  unitPrice   Int
+  quantity    Int
+  total       Int
+  discountTotal Int   @default(0)
+  comment     String? @db.VarChar(300)
+
+  createdAt DateTime @default(now())
+
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  modifiers OrderItemModifier[]
+  kitchenTicketItems KitchenTicketItem[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id          String  @id @default(uuid()) @db.Uuid
+  orderItemId String  @db.Uuid
+  modifierId  String? @db.Uuid
+
+  name     String @db.VarChar(80)
+  price    Int    @default(0)
+  quantity Int    @default(1)
+
+  orderItem OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifier  Modifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
+
+  @@index([orderItemId])
+  @@map("order_item_modifiers")
+}
+
+/// Order timeline (TZ §13). Append-only: rows are never updated or deleted.
+model OrderStatusHistory {
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @db.Uuid
+
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  userId     String?      @db.Uuid
+  comment    String?      @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+model OrderPromotion {
+  id          String  @id @default(uuid()) @db.Uuid
+  orderId     String  @db.Uuid
+  promotionId String? @db.Uuid
+
+  name   String @db.VarChar(255)
+  amount Int
+
+  order     Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  promotion Promotion? @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_promotions")
+}
+
+// =============================================================================
+// PAYMENTS (TZ §35, §36)
+// =============================================================================
+
+model Payment {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+  orderId  String @db.Uuid
+
+  method PaymentMethod
+  amount Int
+  status PaymentTransactionStatus @default(PENDING)
+
+  /// Provider-side id. Unique per provider so a replayed webhook cannot create
+  /// a second payment row for the same charge.
+  externalId String? @db.VarChar(128)
+  paidAt     DateTime?
+  refundedAmount Int  @default(0)
+
+  cashShiftId      String? @db.Uuid
+  receivedByUserId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  order      Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  cashShift  CashShift? @relation(fields: [cashShiftId], references: [id], onDelete: SetNull)
+  receivedBy User?      @relation("PaymentReceivedBy", fields: [receivedByUserId], references: [id], onDelete: SetNull)
+
+  transactions PaymentTransaction[]
+
+  @@unique([method, externalId])
+  @@index([tenantId, createdAt])
+  @@index([orderId])
+  @@index([cashShiftId])
+  @@map("payments")
+}
+
+model PaymentTransaction {
+  id        String @id @default(uuid()) @db.Uuid
+  paymentId String @db.Uuid
+
+  type   PaymentTransactionType
+  amount Int
+  status PaymentTransactionStatus @default(PENDING)
+
+  externalId String? @db.VarChar(128)
+  /// Unique per provider event. The webhook handler inserts on this key, so a
+  /// replayed callback can never double-credit an order (TZ §36).
+  idempotencyKey String @unique @db.VarChar(191)
+  /// Raw provider payload for reconciliation. Secrets are stripped before save.
+  rawPayload   Json?
+  errorMessage String? @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@map("payment_transactions")
+}
+
+// =============================================================================
+// CASH REGISTER (TZ §19)
+// =============================================================================
+
+model CashRegister {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  name String @db.VarChar(80)
+  /// Stable terminal identifier; used to enforce the plan's POS limit.
+  deviceId String? @db.VarChar(128)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  shifts CashShift[]
+
+  @@unique([tenantId, deviceId])
+  @@index([branchId, isActive])
+  @@map("cash_registers")
+}
+
+model CashShift {
+  id             String @id @default(uuid()) @db.Uuid
+  tenantId       String @db.Uuid
+  branchId       String @db.Uuid
+  cashRegisterId String @db.Uuid
+
+  status CashShiftStatus @default(OPEN)
+
+  openedByUserId String  @db.Uuid
+  closedByUserId String? @db.Uuid
+  openedAt       DateTime @default(now())
+  closedAt       DateTime?
+
+  openingCash Int @default(0)
+  /// Opening float + cash sales − refunds + handovers − withdrawals.
+  expectedCash Int @default(0)
+  /// What the cashier physically counted at close.
+  actualCash   Int?
+  /// `actualCash − expectedCash`; negative is a shortage.
+  difference   Int?
+
+  cashTotal   Int @default(0)
+  cardTotal   Int @default(0)
+  onlineTotal Int @default(0)
+  refundTotal Int @default(0)
+  orderCount  Int @default(0)
+
+  comment String? @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  cashRegister CashRegister @relation(fields: [cashRegisterId], references: [id], onDelete: Cascade)
+  openedBy     User         @relation("ShiftOpenedBy", fields: [openedByUserId], references: [id])
+  closedBy     User?        @relation("ShiftClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull)
+
+  transactions CashTransaction[]
+  payments     Payment[]
+  handovers    CashHandover[]
+
+  @@index([tenantId, openedAt])
+  @@index([branchId, status])
+  @@index([cashRegisterId, status])
+  @@map("cash_shifts")
+}
+
+model CashTransaction {
+  id          String @id @default(uuid()) @db.Uuid
+  tenantId    String @db.Uuid
+  branchId    String @db.Uuid
+  cashShiftId String @db.Uuid
+
+  type   CashTransactionType
+  method PaymentMethod       @default(CASH)
+  /// Always positive; `type` carries the direction.
+  amount Int
+
+  orderId   String? @db.Uuid
+  courierId String? @db.Uuid
+  comment   String? @db.VarChar(500)
+
+  createdByUserId String @db.Uuid
+  createdAt       DateTime @default(now())
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  cashShift CashShift @relation(fields: [cashShiftId], references: [id], onDelete: Cascade)
+  order     Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  courier   Courier?  @relation(fields: [courierId], references: [id], onDelete: SetNull)
+  createdBy User      @relation(fields: [createdByUserId], references: [id])
+
+  @@index([cashShiftId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("cash_transactions")
+}
+
+// =============================================================================
+// COURIERS & DELIVERY (TZ §23-§28)
+// =============================================================================
+
+model Courier {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  userId   String  @unique @db.Uuid
+  branchId String? @db.Uuid
+
+  status      CourierStatus @default(OFFLINE)
+  vehicleType VehicleType   @default(SCOOTER)
+  isActive    Boolean       @default(true)
+
+  /// Denormalised last position so the dispatcher map is one query, not a join
+  /// against the full location history.
+  lastLatitude  Float?
+  lastLongitude Float?
+  lastLocationAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  wallet       CourierWallet?
+  transactions CourierTransaction[]
+  locations    CourierLocation[]
+  deliveries   Delivery[]
+  orders       Order[]
+  handovers    CashHandover[]
+  cashTransactions CashTransaction[]
+
+  @@index([tenantId, status])
+  @@index([branchId, status])
+  @@map("couriers")
+}
+
+model CourierWallet {
+  id        String @id @default(uuid()) @db.Uuid
+  courierId String @unique @db.Uuid
+
+  /// Cash collected from customers and still held by the courier.
+  cashReceived   Int @default(0)
+  deliveryIncome Int @default(0)
+  expenses       Int @default(0)
+  cashHandedOver Int @default(0)
+  /// `cashReceived − cashHandedOver − expenses`: what the courier still owes.
+  balance        Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  courier      Courier              @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  transactions CourierTransaction[]
+
+  @@map("courier_wallets")
+}
+
+model CourierTransaction {
+  id        String @id @default(uuid()) @db.Uuid
+  tenantId  String @db.Uuid
+  walletId  String @db.Uuid
+  courierId String @db.Uuid
+
+  type   CourierTransactionType
+  amount Int
+
+  orderId String? @db.Uuid
+  comment String? @db.VarChar(500)
+
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  wallet    CourierWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  courier   Courier       @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  order     Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdBy User?         @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([walletId, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("courier_transactions")
+}
+
+/// GPS history (TZ §25). Retention is configurable; a scheduled job prunes
+/// rows older than the tenant's retention window.
+model CourierLocation {
+  id        String @id @default(uuid()) @db.Uuid
+  courierId String @db.Uuid
+
+  latitude  Float
+  longitude Float
+  accuracyM Float?
+  headingDeg Float?
+  speedMps  Float?
+
+  recordedAt DateTime @default(now())
+
+  courier Courier @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  @@index([courierId, recordedAt])
+  @@index([recordedAt])
+  @@map("courier_locations")
+}
+
+model Delivery {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+  orderId  String @unique @db.Uuid
+
+  courierId String?        @db.Uuid
+  status    DeliveryStatus @default(PENDING)
+
+  assignedAt  DateTime?
+  acceptedAt  DateTime?
+  pickedUpAt  DateTime?
+  deliveredAt DateTime?
+  failedAt    DateTime?
+  failureReason String? @db.VarChar(500)
+
+  distanceM   Int?
+  /// What the courier earns for this job.
+  courierFee  Int @default(0)
+  /// What the customer was charged for delivery.
+  customerFee Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  courier Courier? @relation(fields: [courierId], references: [id], onDelete: SetNull)
+
+  @@index([courierId, status])
+  @@index([branchId, status])
+  @@index([tenantId, createdAt])
+  @@map("deliveries")
+}
+
+/// Courier → cashier cash hand-off, confirmed by both sides (TZ §28).
+model CashHandover {
+  id        String @id @default(uuid()) @db.Uuid
+  tenantId  String @db.Uuid
+  branchId  String @db.Uuid
+  courierId String @db.Uuid
+
+  cashierUserId String? @db.Uuid
+  amount        Int
+  status        HandoverStatus @default(PENDING)
+
+  /// Set when the courier declares the hand-off.
+  declaredAt  DateTime  @default(now())
+  /// Set when the cashier confirms receipt; until then the money is in limbo.
+  confirmedAt DateTime?
+  cashShiftId String?   @db.Uuid
+  comment     String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  courier   Courier    @relation(fields: [courierId], references: [id], onDelete: Cascade)
+  cashier   User?      @relation("HandoverCashier", fields: [cashierUserId], references: [id], onDelete: SetNull)
+  cashShift CashShift? @relation(fields: [cashShiftId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, status])
+  @@index([courierId, status])
+  @@index([branchId, declaredAt])
+  @@map("cash_handovers")
+}
+
+// =============================================================================
+// PROMOTIONS & LOYALTY (TZ §10, §33, §34)
+// =============================================================================
+
+model Promotion {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  name        String  @db.VarChar(255)
+  description String? @db.VarChar(1000)
+  type        PromotionType
+  /// Percent for PERCENTAGE_DISCOUNT, minor units for FIXED_DISCOUNT.
+  value       Int     @default(0)
+  maxDiscount Int?
+  minOrderAmount Int?
+
+  /// Type-specific settings, e.g. `{ buyProductId, buyQty, getProductId }`.
+  config Json @default("{}")
+
+  startsAt DateTime?
+  endsAt   DateTime?
+  /// Happy-hour window as `HH:mm` in the branch timezone (TZ §10).
+  timeFrom String? @db.VarChar(5)
+  timeTo   String? @db.VarChar(5)
+  /// Empty array means every day. ISO weekdays, 1 = Monday.
+  daysOfWeek Int[] @default([])
+
+  /// Empty arrays mean "applies everywhere / to everything".
+  branchIds   String[] @default([]) @db.Uuid
+  productIds  String[] @default([]) @db.Uuid
+  categoryIds String[] @default([]) @db.Uuid
+
+  priority    Int     @default(0)
+  /// When false, other promotions may stack on top of this one.
+  isExclusive Boolean @default(true)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orders OrderPromotion[]
+
+  @@index([tenantId, isActive, priority])
+  @@map("promotions")
+}
+
+model PromoCode {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  code     String        @db.VarChar(40)
+  type     PromoCodeType
+  discount Int
+
+  minOrderAmount Int?
+  maxDiscount    Int?
+  /// `null` means unlimited.
+  usageLimit Int?
+  userLimit  Int?
+  usedCount  Int  @default(0)
+
+  startsAt  DateTime?
+  endsAt    DateTime?
+  branchIds String[]  @default([]) @db.Uuid
+  isActive  Boolean   @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usages PromoCodeUsage[]
+  orders Order[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+  @@map("promo_codes")
+}
+
+model PromoCodeUsage {
+  id          String  @id @default(uuid()) @db.Uuid
+  promoCodeId String  @db.Uuid
+  customerId  String? @db.Uuid
+  /// One redemption per order: the unique index enforces it at the database
+  /// level, so a double-submit cannot discount the same order twice.
+  orderId     String  @unique @db.Uuid
+
+  discountAmount Int
+  usedAt         DateTime @default(now())
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  customer  Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([promoCodeId, customerId])
+  @@map("promo_code_usages")
+}
+
+model LoyaltyProgram {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @unique @db.Uuid
+
+  isActive          Boolean @default(false)
+  cashbackPercent   Int     @default(0)
+  /// Minor units one point is worth when redeemed.
+  pointValue        Int     @default(1)
+  maxRedeemPercent  Int     @default(50)
+  expiryDays        Int?
+  referralBonus     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  levels LoyaltyLevel[]
+
+  @@map("loyalty_programs")
+}
+
+model LoyaltyLevel {
+  id        String @id @default(uuid()) @db.Uuid
+  programId String @db.Uuid
+
+  name            String @db.VarChar(80)
+  thresholdSpent  Int    @default(0)
+  cashbackPercent Int    @default(0)
+  sortOrder       Int    @default(0)
+
+  program  LoyaltyProgram   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  accounts LoyaltyAccount[]
+
+  @@index([programId, sortOrder])
+  @@map("loyalty_levels")
+}
+
+model LoyaltyAccount {
+  id         String @id @default(uuid()) @db.Uuid
+  tenantId   String @db.Uuid
+  customerId String @unique @db.Uuid
+
+  points         Int     @default(0)
+  lifetimePoints Int     @default(0)
+  levelId        String? @db.Uuid
+  referralCode   String  @unique @db.VarChar(16)
+  referredByCustomerId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  level    LoyaltyLevel? @relation(fields: [levelId], references: [id], onDelete: SetNull)
+
+  transactions LoyaltyTransaction[]
+
+  @@index([tenantId])
+  @@map("loyalty_accounts")
+}
+
+model LoyaltyTransaction {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @db.Uuid
+
+  type   LoyaltyTransactionType
+  /// Positive credits points, negative debits them.
+  points Int
+
+  orderId   String?   @db.Uuid
+  comment   String?   @db.VarChar(300)
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  account LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  order   Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@map("loyalty_transactions")
+}
+
+// =============================================================================
+// TELEGRAM (TZ §15)
+// =============================================================================
+
+model TelegramConfig {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  /// `null` = tenant-wide default; set = overrides for that branch.
+  branchId String? @db.Uuid
+
+  /// Encrypted at rest and never returned by the API. A leaked bot token lets
+  /// anyone impersonate the restaurant's bot.
+  botTokenEncrypted String? @db.Text
+  botUsername       String? @db.VarChar(64)
+  /// Fallback chat for any event without its own route.
+  defaultChatId     String? @db.VarChar(32)
+  isActive          Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  routes TelegramRoute[]
+
+  @@unique([tenantId, branchId])
+  @@map("telegram_configs")
+}
+
+/// One event → chat/topic binding (TZ §15). `topicId` is Telegram's
+/// `message_thread_id`; `null` posts to the group's General topic.
+model TelegramRoute {
+  id       String  @id @default(uuid()) @db.Uuid
+  configId String  @db.Uuid
+  branchId String? @db.Uuid
+
+  event    TelegramEvent
+  chatId   String        @db.VarChar(32)
+  topicId  Int?
+  isActive Boolean       @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  config TelegramConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  branch Branch?        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, event, branchId])
+  @@index([configId, isActive])
+  @@map("telegram_routes")
+}
+
+// =============================================================================
+// TABLES / QR (TZ §29, §30)
+// =============================================================================
+
+model RestaurantTable {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  number String  @db.VarChar(20)
+  name   String? @db.VarChar(80)
+  seats  Int?
+  zone   String? @db.VarChar(80)
+
+  /// Random token embedded in the printed QR code. Rotating it invalidates
+  /// every previously printed code for that table.
+  qrToken  String  @unique @db.VarChar(48)
+  isActive Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  orders      Order[]
+  waiterCalls WaiterCall[]
+
+  @@unique([branchId, number])
+  @@index([tenantId, branchId])
+  @@map("tables")
+}
+
+model WaiterCall {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+  tableId  String @db.Uuid
+
+  type   WaiterCallType
+  status WaiterCallStatus @default(PENDING)
+
+  acknowledgedByUserId String?   @db.Uuid
+  acknowledgedAt       DateTime?
+  resolvedAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch         Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table          RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  acknowledgedBy User?           @relation(fields: [acknowledgedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, status, createdAt])
+  @@map("waiter_calls")
+}
+
+// =============================================================================
+// KITCHEN (TZ §21, §22)
+// =============================================================================
+
+model KitchenStation {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  name      String  @db.VarChar(80)
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  categories KitchenStationCategory[]
+  tickets    KitchenTicket[]
+
+  @@unique([branchId, name])
+  @@map("kitchen_stations")
+}
+
+/// Which categories a station prepares. An order's items are split across
+/// stations by this mapping (TZ §22).
+model KitchenStationCategory {
+  stationId  String @db.Uuid
+  categoryId String @db.Uuid
+
+  station  KitchenStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  category Category       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([stationId, categoryId])
+  @@index([categoryId])
+  @@map("kitchen_station_categories")
+}
+
+/// One card on one KDS screen. An order produces several tickets when its
+/// items belong to different stations.
+model KitchenTicket {
+  id        String  @id @default(uuid()) @db.Uuid
+  orderId   String  @db.Uuid
+  branchId  String  @db.Uuid
+  stationId String? @db.Uuid
+
+  status KitchenTicketStatus @default(QUEUED)
+
+  startedAt DateTime?
+  readyAt   DateTime?
+  servedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  station KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  items   KitchenTicketItem[]
+
+  @@index([branchId, status, createdAt])
+  @@index([orderId])
+  @@map("kitchen_tickets")
+}
+
+model KitchenTicketItem {
+  ticketId    String @db.Uuid
+  orderItemId String @db.Uuid
+
+  ticket    KitchenTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  orderItem OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  @@id([ticketId, orderItemId])
+  @@index([orderItemId])
+  @@map("kitchen_ticket_items")
+}
+
+// =============================================================================
+// PLATFORM SERVICES (TZ §37, §38, §39)
+// =============================================================================
+
+/// Append-only audit trail (TZ §37). Never updated, never deleted by the app.
+model AuditLog {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String? @db.Uuid
+  userId   String? @db.Uuid
+
+  action   String  @db.VarChar(64)
+  entity   String  @db.VarChar(64)
+  entityId String? @db.Uuid
+
+  oldValue Json?
+  newValue Json?
+
+  ip        String? @db.VarChar(64)
+  device    String? @db.VarChar(255)
+  requestId String? @db.VarChar(64)
+
+  createdAt DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String? @db.Uuid
+
+  channel   NotificationChannel
+  /// Chat id, phone, device token or email, depending on the channel.
+  recipient String              @db.VarChar(255)
+  template  String              @db.VarChar(64)
+  payload   Json                @default("{}")
+
+  status       NotificationStatus @default(PENDING)
+  attempts     Int                @default(0)
+  errorMessage String?            @db.VarChar(1000)
+  sentAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([tenantId, createdAt])
+  @@map("notifications")
+}
+
+model FileAsset {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String? @db.Uuid
+
+  provider StorageProvider @default(LOCAL)
+  /// Storage key relative to the bucket or storage root.
+  key      String          @db.VarChar(512)
+  url      String          @db.VarChar(2048)
+
+  originalName String @db.VarChar(255)
+  mimeType     String @db.VarChar(120)
+  sizeBytes    Int
+
+  uploadedByUserId String? @db.Uuid
+  createdAt        DateTime @default(now())
+
+  tenant     Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  uploadedBy User?   @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, key])
+  @@index([tenantId, createdAt])
+  @@map("files")
+}

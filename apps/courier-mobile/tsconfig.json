@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@restor/shared-types": ["../../packages/shared-types/src"],
+      "@restor/shared-utils": ["../../packages/shared-utils/src"],
+      "@restor/api-client": ["../../packages/api-client/src"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", "android", "ios"]
+}

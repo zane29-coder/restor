@@ -1,0 +1,97 @@
+name: restor
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: restor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-restor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-restor}
+      POSTGRES_DB: ${POSTGRES_DB:-restor}
+      # Deterministic collation so ORDER BY is stable across host platforms.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=und-x-icu"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-restor} -d ${POSTGRES_DB:-restor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [restor]
+
+  redis:
+    image: redis:7-alpine
+    container_name: restor-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [restor]
+
+  # S3-compatible object storage for product images (StorageProvider = "minio").
+  minio:
+    image: minio/minio:latest
+    container_name: restor-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-restor}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-restor12345}
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [restor]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: development
+    container_name: restor-backend
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-restor}:${POSTGRES_PASSWORD:-restor}@postgres:5432/${POSTGRES_DB:-restor}?schema=public
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/backend/src
+      - ./backend/prisma:/app/backend/prisma
+      - ./packages:/app/packages
+    networks: [restor]
+    profiles: ["full"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  restor:
+    driver: bridge

@@ -1,0 +1,28 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "lib": ["ES2022"],
+
+    // NestJS relies on decorator metadata for dependency injection.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+
+    // Nest's own idioms need these two relaxed; everything else stays strict.
+    "strictPropertyInitialization": false,
+    "noImplicitAny": true,
+
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
