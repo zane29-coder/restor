@@ -167,7 +167,8 @@ export class CourierWalletService {
    */
   async declare(params: {
     courierId: string;
-    branchId: string;
+    /** Falls back to the courier's own branch, which is what the app sends. */
+    branchId?: string;
     amount: number;
     comment?: string;
   }): Promise<CashHandover> {
@@ -178,6 +179,15 @@ export class CourierWalletService {
       include: { user: { select: { fullName: true } }, wallet: true },
     });
     if (!courier) throw AppException.notFound('Courier', ErrorCode.COURIER_NOT_FOUND);
+
+    const branchId = params.branchId ?? courier.branchId;
+    if (!branchId) {
+      throw new AppException(
+        ErrorCode.VALIDATION_ERROR,
+        'Kuryer filialga biriktirilmagan — qaysi kassaga topshirilishini koʻrsating',
+        422,
+      );
+    }
 
     const balance = courier.wallet?.balance ?? 0;
     if (params.amount > balance) {
@@ -201,7 +211,7 @@ export class CourierWalletService {
     const row = await this.prisma.db.cashHandover.create({
       data: {
         tenantId,
-        branchId: params.branchId,
+        branchId,
         courierId: params.courierId,
         amount: params.amount,
         status: HandoverStatus.PENDING,

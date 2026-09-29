@@ -1,9 +1,10 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
   type CashHandover,
   type CourierJob,
+  type CourierProfile,
   type CourierStatus,
   type CourierTransaction,
   type CourierWallet,
@@ -15,9 +16,11 @@ import {
   declareHandoverSchema,
   failDeliverySchema,
   reportLocationSchema,
+  updateCourierProfileSchema,
   type CompleteDeliveryInput,
   type DeclareHandoverInput,
   type ReportLocationInput,
+  type UpdateCourierProfileInput,
 } from '@restor/validation';
 import { Ctx, RequirePermissions } from '../../common/decorators';
 import { AppException } from '../../common/errors/app-exception';
@@ -41,6 +44,32 @@ export class CourierAppController {
     private readonly app: CourierAppService,
     private readonly wallet: CourierWalletService,
   ) {}
+
+  /* ------------------------------ Profile --------------------------- */
+
+  @Get('me')
+  @RequirePermissions(Permission.DELIVERIES_VIEW_OWN)
+  @ApiOperation({ summary: 'My profile and what I have done today' })
+  myProfile(): Promise<CourierProfile> {
+    return this.app.myProfile();
+  }
+
+  /**
+   * Only the contact phone is editable here.
+   *
+   * Name, branch and vehicle are the dispatcher's to set, and the login phone
+   * is untouchable from this route — see `Courier.contactPhone`.
+   */
+  @Patch('me')
+  @RequirePermissions(Permission.DELIVERIES_UPDATE_OWN)
+  @ApiOperation({ summary: 'Change the number customers call me on' })
+  updateMyProfile(
+    @Body(zodBody(updateCourierProfileSchema)) body: UpdateCourierProfileInput,
+  ): Promise<CourierProfile> {
+    return this.app.updateMyProfile(body);
+  }
+
+  /* -------------------------------- Jobs ---------------------------- */
 
   @Get('jobs')
   @RequirePermissions(Permission.DELIVERIES_VIEW_OWN)
@@ -153,6 +182,20 @@ export class CourierAppController {
       amount: body.amount,
       comment: body.comment,
     });
+  }
+
+  /**
+   * My own hand-offs, newest first.
+   *
+   * The app needs this to show a declared amount as still awaiting the
+   * cashier: until it is confirmed the cash is in limbo, and a courier who
+   * cannot see that would declare it twice.
+   */
+  @Get('handovers')
+  @RequirePermissions(Permission.COURIER_WALLET_VIEW)
+  @ApiOperation({ summary: 'My cash hand-offs and their confirmation state' })
+  myHandovers(@Ctx() ctx: RequestContext): Promise<Paginated<CashHandover>> {
+    return this.wallet.listHandovers({ courierId: requireCourierId(ctx), limit: 20 });
   }
 }
 

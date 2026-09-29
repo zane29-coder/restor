@@ -95,12 +95,30 @@ export const failDeliverySchema = z.object({
   reason: z.string().trim().min(3, 'Sababni yozing').max(500),
 });
 
+/**
+ * What a courier may change about themselves: the phone number, and nothing
+ * else.
+ *
+ * Not their name, branch, vehicle or active flag — those are the dispatcher's
+ * to set, and a courier editing their own name would break the audit trail.
+ * The phone is different: it is the number customers ring at the door, so the
+ * person holding it has to be able to correct it without filing a request.
+ */
+export const updateCourierProfileSchema = z.object({
+  phone: phoneSchema,
+});
+
 /* -------------------------------------------------------------------------- */
 /* Wallet & cash handover (TZ §26, §28)                                       */
 /* -------------------------------------------------------------------------- */
 
 export const declareHandoverSchema = z.object({
-  branchId: uuidSchema,
+  /**
+   * Optional: the app rarely has a branch to offer, so the server falls back
+   * to the courier's assigned one. Sent explicitly only when a courier who
+   * works across branches hands cash to a different till.
+   */
+  branchId: uuidSchema.optional(),
   amount: moneySchema.positive('Summa noldan katta boʻlishi kerak'),
   comment: z.string().trim().max(300).optional(),
 });
@@ -132,5 +150,6 @@ export type AssignDeliveryInput = z.infer<typeof assignDeliverySchema>;
 export type CourierListQueryInput = z.infer<typeof courierListQuerySchema>;
 export type ReportLocationInput = z.infer<typeof reportLocationSchema>;
 export type CompleteDeliveryInput = z.infer<typeof completeDeliverySchema>;
+export type UpdateCourierProfileInput = z.infer<typeof updateCourierProfileSchema>;
 export type DeclareHandoverInput = z.infer<typeof declareHandoverSchema>;
 export type ConfirmHandoverInput = z.infer<typeof confirmHandoverSchema>;

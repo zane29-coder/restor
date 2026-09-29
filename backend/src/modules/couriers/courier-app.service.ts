@@ -9,8 +9,14 @@ import {
   OrderStatus,
   PaymentStatus,
   type CourierJob,
+  type CourierProfile,
 } from '@restor/shared-types';
-import type { CompleteDeliveryInput, ReportLocationInput } from '@restor/validation';
+import { startOfDayInZone } from '@restor/shared-utils';
+import type {
+  CompleteDeliveryInput,
+  ReportLocationInput,
+  UpdateCourierProfileInput,
+} from '@restor/validation';
 import { AppException } from '../../common/errors/app-exception';
 import { getContext } from '../../common/context/request-context';
 import { PrismaService } from '../../database/prisma.service';
@@ -356,6 +362,103 @@ export class CourierAppService {
       latitude: input.latitude,
       longitude: input.longitude,
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Profile (TZ §23)                                                   */
+  /* ------------------------------------------------------------------ */
+
+  async myProfile(): Promise<CourierProfile> {
+    return this.buildProfile(this.requireCourier());
+  }
+
+  /**
+   * The courier editing their own contact number.
+   *
+   * Writes `Courier.contactPhone`, never `User.phone` — the latter is the
+   * login key, and a typo there would lock the courier out of the app between
+   * one delivery and the next.
+   */
+  async updateMyProfile(input: UpdateCourierProfileInput): Promise<CourierProfile> {
+    const courierId = this.requireCourier();
+
+    const before = await this.prisma.db.courier.findFirst({
+      where: { id: courierId },
+      select: { contactPhone: true },
+    });
+
+    await this.prisma.db.courier.update({
+      where: { id: courierId },
+      data: { contactPhone: input.phone },
+    });
+
+    await this.audit.record({
+      action: 'COURIER_CONTACT_PHONE_CHANGED',
+      entity: 'Courier',
+      entityId: courierId,
+      oldValue: { contactPhone: before?.contactPhone ?? null },
+      newValue: { contactPhone: input.phone },
+    });
+
+    return this.buildProfile(courierId);
+  }
+
+  /**
+   * Profile plus the figures the courier actually checks: how many deliveries
+   * they have finished today and what they earned for them.
+   *
+   * "Today" is midnight in the branch's own timezone, not the server's. A
+   * courier in Tashkent reading "0 delivered" at 06:00 because UTC has not
+   * rolled over yet would rightly think the app was broken.
+   */
+  private async buildProfile(courierId: string): Promise<CourierProfile> {
+    const courier = await this.prisma.db.courier.findFirst({
+      where: { id: courierId },
+      include: {
+        user: { select: { fullName: true, phone: true } },
+        branch: { select: { id: true, name: true, timezone: true } },
+        tenant: { select: { timezone: true } },
+      },
+    });
+    if (!courier) throw AppException.notFound('Courier', ErrorCode.COURIER_NOT_FOUND);
+
+    const since = startOfDayInZone(
+      new Date(),
+      courier.branch?.timezone ?? courier.tenant.timezone,
+    );
+
+    const [deliveredToday, todayMoney] = await Promise.all([
+      this.prisma.db.delivery.count({
+        where: { courierId, status: DeliveryStatus.DELIVERED, deliveredAt: { gte: since } },
+      }),
+      this.prisma.db.courierTransaction.groupBy({
+        by: ['type'],
+        where: {
+          courierId,
+          createdAt: { gte: since },
+          type: {
+            in: [CourierTransactionType.CASH_RECEIVED, CourierTransactionType.DELIVERY_INCOME],
+          },
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const sumOf = (type: CourierTransactionType): number =>
+      todayMoney.find((row) => row.type === type)?._sum.amount ?? 0;
+
+    return {
+      courierId,
+      fullName: courier.user.fullName,
+      phone: courier.contactPhone ?? courier.user.phone,
+      vehicleType: courier.vehicleType,
+      status: courier.status,
+      branchId: courier.branch?.id ?? null,
+      branchName: courier.branch?.name ?? null,
+      deliveredToday,
+      collectedToday: sumOf(CourierTransactionType.CASH_RECEIVED),
+      earnedToday: sumOf(CourierTransactionType.DELIVERY_INCOME),
+    };
   }
 
   /* ------------------------------------------------------------------ */

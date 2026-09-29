@@ -262,6 +262,33 @@ export interface CourierJob {
   assignedAt: string | null;
 }
 
+/**
+ * The courier app's own profile screen (TZ §23).
+ *
+ * Name and phone live on the User record, not the Courier one — a courier is
+ * a person with a role, so their contact details sit where everyone else's do.
+ */
+export interface CourierProfile {
+  courierId: string;
+  fullName: string;
+  /** Editable by the courier: it is the number customers actually call. */
+  phone: string;
+  vehicleType: VehicleType;
+  status: CourierStatus;
+  branchId: string | null;
+  branchName: string | null;
+  /** Deliveries completed since local midnight. */
+  deliveredToday: number;
+  /** Cash taken from customers today; already part of the wallet balance. */
+  collectedToday: number;
+  /** The courier's own earnings today — theirs, not the restaurant's. */
+  earnedToday: number;
+}
+
+export interface UpdateCourierProfileRequest {
+  phone: string;
+}
+
 export interface ReportLocationRequest {
   latitude: number;
   longitude: number;

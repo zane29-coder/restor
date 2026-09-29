@@ -1230,6 +1230,13 @@ model Courier {
   vehicleType VehicleType   @default(SCOOTER)
   isActive    Boolean       @default(true)
 
+  /// The number customers ring at the door, which the courier edits themselves.
+  ///
+  /// Deliberately NOT `User.phone`: that one is the login key, unique per
+  /// tenant, and a courier who mistyped it while updating a contact number
+  /// would lock themselves out of the app. `null` means "use the login phone".
+  contactPhone String? @db.VarChar(20)
+
   /// Denormalised last position so the dispatcher map is one query, not a join
   /// against the full location history.
   lastLatitude  Float?

@@ -137,7 +137,10 @@ export class OrdersService {
       branchId: input.branchId,
       type: input.type,
       items: input.items,
-      promoCode: input.promoCode,
+      // The API accepts `null` here because a client building this from a form
+      // naturally sends `promoCode: value || null`. Pricing draws no
+      // distinction between absent and null, so normalise at the boundary.
+      promoCode: input.promoCode ?? undefined,
       customerId: input.customer?.id,
       deliveryLatitude: input.deliveryAddress?.latitude ?? null,
       deliveryLongitude: input.deliveryAddress?.longitude ?? null,
@@ -185,7 +188,10 @@ export class OrdersService {
       branchId: input.branchId,
       type: input.type,
       items: input.items,
-      promoCode: input.promoCode,
+      // The API accepts `null` here because a client building this from a form
+      // naturally sends `promoCode: value || null`. Pricing draws no
+      // distinction between absent and null, so normalise at the boundary.
+      promoCode: input.promoCode ?? undefined,
       customerId: customer?.id,
       deliveryLatitude: address?.latitude ?? null,
       deliveryLongitude: address?.longitude ?? null,
