@@ -19,4 +19,12 @@ module.exports = {
   coverageDirectory: 'coverage',
   clearMocks: true,
   testTimeout: 15_000,
+
+  // Jest spawns one worker per core by default. ts-jest compiles the whole
+  // program in each of them, and on an 8-core machine that is enough memory
+  // pressure for the OS to start killing workers with SIGTERM — which surfaces
+  // as "Test suite failed to run" rather than as an out-of-memory error.
+  // Two workers is still parallel and comfortably within budget.
+  maxWorkers: 2,
+  workerIdleMemoryLimit: '512MB',
 };

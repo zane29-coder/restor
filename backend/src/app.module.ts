@@ -23,12 +23,14 @@ import { CatalogModule } from './modules/catalog/catalog.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { HealthModule } from './modules/health/health.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
 
 @Module({
   imports: [
@@ -116,6 +118,10 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
     OrdersModule,
     KitchenModule,
     RealtimeModule,
+
+    // --- Phase 4: Telegram ---
+    NotificationsModule,
+    TelegramModule,
   ],
   providers: [
     /**

@@ -7,6 +7,7 @@ import {
   IconLogout,
   IconMenu,
   IconOrders,
+  IconTelegram,
   IconUsers,
   type IconProps,
 } from '@restor/ui';
@@ -26,6 +27,7 @@ const NAV: NavItem[] = [
   { to: '/menu', label: 'Menyu', Icon: IconMenu, permission: Permission.PRODUCTS_VIEW },
   { to: '/branches', label: 'Filiallar', Icon: IconBranch, permission: Permission.BRANCHES_VIEW },
   { to: '/employees', label: 'Xodimlar', Icon: IconUsers, permission: Permission.EMPLOYEES_VIEW },
+  { to: '/telegram', label: 'Telegram', Icon: IconTelegram, permission: Permission.TELEGRAM_VIEW },
 ];
 
 const TITLES: Record<string, string> = {
@@ -34,6 +36,7 @@ const TITLES: Record<string, string> = {
   '/menu': 'Menyu',
   '/branches': 'Filiallar',
   '/employees': 'Xodimlar',
+  '/telegram': 'Telegram sozlamalari',
 };
 
 export function AppLayout() {
