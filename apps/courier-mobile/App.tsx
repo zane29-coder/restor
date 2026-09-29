@@ -1,40 +1,49 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, Text, TouchableOpacity, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
 import {
   CourierStatus,
-  DeliveryStatus,
+  type CashHandover,
   type CourierJob,
+  type CourierProfile,
+  type CourierTransaction,
   type CourierWallet,
 } from '@restor/shared-types';
-import { formatMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
 import { api } from './src/api';
+import { colors, money, styles } from './src/theme';
+import { LoginScreen } from './src/screens/LoginScreen';
+import { JobsScreen, type JobAction } from './src/screens/JobsScreen';
+import { WalletScreen } from './src/screens/WalletScreen';
+import { ProfileScreen } from './src/screens/ProfileScreen';
+
+type Tab = 'jobs' | 'wallet' | 'profile';
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'jobs', label: 'BUYURTMA' },
+  { key: 'wallet', label: 'KASSA' },
+  { key: 'profile', label: 'PROFIL' },
+];
 
 /**
  * Courier app (TZ §23-§26).
  *
  * Every endpoint it calls is scoped to the signed-in courier server-side — the
  * app never sends its own courier id, so it cannot read another courier's
- * jobs even if the screen were tampered with.
+ * jobs, wallet or cash even if the screen were tampered with.
  */
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [tab, setTab] = useState<Tab>('jobs');
+
+  const [profile, setProfile] = useState<CourierProfile | null>(null);
   const [jobs, setJobs] = useState<CourierJob[]>([]);
   const [wallet, setWallet] = useState<CourierWallet | null>(null);
+  const [transactions, setTransactions] = useState<CourierTransaction[]>([]);
+  const [handovers, setHandovers] = useState<CashHandover[]>([]);
+
   const [status, setStatus] = useState<CourierStatus>(CourierStatus.OFFLINE);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,14 +63,35 @@ export default function App() {
     })();
   }, []);
 
+  /**
+   * One round trip per screen, fetched together.
+   *
+   * The wallet calls are allowed to fail on their own: a courier whose role is
+   * missing the wallet permission should still see their jobs rather than an
+   * error page.
+   */
   const load = useCallback(async () => {
     try {
-      const [loadedJobs, loadedWallet] = await Promise.all([
-        api.courierApp.myJobs(),
-        api.courierApp.myWallet().catch(() => null),
-      ]);
+      const [loadedProfile, loadedJobs, loadedWallet, loadedTx, loadedHandovers] =
+        await Promise.all([
+          api.courierApp.myProfile(),
+          api.courierApp.myJobs(),
+          api.courierApp.myWallet().catch(() => null),
+          api.courierApp
+            .myTransactions({ limit: 50 })
+            .then((page) => page.items)
+            .catch(() => []),
+          api.courierApp
+            .myHandovers()
+            .then((page) => page.items)
+            .catch(() => []),
+        ]);
+
+      setProfile(loadedProfile);
       setJobs(loadedJobs);
       setWallet(loadedWallet);
+      setTransactions(loadedTx);
+      setHandovers(loadedHandovers);
       setError(null);
     } catch (caught) {
       setError(caught instanceof RestorApiError ? caught.message : 'Maʼlumot yuklanmadi');
@@ -75,10 +105,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, [isAuthed, load]);
 
+  // The server knows whether this courier is on shift; the app should not
+  // assume OFFLINE and quietly stop reporting location after a restart.
+  useEffect(() => {
+    if (profile) setStatus(profile.status);
+  }, [profile?.status]);
+
   /**
    * Location reporting (TZ §25).
    *
-   * Only started once the courier goes AVAILABLE and only after they grant
+   * Only started once the courier is on shift and only after they grant
    * permission — tracking someone who is off shift is neither needed nor
    * acceptable.
    */
@@ -115,41 +151,80 @@ export default function App() {
     };
   }, [isAuthed, status]);
 
+  function refresh() {
+    setIsRefreshing(true);
+    void load().finally(() => setIsRefreshing(false));
+  }
+
+  function fail(caught: unknown, fallback = 'Amal bajarilmadi') {
+    Alert.alert('Xatolik', caught instanceof RestorApiError ? caught.message : fallback);
+  }
+
   async function changeStatus(next: CourierStatus) {
+    const previous = status;
+    setStatus(next); // Optimistic: the toggle must feel instant on mobile data.
     try {
       await api.courierApp.setStatus(next);
-      setStatus(next);
     } catch (caught) {
-      Alert.alert('Xatolik', caught instanceof RestorApiError ? caught.message : 'Amal bajarilmadi');
+      setStatus(previous);
+      fail(caught);
     }
   }
 
-  async function act(job: CourierJob, action: 'accept' | 'start' | 'complete') {
+  async function act(job: CourierJob, action: JobAction) {
     try {
       if (action === 'accept') await api.courierApp.accept(job.deliveryId);
       else if (action === 'start') await api.courierApp.startDelivery(job.deliveryId);
       else {
         // Cash collected on delivery credits the courier's wallet (TZ §26).
-        await api.courierApp.complete(
-          job.deliveryId,
-          job.isPaid ? 0 : job.amountToCollect,
-        );
+        await api.courierApp.complete(job.deliveryId, job.isPaid ? 0 : job.amountToCollect);
       }
       await load();
     } catch (caught) {
-      Alert.alert('Xatolik', caught instanceof RestorApiError ? caught.message : 'Amal bajarilmadi');
+      fail(caught);
     }
+  }
+
+  async function declareHandover(amount: number) {
+    try {
+      await api.courierApp.declareHandover(amount);
+      await load();
+    } catch (caught) {
+      fail(caught, 'Soʻrov yuborilmadi');
+    }
+  }
+
+  async function savePhone(phone: string) {
+    try {
+      setProfile(await api.courierApp.updateMyProfile({ phone }));
+    } catch (caught) {
+      fail(caught, 'Raqam saqlanmadi');
+      throw caught;
+    }
+  }
+
+  async function logout() {
+    await api.auth.logout().catch(() => undefined);
+    setIsAuthed(false);
+    setProfile(null);
+    setJobs([]);
+    setWallet(null);
+    setTransactions([]);
+    setHandovers([]);
+    setTab('jobs');
   }
 
   if (!isReady) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#FF6B00" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
 
   if (!isAuthed) return <LoginScreen onSuccess={() => setIsAuthed(true)} />;
+
+  const isOnline = status !== CourierStatus.OFFLINE;
 
   return (
     <View style={styles.screen}>
@@ -158,26 +233,37 @@ export default function App() {
       <View style={styles.header}>
         <View>
           <Text style={styles.brand}>
-            RES<Text style={{ color: '#FF6B00' }}>TOR</Text>
+            RES<Text style={styles.brandAccent}>TOR</Text>
           </Text>
-          {wallet && (
-            <Text style={styles.walletText}>
-              Qoʻlingizda: {formatMoney(wallet.balance)}
-            </Text>
-          )}
+          <Text style={styles.headerSub}>
+            {wallet ? `Qoʻlingizda: ${money(wallet.balance)}` : (profile?.fullName ?? '')}
+          </Text>
         </View>
         <TouchableOpacity
-          style={[styles.statusChip, status !== CourierStatus.OFFLINE && styles.statusChipOn]}
+          style={[styles.statusChip, isOnline && styles.statusChipOn]}
           onPress={() =>
-            void changeStatus(
-              status === CourierStatus.OFFLINE ? CourierStatus.AVAILABLE : CourierStatus.OFFLINE,
-            )
+            void changeStatus(isOnline ? CourierStatus.OFFLINE : CourierStatus.AVAILABLE)
           }
         >
-          <Text style={styles.statusText}>
-            {status === CourierStatus.OFFLINE ? 'Oflayn' : 'Onlayn'}
-          </Text>
+          <Text style={styles.statusText}>{isOnline ? 'Onlayn' : 'Oflayn'}</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabBar}>
+        {TABS.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.tab, tab === key && styles.tabActive]}
+            onPress={() => setTab(key)}
+          >
+            <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
+            {key === 'jobs' && jobs.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{jobs.length}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
       </View>
 
       {error && (
@@ -186,291 +272,35 @@ export default function App() {
         </View>
       )}
 
-      <ScrollView
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={() => {
-              setIsRefreshing(true);
-              void load().finally(() => setIsRefreshing(false));
-            }}
-          />
-        }
-      >
-        {jobs.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>Buyurtma yoʻq</Text>
-            <Text style={styles.emptyHint}>
-              {status === CourierStatus.OFFLINE
-                ? 'Buyurtma olish uchun “Onlayn” tugmasini bosing.'
-                : 'Yangi buyurtma kutilmoqda…'}
-            </Text>
-          </View>
-        ) : (
-          jobs.map((job) => <JobCard key={job.deliveryId} job={job} onAct={act} />)
-        )}
-      </ScrollView>
-    </View>
-  );
-}
-
-function JobCard({
-  job,
-  onAct,
-}: {
-  job: CourierJob;
-  onAct: (job: CourierJob, action: 'accept' | 'start' | 'complete') => Promise<void>;
-}) {
-  const action =
-    job.status === DeliveryStatus.ASSIGNED
-      ? { key: 'accept' as const, label: 'QABUL QILISH' }
-      : job.status === DeliveryStatus.ACCEPTED
-        ? { key: 'start' as const, label: 'YOʻLGA CHIQDIM' }
-        : job.status === DeliveryStatus.PICKED_UP
-          ? { key: 'complete' as const, label: 'YETKAZILDI' }
-          : null;
-
-  return (
-    <View style={styles.card}>
-      <View style={styles.cardHead}>
-        <Text style={styles.cardNumber}>{job.displayNumber}</Text>
-        <View style={[styles.pill, job.isPaid ? styles.pillPaid : styles.pillUnpaid]}>
-          <Text style={styles.pillText}>{job.isPaid ? 'Toʻlangan' : 'Naqd olinadi'}</Text>
-        </View>
-      </View>
-
-      <Text style={styles.label}>Olish</Text>
-      <Text style={styles.value}>{job.branchName}</Text>
-      <Text style={styles.sub}>{job.branchAddress}</Text>
-
-      <Text style={[styles.label, { marginTop: 10 }]}>Manzil</Text>
-      <Text style={styles.value}>{job.address}</Text>
-      {/*
-        A typographic label rather than an icon: rendering SVG in React Native
-        needs `react-native-svg`, a native dependency not worth adding for one
-        glyph. The uppercase tag reads as a field label, which is what it is.
-      */}
-      {job.comment && (
-        <Text style={styles.sub}>
-          <Text style={styles.noteTag}>IZOH </Text>
-          {job.comment}
-        </Text>
+      {tab === 'jobs' && (
+        <JobsScreen
+          jobs={jobs}
+          status={status}
+          isRefreshing={isRefreshing}
+          onRefresh={refresh}
+          onAct={act}
+        />
       )}
-
-      <Text style={[styles.label, { marginTop: 10 }]}>Tarkibi</Text>
-      <Text style={styles.sub}>{job.itemsSummary}</Text>
-
-      <View style={styles.amountRow}>
-        <Text style={styles.amountLabel}>
-          {job.isPaid ? 'Buyurtma summasi' : 'Olinadigan summa'}
-        </Text>
-        <Text style={styles.amount}>
-          {formatMoney(job.isPaid ? job.orderTotal : job.amountToCollect)}
-        </Text>
-      </View>
-
-      <View style={styles.actions}>
-        {job.customerPhone && (
-          <TouchableOpacity
-            style={[styles.btn, styles.btnGhost]}
-            onPress={() => void Linking.openURL(`tel:${job.customerPhone}`)}
-          >
-            <Text style={styles.btnGhostText}>QOʻNGʻIROQ</Text>
-          </TouchableOpacity>
-        )}
-        {job.latitude != null && job.longitude != null && (
-          <TouchableOpacity
-            style={[styles.btn, styles.btnGhost]}
-            onPress={() =>
-              void Linking.openURL(
-                // Opens whichever maps app the courier has installed.
-                `geo:${job.latitude},${job.longitude}?q=${job.latitude},${job.longitude}`,
-              )
-            }
-          >
-            <Text style={styles.btnGhostText}>XARITA</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {action && (
-        <TouchableOpacity
-          style={[styles.btn, styles.btnPrimary]}
-          onPress={() => void onAct(job, action.key)}
-        >
-          <Text style={styles.btnPrimaryText}>{action.label}</Text>
-        </TouchableOpacity>
+      {tab === 'wallet' && (
+        <WalletScreen
+          wallet={wallet}
+          profile={profile}
+          transactions={transactions}
+          handovers={handovers}
+          isRefreshing={isRefreshing}
+          onRefresh={refresh}
+          onDeclare={declareHandover}
+        />
+      )}
+      {tab === 'profile' && (
+        <ProfileScreen
+          profile={profile}
+          isRefreshing={isRefreshing}
+          onRefresh={refresh}
+          onSavePhone={savePhone}
+          onLogout={() => void logout()}
+        />
       )}
     </View>
   );
 }
-
-function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
-  const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
-  const [tenantSlug, setTenantSlug] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setError(null);
-    setIsSubmitting(true);
-    try {
-      await api.auth.login({
-        login: login.trim(),
-        password,
-        tenantSlug: tenantSlug.trim() || undefined,
-      });
-      onSuccess();
-    } catch (caught) {
-      setError(caught instanceof RestorApiError ? caught.message : 'Kirish amalga oshmadi');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  return (
-    <View style={styles.loginScreen}>
-      <StatusBar style="light" />
-      <Text style={styles.loginBrand}>
-        RES<Text style={{ color: '#FF6B00' }}>TOR</Text>
-      </Text>
-      <Text style={styles.loginSub}>Kuryer ilovasi</Text>
-
-      {error && <Text style={styles.loginError}>{error}</Text>}
-
-      <TextInput
-        style={styles.input}
-        placeholder="Telefon"
-        placeholderTextColor="#94A3B8"
-        keyboardType="phone-pad"
-        autoCapitalize="none"
-        value={login}
-        onChangeText={setLogin}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Parol"
-        placeholderTextColor="#94A3B8"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Restoran (ixtiyoriy)"
-        placeholderTextColor="#94A3B8"
-        autoCapitalize="none"
-        value={tenantSlug}
-        onChangeText={setTenantSlug}
-      />
-
-      <TouchableOpacity
-        style={[styles.btn, styles.btnPrimary, { marginTop: 8 }]}
-        onPress={() => void submit()}
-        disabled={isSubmitting}
-      >
-        <Text style={styles.btnPrimaryText}>{isSubmitting ? 'TEKSHIRILMOQDA…' : 'KIRISH'}</Text>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
-/** 56px minimum hit targets: a courier taps these one-handed, outdoors. */
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#F3F4F6' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F4F6' },
-
-  header: {
-    paddingTop: 52,
-    paddingBottom: 14,
-    paddingHorizontal: 18,
-    backgroundColor: '#1F2937',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  brand: { color: '#fff', fontSize: 20, fontWeight: '800', letterSpacing: 0.5 },
-  walletText: { color: '#94A3B8', fontSize: 13, marginTop: 2 },
-  statusChip: {
-    paddingHorizontal: 16,
-    minHeight: 40,
-    justifyContent: 'center',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  statusChipOn: { backgroundColor: '#16A34A' },
-  statusText: { color: '#fff', fontWeight: '700', fontSize: 13 },
-
-  errorBar: { backgroundColor: '#FEE2E2', paddingVertical: 10, paddingHorizontal: 18 },
-  errorText: { color: '#991B1B', fontSize: 13 },
-
-  list: { padding: 14, paddingBottom: 40 },
-
-  empty: { alignItems: 'center', paddingVertical: 70 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#111827', marginBottom: 6 },
-  emptyHint: { fontSize: 14, color: '#6B7280', textAlign: 'center', paddingHorizontal: 30 },
-
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
-  cardNumber: { fontSize: 21, fontWeight: '800', color: '#111827' },
-
-  pill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
-  pillPaid: { backgroundColor: '#DCFCE7' },
-  pillUnpaid: { backgroundColor: '#FEF3C7' },
-  pillText: { fontSize: 12, fontWeight: '700', color: '#111827' },
-
-  label: { fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.6, color: '#6B7280' },
-  value: { fontSize: 15, fontWeight: '600', color: '#111827', marginTop: 2 },
-  sub: { fontSize: 13, color: '#6B7280', marginTop: 2 },
-  noteTag: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, color: '#B45309' },
-
-  amountRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  amountLabel: { fontSize: 13, color: '#6B7280' },
-  amount: { fontSize: 20, fontWeight: '800', color: '#111827' },
-
-  actions: { flexDirection: 'row', gap: 10, marginTop: 12 },
-
-  btn: { minHeight: 56, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flex: 1 },
-  btnPrimary: { backgroundColor: '#FF6B00', marginTop: 10 },
-  btnPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 15, letterSpacing: 0.5 },
-  btnGhost: { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
-  btnGhostText: { color: '#111827', fontWeight: '700', fontSize: 13 },
-
-  loginScreen: { flex: 1, backgroundColor: '#1F2937', padding: 26, justifyContent: 'center' },
-  loginBrand: { color: '#fff', fontSize: 30, fontWeight: '800', textAlign: 'center' },
-  loginSub: { color: '#94A3B8', textAlign: 'center', marginBottom: 26, marginTop: 4 },
-  loginError: {
-    backgroundColor: '#7F1D1D',
-    color: '#FECACA',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 14,
-    fontSize: 13,
-  },
-  input: {
-    backgroundColor: '#374151',
-    color: '#fff',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    minHeight: 54,
-    fontSize: 16,
-    marginBottom: 12,
-  },
-});
