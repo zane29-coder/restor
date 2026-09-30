@@ -5,15 +5,20 @@ import {
   PaymentMethod,
   type BranchMenu,
   type BranchSummary,
+  type CashShift,
   type CreateOrderRequest,
   type MenuProduct,
+  type Order,
 } from '@restor/shared-types';
 import { addMoney, formatMoney, multiplyMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
 import { IconDot, IconLogout, IconMinus, IconPlus } from '@restor/ui';
 import { api, loadBranchId, saveBranchId } from './api';
-import { enqueue, flushQueue, queueSize } from './offline-queue';
+import { enqueue, flushQueue, queueSize, settle } from './offline-queue';
 import { LoginScreen } from './LoginScreen';
+import { PaymentDialog, type TenderPart } from './PaymentDialog';
+import { CloseShiftDialog, OpenShiftScreen } from './ShiftPanel';
+import { Receipt } from './Receipt';
 
 interface CartLine {
   key: string;
@@ -22,6 +27,41 @@ interface CartLine {
   variantName: string | null;
   unitPrice: number;
   quantity: number;
+}
+
+/**
+ * Fits the chosen tenders to the total the SERVER priced.
+ *
+ * The till's estimate can differ from the server's price — a promotion the
+ * till had not loaded, a price edited minutes ago — and a payment that does
+ * not match what is owed leaves the order PARTIALLY_PAID with nobody told.
+ *
+ * A single tender simply becomes the total. A mixed one keeps the cash part
+ * the cashier counted, capped at the total, and the remainder goes on the
+ * card: the cash is the half that already physically changed hands.
+ */
+function scaleToTotal(parts: TenderPart[], total: number): TenderPart[] {
+  if (parts.length <= 1) {
+    return [{ method: parts[0]?.method ?? PaymentMethod.CASH, amount: total }];
+  }
+
+  const cash = parts.find((part) => part.method === PaymentMethod.CASH);
+  const cashAmount = Math.min(cash?.amount ?? 0, total);
+  const rest = total - cashAmount;
+
+  return [
+    ...(cashAmount > 0 ? [{ method: PaymentMethod.CASH, amount: cashAmount }] : []),
+    ...(rest > 0
+      ? [
+          {
+            method:
+              parts.find((part) => part.method !== PaymentMethod.CASH)?.method ??
+              PaymentMethod.CARD,
+            amount: rest,
+          },
+        ]
+      : []),
+  ];
 }
 
 const ORDER_TYPES: Array<{ value: OrderType; label: string }> = [
@@ -45,6 +85,18 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /* ------------------------------ till state ------------------------- */
+
+  const [shift, setShift] = useState<CashShift | null>(null);
+  const [isShiftLoading, setIsShiftLoading] = useState(true);
+  const [isPaying, setIsPaying] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [receipt, setReceipt] = useState<{
+    order: Order;
+    parts: TenderPart[];
+    change: number;
+  } | null>(null);
 
   /* ----------------------------- session ----------------------------- */
 
@@ -79,6 +131,23 @@ export function App() {
       .catch((caught) =>
         setError(caught instanceof RestorApiError ? caught.message : 'Menyu yuklanmadi'),
       );
+  }, [isAuthenticated, branchId]);
+
+  /**
+   * The shift this till is selling into.
+   *
+   * Looked up per branch rather than per terminal: a cashier who moves to the
+   * second till mid-service is still working the same shift, and handing them
+   * a second one would split the day's takings in two.
+   */
+  useEffect(() => {
+    if (!isAuthenticated || !branchId) return;
+    setIsShiftLoading(true);
+    void api.cash
+      .currentShift(branchId)
+      .then(setShift)
+      .catch(() => setShift(null))
+      .finally(() => setIsShiftLoading(false));
   }, [isAuthenticated, branchId]);
 
   /* --------------------------- offline sync --------------------------- */
@@ -163,7 +232,15 @@ export function App() {
 
   /* ------------------------------ checkout ---------------------------- */
 
-  async function checkout(method: PaymentMethod) {
+  /**
+   * Creates the order, then settles it with the tender taken at the counter.
+   *
+   * Two steps rather than one, because the server prices the order itself
+   * (TZ §76) — what the customer owes is not known until it comes back. The
+   * payment is then recorded against that authoritative total, never against
+   * the cashier's local estimate.
+   */
+  async function checkout(parts: TenderPart[], tendered: number) {
     if (!branchId || cart.length === 0) return;
 
     setIsSubmitting(true);
@@ -179,7 +256,7 @@ export function App() {
       type: orderType,
       source: OrderSource.POS,
       clientUuid,
-      paymentMethod: method,
+      paymentMethod: parts[0]?.method ?? PaymentMethod.CASH,
       items: cart.map((line) => ({
         productId: line.product.id,
         ...(line.variantId ? { variantId: line.variantId } : {}),
@@ -192,19 +269,31 @@ export function App() {
 
     try {
       const order = await api.orders.create(payload);
-      setMessage(`Buyurtma ${order.displayNumber} qabul qilindi · ${formatMoney(order.total)}`);
+
+      // Re-scaled to the server's total. The cashier's estimate and the
+      // server's price can differ — a promotion the till did not know about,
+      // a price changed minutes ago — and the payment must match what is
+      // actually owed, or the order lands PARTIALLY_PAID with nobody warned.
+      const settled = scaleToTotal(parts, order.total);
+      await settle(order.id, { parts: settled });
+
       setCart([]);
+      setReceipt({
+        order,
+        parts: settled,
+        change: Math.max(0, tendered - order.total),
+      });
     } catch (caught) {
       if (caught instanceof RestorApiError && caught.isNetworkFailure) {
-        // Offline: keep selling. The queue replays when the link returns.
-        enqueue(payload);
+        // Offline: keep selling. The queue replays the order AND its payment
+        // when the link returns.
+        enqueue(payload, { parts });
         setPending(queueSize());
-        setMessage('Internet yoʻq — buyurtma navbatga qoʻyildi');
+        setMessage('Internet yoʻq — buyurtma va toʻlov navbatga qoʻyildi');
         setCart([]);
+        setIsPaying(false);
       } else {
-        setError(
-          caught instanceof RestorApiError ? caught.message : 'Buyurtma yaratilmadi',
-        );
+        setError(caught instanceof RestorApiError ? caught.message : 'Buyurtma yaratilmadi');
       }
     } finally {
       setIsSubmitting(false);
@@ -248,6 +337,30 @@ export function App() {
     );
   }
 
+  const branchName = branches.find((branch) => branch.id === branchId)?.name ?? '—';
+
+  if (isShiftLoading) {
+    return <div className="pos__center">Smena tekshirilmoqda…</div>;
+  }
+
+  /*
+    The till is gated behind an open shift. Selling without one would put cash
+    in a drawer nobody is accountable for, which is the single thing a shift
+    exists to prevent (TZ §19).
+  */
+  if (!shift) {
+    return (
+      <OpenShiftScreen
+        branchId={branchId}
+        branchName={branchName}
+        onOpened={(opened) => {
+          setShift(opened);
+          setMessage('Smena ochildi');
+        }}
+      />
+    );
+  }
+
   const category = menu?.categories.find((entry) => entry.id === categoryId);
 
   return (
@@ -256,9 +369,16 @@ export function App() {
         <div className="pos__brand">
           RES<span>TOR</span> POS
         </div>
-        <span className="pos__chip">
-          {branches.find((branch) => branch.id === branchId)?.name ?? '—'}
-        </span>
+        <span className="pos__chip">{branchName}</span>
+        <button
+          type="button"
+          className="pos__chip pos__chip--status"
+          style={{ border: 'none', color: '#fff' }}
+          onClick={() => setIsClosing(true)}
+          title="Smenani yopish"
+        >
+          Kassada: {formatMoney(shift.expectedCash, 'UZS', { withCurrency: false })}
+        </button>
         <div className="pos__spacer" />
         {/* The cashier has to know instantly whether a sale reached the server. */}
         <span
@@ -390,19 +510,11 @@ export function App() {
             <div className="pay-grid">
               <button
                 type="button"
-                className="pay-btn pay-btn--primary"
+                className="pay-btn pay-btn--primary pay-btn--wide"
                 disabled={cart.length === 0 || isSubmitting}
-                onClick={() => void checkout(PaymentMethod.CASH)}
+                onClick={() => setIsPaying(true)}
               >
-                NAQD
-              </button>
-              <button
-                type="button"
-                className="pay-btn"
-                disabled={cart.length === 0 || isSubmitting}
-                onClick={() => void checkout(PaymentMethod.CARD)}
-              >
-                KARTA
+                TOʻLOVGA OʻTISH
               </button>
               <button
                 type="button"
@@ -417,6 +529,43 @@ export function App() {
           </div>
         </aside>
       </div>
+
+      {isPaying && (
+        <PaymentDialog
+          total={subtotal}
+          isSubmitting={isSubmitting}
+          onCancel={() => setIsPaying(false)}
+          onConfirm={(parts, tendered) => {
+            void checkout(parts, tendered).then(() => setIsPaying(false));
+          }}
+        />
+      )}
+
+      {receipt && (
+        <Receipt
+          order={receipt.order}
+          parts={receipt.parts}
+          change={receipt.change}
+          branchName={branchName}
+          onDismiss={() => {
+            setReceipt(null);
+            // The drawer moved, so the header figure has to follow.
+            void api.cash.currentShift(branchId).then(setShift).catch(() => undefined);
+          }}
+        />
+      )}
+
+      {isClosing && (
+        <CloseShiftDialog
+          shift={shift}
+          onClose={() => setIsClosing(false)}
+          onClosed={(text) => {
+            setIsClosing(false);
+            setShift(null);
+            setMessage(text);
+          }}
+        />
+      )}
     </div>
   );
 }

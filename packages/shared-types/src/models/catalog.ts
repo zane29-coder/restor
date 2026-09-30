@@ -148,8 +148,9 @@ export type UpdateCategoryRequest = Partial<CreateCategoryRequest> & {
 export interface CreateProductRequest {
   categoryId: string;
   name: string;
-  description?: string;
-  imageUrl?: string;
+  /** `null` clears it — the schema accepts it and the service stores it. */
+  description?: string | null;
+  imageUrl?: string | null;
   price: number;
   discountPrice?: number | null;
   preparationTime?: number;

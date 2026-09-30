@@ -20,5 +20,6 @@ export * from './order';
 export * from './payment';
 export * from './cash';
 export * from './marketing';
+export * from './customer';
 export * from './courier';
 export * from './telegram';

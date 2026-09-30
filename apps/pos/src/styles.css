@@ -369,3 +369,264 @@ button {
     max-height: 48vh;
   }
 }
+
+/* ==========================================================================
+   Payment, shift and receipt (TZ 17, 19)
+   ========================================================================== */
+
+.pay-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(17 24 39 / 72%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 50;
+}
+
+.pay-sheet {
+  background: #fff;
+  border-radius: 16px;
+  padding: 22px;
+  width: min(460px, 100%);
+  max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 30%);
+}
+
+.pay-sheet__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pay-sheet__total {
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.pay-modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.pay-mode {
+  min-height: 52px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #f9fafb;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.pay-mode--active {
+  background: var(--primary, #ff6b00);
+  border-color: var(--primary, #ff6b00);
+  color: #fff;
+}
+
+.pay-section {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+/* A till is used at arm's length; 20px is the smallest that stays readable. */
+.pay-input {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 20px;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.pay-quick {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.pay-quick__btn {
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pay-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.pay-split strong {
+  display: block;
+  font-size: 19px;
+}
+
+/* The number the cashier needs most, sized so it cannot be misread. */
+.pay-change {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.pay-change strong {
+  font-size: 26px;
+  font-weight: 800;
+}
+
+.pay-change--short {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pay-warn {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: #b45309;
+}
+
+.pay-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.shift-report {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.shift-report__row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.shift-report__row--strong {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.shift-report__rule {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* ------------------------------ receipt --------------------------------- */
+
+.receipt__paper {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  padding: 16px 12px;
+  margin: 14px 0;
+  background: #fafafa;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.receipt__brand {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 3px;
+}
+
+.receipt__meta {
+  text-align: center;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.receipt__number {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 800;
+  margin-top: 6px;
+}
+
+.receipt__rule {
+  border-top: 1px dashed #9ca3af;
+  margin: 10px 0;
+}
+
+.receipt__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1px 0;
+}
+
+.receipt__line--total {
+  font-weight: 800;
+  font-size: 15px;
+  margin: 6px 0;
+}
+
+.receipt__thanks {
+  margin-top: 8px;
+}
+
+.receipt__change {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #dcfce7;
+  color: #14532d;
+  margin-bottom: 14px;
+}
+
+.receipt__change strong {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+/*
+  Printing sends only the receipt to paper. Everything else on screen -- the
+  overlay, the buttons, the whole till behind it -- is chrome that would waste
+  a metre of thermal roll.
+*/
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .receipt__paper,
+  .receipt__paper * {
+    visibility: visible;
+  }
+
+  .receipt__paper {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    border: none;
+    background: #fff;
+  }
+}

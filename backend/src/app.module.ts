@@ -22,6 +22,7 @@ import { BranchesModule } from './modules/branches/branches.module';
 import { CashModule } from './modules/cash/cash.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CouriersModule } from './modules/couriers/couriers.module';
+import { CustomersModule } from './modules/customers/customers.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { HealthModule } from './modules/health/health.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
@@ -137,8 +138,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
     CashModule,
     PaymentsModule,
 
-    // --- Phase 10: marketing ---
+    // --- Phase 10: marketing & CRM ---
     MarketingModule,
+    CustomersModule,
   ],
   providers: [
     /**

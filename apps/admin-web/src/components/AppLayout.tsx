@@ -5,6 +5,7 @@ import {
   IconBranch,
   IconCourier,
   IconDashboard,
+  IconInbox,
   IconLogout,
   IconMenu,
   IconOrders,
@@ -31,6 +32,12 @@ const NAV: NavItem[] = [
   { to: '/employees', label: 'Xodimlar', Icon: IconUsers, permission: Permission.EMPLOYEES_VIEW },
   { to: '/couriers', label: 'Kuryerlar', Icon: IconCourier, permission: Permission.COURIERS_VIEW },
   {
+    to: '/customers',
+    label: 'Mijozlar',
+    Icon: IconInbox,
+    permission: Permission.CUSTOMERS_VIEW,
+  },
+  {
     to: '/marketing',
     label: 'Aksiyalar',
     Icon: IconTag,
@@ -46,6 +53,7 @@ const TITLES: Record<string, string> = {
   '/branches': 'Filiallar',
   '/employees': 'Xodimlar',
   '/couriers': 'Kuryerlar va dispetcher',
+  '/customers': 'Mijozlar va sodiqlik',
   '/marketing': 'Aksiyalar va promokodlar',
   '/telegram': 'Telegram sozlamalari',
 };

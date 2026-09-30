@@ -2,6 +2,9 @@ import type {
   AuditLog,
   Customer,
   CustomerAddress,
+  LoyaltyAccount,
+  LoyaltyProgram,
+  LoyaltyTransaction,
   Paginated,
   PaginationQuery,
   PromoCode,
@@ -22,16 +25,83 @@ import type { HttpClient } from '../http-client';
 export class CustomersResource {
   constructor(private readonly http: HttpClient) {}
 
-  list(query?: PaginationQuery & { segment?: string }): Promise<Paginated<Customer>> {
+  list(
+    query?: PaginationQuery & { search?: string; isBlocked?: boolean },
+  ): Promise<Paginated<Customer>> {
     return this.http.getPaginated<Customer>('customers', { query });
   }
 
+  /** Includes addresses and loyalty standing; the list does not. */
   get(id: string): Promise<Customer> {
     return this.http.get<Customer>(`customers/${id}`);
   }
 
   update(id: string, payload: Partial<Customer>): Promise<Customer> {
     return this.http.patch<Customer>(`customers/${id}`, payload);
+  }
+
+  /** What a manager checks before a goodwill call. */
+  orders(
+    id: string,
+    query?: PaginationQuery,
+  ): Promise<
+    Paginated<{
+      id: string;
+      displayNumber: string;
+      status: string;
+      total: number;
+      createdAt: string;
+    }>
+  > {
+    return this.http.getPaginated(`customers/${id}/orders`, { query });
+  }
+
+  /** Blocking keeps the history and the points — it stops them ordering. */
+  block(id: string, reason?: string): Promise<Customer> {
+    return this.http.post<Customer>(`customers/${id}/block`, { reason });
+  }
+
+  unblock(id: string): Promise<Customer> {
+    return this.http.post<Customer>(`customers/${id}/unblock`);
+  }
+
+  /* ------------------------------ Loyalty --------------------------- */
+
+  loyaltyProgram(): Promise<LoyaltyProgram> {
+    return this.http.get<LoyaltyProgram>('loyalty/program');
+  }
+
+  updateLoyaltyProgram(payload: {
+    isActive?: boolean;
+    cashbackPercent?: number;
+    pointValue?: number;
+    maxRedeemPercent?: number;
+    expiryDays?: number | null;
+    referralBonus?: number;
+  }): Promise<LoyaltyProgram> {
+    return this.http.patch<LoyaltyProgram>('loyalty/program', payload);
+  }
+
+  loyaltyAccount(customerId: string): Promise<LoyaltyAccount> {
+    return this.http.get<LoyaltyAccount>(`customers/${customerId}/loyalty`);
+  }
+
+  loyaltyTransactions(
+    customerId: string,
+    query?: PaginationQuery,
+  ): Promise<Paginated<LoyaltyTransaction>> {
+    return this.http.getPaginated<LoyaltyTransaction>(
+      `customers/${customerId}/loyalty/transactions`,
+      { query },
+    );
+  }
+
+  /** The most this customer could pay with points on a bill of `total`. */
+  loyaltyQuote(
+    customerId: string,
+    total: number,
+  ): Promise<{ points: number; amount: number }> {
+    return this.http.get(`customers/${customerId}/loyalty/quote`, { query: { total } });
   }
 
   /* --- The signed-in customer's own profile (mini app / customer web) --- */

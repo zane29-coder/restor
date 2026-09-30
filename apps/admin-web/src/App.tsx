@@ -10,6 +10,7 @@ import { MenuPage } from './pages/MenuPage';
 import { BranchesPage } from './pages/BranchesPage';
 import { EmployeesPage } from './pages/EmployeesPage';
 import { CouriersPage } from './pages/CouriersPage';
+import { CustomersPage } from './pages/CustomersPage';
 import { MarketingPage } from './pages/MarketingPage';
 import { TelegramPage } from './pages/TelegramPage';
 
@@ -50,6 +51,7 @@ export function App() {
         <Route path="branches" element={<BranchesPage />} />
         <Route path="employees" element={<EmployeesPage />} />
         <Route path="couriers" element={<CouriersPage />} />
+        <Route path="customers" element={<CustomersPage />} />
         <Route path="marketing" element={<MarketingPage />} />
         <Route path="telegram" element={<TelegramPage />} />
       </Route>

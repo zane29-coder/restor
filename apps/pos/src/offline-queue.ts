@@ -1,12 +1,26 @@
-import type { CreateOrderRequest, Order } from '@restor/shared-types';
+import type { CreateOrderRequest, Order, PaymentMethod } from '@restor/shared-types';
 import { RestorApiError } from '@restor/api-client';
 import { api } from './api';
 
 const QUEUE_KEY = 'restor.pos.queue';
 
+/** What the customer handed over, replayed once the link returns. */
+export interface QueuedPayment {
+  parts: Array<{ method: PaymentMethod; amount: number }>;
+}
+
 export interface QueuedOrder {
   clientUuid: string;
   payload: CreateOrderRequest;
+  /**
+   * The tender taken at the till while offline.
+   *
+   * Carried with the order because the money changed hands at the counter —
+   * the server simply has not heard about it yet. Replaying the order without
+   * it would leave a sale that was paid in cash sitting UNPAID, and the
+   * drawer would not balance at close.
+   */
+  payment?: QueuedPayment;
   queuedAt: string;
   attempts: number;
 }
@@ -44,7 +58,10 @@ function writeQueue(queue: QueuedOrder[]): void {
   }
 }
 
-export function enqueue(payload: CreateOrderRequest & { clientUuid: string }): void {
+export function enqueue(
+  payload: CreateOrderRequest & { clientUuid: string },
+  payment?: QueuedPayment,
+): void {
   const queue = readQueue();
   // Guard against the same order being queued twice by a double tap.
   if (queue.some((entry) => entry.clientUuid === payload.clientUuid)) return;
@@ -52,6 +69,7 @@ export function enqueue(payload: CreateOrderRequest & { clientUuid: string }): v
   queue.push({
     clientUuid: payload.clientUuid,
     payload,
+    payment,
     queuedAt: new Date().toISOString(),
     attempts: 0,
   });
@@ -91,6 +109,19 @@ export async function flushQueue(
 
     try {
       const order = await api.orders.create(entry.payload);
+
+      // Settle it with the tender that was taken at the counter. A failure
+      // here is not fatal to the replay: the order exists and is visible, and
+      // a cashier can settle it from the order screen. Losing the ORDER would
+      // be far worse than losing the payment record attached to it.
+      if (entry.payment && entry.payment.parts.length > 0) {
+        try {
+          await settle(order.id, entry.payment);
+        } catch {
+          failed += 1;
+        }
+      }
+
       sent += 1;
       onOrderSynced?.(order);
     } catch (error) {
@@ -110,4 +141,20 @@ export async function flushQueue(
 
 export function queueSize(): number {
   return readQueue().length;
+}
+
+/**
+ * Records a tender against an order.
+ *
+ * One part goes through `payments`, several through `payments/mixed`, because
+ * a mixed payment must land as one atomic write — two separate calls leave a
+ * window where the order is half paid and a crash loses the rest.
+ */
+export async function settle(orderId: string, payment: QueuedPayment): Promise<void> {
+  if (payment.parts.length === 1) {
+    const part = payment.parts[0]!;
+    await api.payments.create({ orderId, method: part.method, amount: part.amount });
+    return;
+  }
+  await api.payments.createMixed({ orderId, parts: payment.parts });
 }
