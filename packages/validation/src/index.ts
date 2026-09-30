@@ -17,5 +17,7 @@ export * from './branch';
 export * from './rbac';
 export * from './catalog';
 export * from './order';
+export * from './payment';
+export * from './cash';
 export * from './courier';
 export * from './telegram';

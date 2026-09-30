@@ -18,11 +18,29 @@ export class CashResource {
     return this.http.get<CashRegister[]>('cash/registers', { query: { branchId } });
   }
 
-  /** The shift currently open on this terminal, if any. */
-  currentShift(cashRegisterId: string): Promise<CashShift | null> {
+  createRegister(payload: {
+    branchId: string;
+    name: string;
+    deviceId?: string | null;
+  }): Promise<CashRegister> {
+    return this.http.post<CashRegister>('cash/registers', payload);
+  }
+
+  /**
+   * The shift currently open at this branch, if any.
+   *
+   * Scoped by branch rather than terminal: a cashier who moves to the second
+   * till mid-shift is still working the same shift, and asking by device id
+   * would hand them a second one.
+   */
+  currentShift(branchId: string): Promise<CashShift | null> {
     return this.http.get<CashShift | null>('cash/shifts/current', {
-      query: { cashRegisterId },
+      query: { branchId },
     });
+  }
+
+  getShift(shiftId: string): Promise<CashShift> {
+    return this.http.get<CashShift>(`cash/shifts/${shiftId}`);
   }
 
   openShift(payload: OpenShiftRequest): Promise<CashShift> {
@@ -44,14 +62,21 @@ export class CashResource {
     return this.http.getPaginated<CashShift>('cash/shifts', { query });
   }
 
-  /** Manual cash in/out during a shift. */
-  addTransaction(payload: {
-    cashShiftId: string;
-    type: string;
-    amount: number;
-    comment?: string;
-  }): Promise<CashTransaction> {
-    return this.http.post<CashTransaction>('cash/transactions', payload);
+  listTransactions(
+    shiftId: string,
+    query?: PaginationQuery,
+  ): Promise<Paginated<CashTransaction>> {
+    return this.http.getPaginated<CashTransaction>(`cash/shifts/${shiftId}/transactions`, {
+      query,
+    });
+  }
+
+  /** Manual cash in/out during a shift. Only those two types are accepted. */
+  addTransaction(
+    shiftId: string,
+    payload: { type: 'CASH_IN' | 'CASH_OUT'; amount: number; comment?: string },
+  ): Promise<CashTransaction> {
+    return this.http.post<CashTransaction>(`cash/shifts/${shiftId}/transactions`, payload);
   }
 }
 

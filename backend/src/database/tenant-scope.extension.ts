@@ -40,6 +40,10 @@ const STRICT_TENANT_MODELS = new Set<string>([
   'ModifierGroup',
   'Order',
   'Payment',
+  // Holds a tenant's encrypted payment-provider key. Scoping it is what stops
+  // one restaurant from reading, or charging against, another's merchant
+  // account.
+  'PaymentProviderConfig',
   'CashRegister',
   'CashShift',
   'CashTransaction',

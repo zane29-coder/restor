@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { CashModule } from '../cash/cash.module';
 import { OrdersModule } from '../orders/orders.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { CourierAppController } from './courier-app.controller';
 import { CourierAppService } from './courier-app.service';
 import { CourierWalletService } from './courier-wallet.service';
@@ -18,7 +20,10 @@ import { CouriersService } from './couriers.service';
  *    JWT's `courierId`, so it can only ever reach its own data.
  */
 @Module({
-  imports: [AuthModule, OrdersModule],
+  // CashModule and PaymentsModule, because a delivery paid in cash is two
+  // separate money events: a payment at the door, and cash reaching a drawer
+  // when the courier hands it over.
+  imports: [AuthModule, OrdersModule, PaymentsModule, CashModule],
   controllers: [CouriersController, CourierAppController],
   providers: [CouriersService, CourierAppService, CourierWalletService],
   exports: [CouriersService, CourierWalletService],

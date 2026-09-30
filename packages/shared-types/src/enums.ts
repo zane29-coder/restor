@@ -120,6 +120,12 @@ export const PaymentMethod = {
   PAYME: 'PAYME',
   QR: 'QR',
   BONUS: 'BONUS',
+  /**
+   * Paid online through Subo, which aggregates Atmos, Click and Payme behind
+   * one hosted checkout. From the till's point of view it is one tender; which
+   * provider settled it is recorded separately on the payment.
+   */
+  SUBO: 'SUBO',
 } as const;
 export type PaymentMethod = (typeof PaymentMethod)[keyof typeof PaymentMethod];
 
@@ -128,6 +134,7 @@ export const ONLINE_PAYMENT_METHODS: readonly PaymentMethod[] = [
   PaymentMethod.CLICK,
   PaymentMethod.PAYME,
   PaymentMethod.QR,
+  PaymentMethod.SUBO,
 ];
 
 export const PaymentTransactionStatus = {

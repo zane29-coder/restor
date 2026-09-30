@@ -30,8 +30,24 @@ export interface Payment extends BaseEntity {
   status: PaymentTransactionStatus;
   /** Provider-side identifier, used to make webhooks idempotent. */
   externalId: string | null;
+  /**
+   * Which provider settled a SUBO payment — `ATMOS`, `CLICK` or `PAYME`.
+   * Unknown until the customer picks one on the checkout page.
+   */
+  provider: string | null;
+  /** Subo's hosted checkout page, kept so a closed tab can be reopened. */
+  checkoutUrl: string | null;
+  /** Subo expires a checkout after 30 minutes; after this, start a new one. */
+  checkoutExpiresAt: string | null;
   paidAt: string | null;
   refundedAmount: number;
+  /**
+   * The shift this tender belongs to.
+   *
+   * `null` is meaningful, not missing: cash a courier took at the door is a
+   * real payment that has not reached a drawer yet, and an online payment
+   * taken at midnight has no cashier at all.
+   */
   cashShiftId: string | null;
   receivedByUserId: string | null;
 }
@@ -124,7 +140,13 @@ export interface CashTransaction extends BaseEntity {
 }
 
 export interface OpenShiftRequest {
-  cashRegisterId: string;
+  branchId: string;
+  /**
+   * Optional: with one register per branch — the normal case — the server
+   * resolves it, so a cashier is never blocked at opening time by a register
+   * row nobody created.
+   */
+  cashRegisterId?: string;
   openingCash: number;
 }
 

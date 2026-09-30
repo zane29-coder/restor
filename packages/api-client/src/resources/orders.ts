@@ -94,8 +94,70 @@ export class PaymentsResource {
   }
 
   listForOrder(orderId: string): Promise<Payment[]> {
-    return this.http.get<Payment[]>(`orders/${orderId}/payments`);
+    return this.http.get<Payment[]>(`payments/order/${orderId}`);
   }
+
+  /* --------------------------- Online (Subo) ------------------------ */
+
+  /**
+   * Whether online payment is configured.
+   *
+   * Reports only state — the API key is write-only, because Subo shows a
+   * merchant key once and a leak from here would be unrecoverable.
+   */
+  suboConfig(): Promise<SuboConfigView> {
+    return this.http.get<SuboConfigView>('payments/subo/config');
+  }
+
+  saveSuboConfig(payload: { apiKey?: string; isActive?: boolean }): Promise<SuboConfigView> {
+    return this.http.post<SuboConfigView>('payments/subo/config', payload);
+  }
+
+  /**
+   * Creates or resumes a Subo checkout for an order.
+   *
+   * Resuming is the point: a customer who closed the tab is sent back to the
+   * same session rather than given a second live charge for one order.
+   *
+   * Omitting `provider` lets the customer choose on Subo's page. Naming
+   * `ATMOS` forces the card path, which is the only one that saves a card for
+   * next time.
+   */
+  startCheckout(payload: {
+    orderId: string;
+    provider?: SuboProvider;
+    returnUrl?: string;
+  }): Promise<SuboCheckout> {
+    return this.http.post<SuboCheckout>('payments/subo/checkout', payload);
+  }
+
+  /** Online attempts for an order — poll this after the customer returns. */
+  listCheckouts(orderId: string): Promise<Payment[]> {
+    return this.http.get<Payment[]>(`payments/subo/order/${orderId}`);
+  }
+}
+
+/** Subo aggregates these three behind one hosted checkout. */
+export type SuboProvider = 'ATMOS' | 'CLICK' | 'PAYME';
+
+export interface SuboCheckout {
+  paymentId: string;
+  orderId: string;
+  suboOrderId: string;
+  /** Send the customer here; valid for 30 minutes. */
+  checkoutUrl: string;
+  expiresAt: string | null;
+  amount: number;
+  status: string;
+}
+
+export interface SuboConfigView {
+  provider: string;
+  hasKey: boolean;
+  isSandbox: boolean;
+  isActive: boolean;
+  /** Where Subo posts callbacks; paste this into their dashboard. */
+  callbackUrl: string;
 }
 
 export class KitchenResource {

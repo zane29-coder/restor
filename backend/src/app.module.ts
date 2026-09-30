@@ -19,6 +19,7 @@ import { PrismaModule } from './database/prisma.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
+import { CashModule } from './modules/cash/cash.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CouriersModule } from './modules/couriers/couriers.module';
 import { EmployeesModule } from './modules/employees/employees.module';
@@ -26,6 +27,7 @@ import { HealthModule } from './modules/health/health.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
@@ -65,6 +67,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
               'req.body.refreshToken',
               'req.body.initData',
               'req.body.botToken',
+              // Subo shows a merchant key once at creation; one leaked log line
+              // would let anyone charge against that restaurant's account.
+              'req.body.apiKey',
               'res.headers["set-cookie"]',
             ],
             censor: '[redacted]',
@@ -126,6 +131,10 @@ import { TelegramModule } from './modules/telegram/telegram.module';
 
     // --- Phase 8: delivery ---
     CouriersModule,
+
+    // --- Phase 9: money ---
+    CashModule,
+    PaymentsModule,
   ],
   providers: [
     /**

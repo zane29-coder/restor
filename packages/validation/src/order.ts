@@ -120,6 +120,8 @@ export const createPaymentSchema = z
     method: paymentMethodSchema,
     amount: moneySchema.positive('Amount must be greater than zero'),
     tendered: moneySchema.optional(),
+    /** Defaults to the branch's open shift; cash without one is refused. */
+    cashShiftId: uuidSchema.optional(),
   })
   .refine((v) => v.tendered === undefined || v.tendered >= v.amount, {
     message: 'Tendered cash is less than the amount being paid',
@@ -133,15 +135,19 @@ export const mixedPaymentSchema = z.object({
     .array(z.object({ method: paymentMethodSchema, amount: moneySchema.positive() }))
     .min(2, 'A mixed payment needs at least two parts')
     .max(5),
+  cashShiftId: uuidSchema.optional(),
 });
 
 export const refundSchema = z.object({
   orderId: uuidSchema,
   amount: moneySchema.positive(),
   reason: z.string().trim().min(3, 'Give a refund reason').max(500),
+  cashShiftId: uuidSchema.optional(),
 });
 
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type OrderListQueryInput = z.infer<typeof orderListQuerySchema>;
 export type CreatePaymentInput = z.infer<typeof createPaymentSchema>;
+export type MixedPaymentInput = z.infer<typeof mixedPaymentSchema>;
+export type RefundInput = z.infer<typeof refundSchema>;

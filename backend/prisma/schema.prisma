@@ -97,6 +97,10 @@ enum PaymentMethod {
   PAYME
   QR
   BONUS
+  /// Paid online through Subo, which aggregates Atmos, Click and Payme behind
+  /// one checkout. Which of them the customer actually used is recorded in
+  /// `Payment.provider` — from the till's point of view it is one tender.
+  SUBO
 }
 
 enum PaymentTransactionStatus {
@@ -299,6 +303,7 @@ model Tenant {
   loyaltyPrograms LoyaltyProgram[]
   loyaltyAccounts LoyaltyAccount[]
   telegramConfigs TelegramConfig[]
+  paymentProviders PaymentProviderConfig[]
   tables          RestaurantTable[]
   waiterCalls     WaiterCall[]
   kitchenStations KitchenStation[]
@@ -1077,6 +1082,14 @@ model Payment {
   /// Provider-side id. Unique per provider so a replayed webhook cannot create
   /// a second payment row for the same charge.
   externalId String? @db.VarChar(128)
+  /// Which provider actually settled a SUBO payment: ATMOS, CLICK or PAYME.
+  /// Unknown until the customer chooses on the checkout page, hence nullable.
+  provider   String?   @db.VarChar(32)
+  /// Subo's hosted checkout page. Kept so a customer who closed the tab can be
+  /// sent back to the same session rather than starting a second charge.
+  checkoutUrl       String?   @db.VarChar(2048)
+  /// Subo expires a checkout after 30 minutes; after this a new one is needed.
+  checkoutExpiresAt DateTime?
   paidAt     DateTime?
   refundedAmount Int  @default(0)
 
@@ -1124,6 +1137,35 @@ model PaymentTransaction {
 
   @@index([paymentId])
   @@map("payment_transactions")
+}
+
+/// One tenant's credentials for an online payment provider (TZ §9, §35).
+///
+/// Per tenant, not per platform: each restaurant has its own Subo merchant
+/// account, and money must land in the account of whoever sold the food.
+model PaymentProviderConfig {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  /// `SUBO` today. A column rather than an enum so adding a provider needs no
+  /// migration in a table that holds only credentials.
+  provider String @db.VarChar(32)
+
+  /// Encrypted at rest and never returned by the API. A leaked key lets anyone
+  /// create charges against this restaurant's merchant account.
+  apiKeyEncrypted String? @db.Text
+  /// Subo issues `sk_test_` keys for sandbox. Derived from the key, stored so
+  /// the admin UI can show which mode is live without decrypting anything.
+  isSandbox Boolean @default(false)
+  isActive  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@map("payment_provider_configs")
 }
 
 // =============================================================================

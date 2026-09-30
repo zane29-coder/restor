@@ -22,6 +22,7 @@ import { getContext } from '../../common/context/request-context';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OrdersService } from '../orders/orders.service';
+import { PaymentsService } from '../payments/payments.service';
 import { CourierWalletService } from './courier-wallet.service';
 
 const JOB_INCLUDE = {
@@ -67,6 +68,7 @@ export class CourierAppService {
     private readonly prisma: PrismaService,
     private readonly wallet: CourierWalletService,
     private readonly orders: OrdersService,
+    private readonly payments: PaymentsService,
     private readonly audit: AuditService,
     private readonly events: EventEmitter2,
   ) {}
@@ -189,6 +191,18 @@ export class CourierAppService {
           orderId: delivery.orderId,
           comment: `${delivery.order.displayNumber} boʻyicha naqd`,
           createdByUserId: getContext()?.userId ?? null,
+        });
+
+        // The customer has paid, so there is a payment row — without one the
+        // order would show as settled with nothing in the payment ledger to
+        // account for it. No shift is attached: the money is in the courier's
+        // pocket, and it joins a drawer only at hand-over.
+        await this.payments.recordCourierCollection(tx, {
+          tenantId: delivery.tenantId,
+          branchId: delivery.branchId,
+          orderId: delivery.orderId,
+          amount: collected,
+          receivedByUserId: getContext()?.userId ?? null,
         });
 
         // The order is now settled, so its payment state has to follow.

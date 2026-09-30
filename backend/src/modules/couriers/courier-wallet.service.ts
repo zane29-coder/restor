@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  CashTransactionType,
   CourierTransactionType,
   ErrorCode,
   HandoverStatus,
+  PaymentMethod,
   type CashHandover,
   type CourierTransaction,
   type CourierWallet,
@@ -13,6 +15,7 @@ import { AppException } from '../../common/errors/app-exception';
 import { getContext } from '../../common/context/request-context';
 import { PrismaService, type PrismaTransaction } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CashService } from '../cash/cash.service';
 
 /**
  * Courier wallet and cash hand-off (TZ §26, §28).
@@ -38,6 +41,7 @@ export class CourierWalletService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly cash: CashService,
   ) {}
 
   /**
@@ -257,6 +261,12 @@ export class CourierWalletService {
 
     const walletId = (await this.ensureWallet(handover.courierId)).id;
 
+    // The cashier confirming is almost always working a shift; falling back to
+    // the branch's open one means the cash is accounted for even when the
+    // client forgot to name it. `null` is still allowed — a manager confirming
+    // out of hours is not standing at a till.
+    const shiftId = await this.resolveHandoverShift(handover.branchId, input.cashShiftId);
+
     const row = await this.prisma.transaction(async (tx) => {
       await this.recordMovement(tx, {
         tenantId: handover.tenantId,
@@ -272,23 +282,23 @@ export class CourierWalletService {
 
       // Cash entering the drawer belongs on the shift too, or the till's
       // expected total will not match what is in it at close (TZ §19).
-      if (input.cashShiftId) {
-        await tx.cashTransaction.create({
-          data: {
-            tenantId: handover.tenantId,
-            branchId: handover.branchId,
-            cashShiftId: input.cashShiftId,
-            type: 'COURIER_HANDOVER',
-            method: 'CASH',
-            amount: confirmedAmount,
-            courierId: handover.courierId,
-            comment: `Kuryer topshirigi`,
-            createdByUserId: userId!,
-          },
-        });
-        await tx.cashShift.update({
-          where: { id: input.cashShiftId },
-          data: { expectedCash: { increment: confirmedAmount } },
+      //
+      // Routed through CashService rather than written here: it is the single
+      // writer of shift totals, and a second copy of that arithmetic is how
+      // the two drift apart. Note what it deliberately does NOT do — add to
+      // `cashTotal`. That sale was counted when the customer paid the courier;
+      // counting it again here would inflate the day's takings.
+      if (shiftId) {
+        await this.cash.record(tx, {
+          tenantId: handover.tenantId,
+          branchId: handover.branchId,
+          cashShiftId: shiftId,
+          type: CashTransactionType.COURIER_HANDOVER,
+          method: PaymentMethod.CASH,
+          amount: confirmedAmount,
+          courierId: handover.courierId,
+          comment: `Kuryer topshirigi: ${handover.courier.user.fullName}`,
+          createdByUserId: userId,
         });
       }
 
@@ -299,7 +309,7 @@ export class CourierWalletService {
           amount: confirmedAmount,
           cashierUserId: userId,
           confirmedAt: new Date(),
-          cashShiftId: input.cashShiftId ?? null,
+          cashShiftId: shiftId,
           ...(input.comment ? { comment: input.comment } : {}),
         },
       });
@@ -314,6 +324,28 @@ export class CourierWalletService {
     });
 
     return toHandover(row, handover.courier.user.fullName, null);
+  }
+
+  /**
+   * The shift a hand-over lands in.
+   *
+   * An explicit id wins; otherwise the branch's open shift, which is where the
+   * cashier confirming it is standing. `null` when nothing is open — the
+   * hand-over is still recorded against the courier's wallet, it just is not
+   * attributed to a drawer, and the audit log says so.
+   */
+  private async resolveHandoverShift(
+    branchId: string,
+    requested?: string,
+  ): Promise<string | null> {
+    if (requested) return requested;
+
+    const open = await this.prisma.db.cashShift.findFirst({
+      where: { branchId, status: 'OPEN' },
+      orderBy: { openedAt: 'desc' },
+      select: { id: true },
+    });
+    return open?.id ?? null;
   }
 
   async listHandovers(query: {
