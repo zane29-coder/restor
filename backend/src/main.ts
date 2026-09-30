@@ -8,6 +8,7 @@ import helmet from 'helmet';
 
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
+import { API_GLOBAL_PREFIX } from './common/constants';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 /**
@@ -27,7 +28,7 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(PinoLogger));
   const config = app.get(AppConfig);
 
-  app.setGlobalPrefix('api/v1', {
+  app.setGlobalPrefix(API_GLOBAL_PREFIX, {
     // Probes stay at the root so a load balancer does not need to know the
     // API version to check health.
     exclude: ['health', 'health/ready'],

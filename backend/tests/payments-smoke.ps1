@@ -112,7 +112,16 @@ Write-Host "`n--- Subo config ---"
 $cfg = (Api GET '/payments/subo/config' $null $oj).data
 Check 'subo config endpoint' ($cfg.provider -eq 'SUBO') $cfg.provider
 Check 'no key configured yet' ($cfg.hasKey -eq $false)
-Check 'callback url is public' ($cfg.callbackUrl -like 'https://*/webhooks/subo') $cfg.callbackUrl
+# The whole path, not a wildcard: a URL missing /api/v1 matches
+# "https://*/webhooks/subo" too, and that is exactly the bug this once hid.
+Check 'callback url carries the api prefix' ($cfg.callbackUrl -like 'https://*/api/v1/webhooks/subo') $cfg.callbackUrl
+try {
+  $probe = Invoke-WebRequest -Uri $cfg.callbackUrl -Method POST -TimeoutSec 20 -UseBasicParsing `
+           -Headers @{'Content-Type'='application/json'} -Body '{"orderId":"probe"}'
+  Check 'the advertised callback url actually answers' ($probe.StatusCode -eq 200) "HTTP $($probe.StatusCode)"
+} catch {
+  Check 'the advertised callback url actually answers' $false "HTTP $($_.Exception.Response.StatusCode.value__)"
+}
 try {
   Api POST '/payments/subo/checkout' @{ orderId=$order.id } $oj | Out-Null
   Check 'checkout without a key is refused' $false 'it was accepted'

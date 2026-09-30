@@ -11,6 +11,7 @@ import {
 } from '@restor/shared-types';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AppException } from '../../common/errors/app-exception';
+import { apiUrl } from '../../common/constants';
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { getContext, runUnscoped } from '../../common/context/request-context';
 import { AppConfig } from '../../config/configuration';
@@ -507,9 +508,16 @@ export class SuboService {
     };
   }
 
-  /** Where Subo should POST its callbacks. Must be reachable from the internet. */
+  /**
+   * Where Subo should POST its callbacks.
+   *
+   * Built through `apiUrl` so it carries the global prefix. Without it the
+   * callback lands on the static site, which answers 405; Subo retries five
+   * times, gives up, and the charge sits PENDING until someone reconciles it
+   * by hand. The customer has paid and the order does not know.
+   */
   private callbackUrl(): string {
-    return `${this.config.apiBaseUrl.replace(/\/+$/, '')}/webhooks/subo`;
+    return apiUrl(this.config.apiBaseUrl, 'webhooks/subo');
   }
 
   private async requireApiKey(): Promise<string> {
