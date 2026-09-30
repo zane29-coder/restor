@@ -31,6 +31,9 @@ export const createBranchSchema = z
     deliveryRadiusM: z.number().int().positive().max(100_000).nullable().default(null),
     minOrderAmount: moneySchema.default(0),
     deliveryPrice: moneySchema.default(0),
+    freeDeliveryRadiusM: z.number().int().positive().max(100_000).nullish(),
+    freeDeliveryFrom: moneySchema.positive().nullish(),
+    deliveryPricePerKm: moneySchema.positive().nullish(),
     averagePrepMinutes: z.number().int().positive().max(240).default(20),
     timezone: timezoneSchema.default('Asia/Tashkent'),
     acceptsDelivery: z.boolean().default(true),
@@ -48,6 +51,22 @@ export const createBranchSchema = z
   .refine((v) => v.deliveryRadiusM === null || v.latitude !== undefined, {
     message: 'A delivery radius needs branch coordinates',
     path: ['deliveryRadiusM'],
+  })
+  .refine(
+    (v) =>
+      v.freeDeliveryRadiusM == null ||
+      v.deliveryRadiusM == null ||
+      v.freeDeliveryRadiusM <= v.deliveryRadiusM,
+    {
+      // A free zone wider than the delivery zone would mean every deliverable
+      // address is free — almost certainly a typo rather than the intent.
+      message: 'The free-delivery radius cannot exceed the delivery radius',
+      path: ['freeDeliveryRadiusM'],
+    },
+  )
+  .refine((v) => v.freeDeliveryRadiusM == null || v.latitude !== undefined, {
+    message: 'A free-delivery radius needs branch coordinates',
+    path: ['freeDeliveryRadiusM'],
   });
 
 export const updateBranchSchema = z.object({
@@ -59,6 +78,9 @@ export const updateBranchSchema = z.object({
   deliveryRadiusM: z.number().int().positive().max(100_000).nullish(),
   minOrderAmount: moneySchema.optional(),
   deliveryPrice: moneySchema.optional(),
+  freeDeliveryRadiusM: z.number().int().positive().max(100_000).nullish(),
+  freeDeliveryFrom: moneySchema.positive().nullish(),
+  deliveryPricePerKm: moneySchema.positive().nullish(),
   averagePrepMinutes: z.number().int().positive().max(240).optional(),
   timezone: timezoneSchema.optional(),
   acceptsDelivery: z.boolean().optional(),
@@ -66,7 +88,18 @@ export const updateBranchSchema = z.object({
   acceptsDineIn: z.boolean().optional(),
   isActive: z.boolean().optional(),
   workingHours: z.array(workingHoursSchema).max(14).optional(),
-});
+}).refine(
+  (v) =>
+    v.freeDeliveryRadiusM == null ||
+    v.deliveryRadiusM == null ||
+    v.freeDeliveryRadiusM <= v.deliveryRadiusM,
+  {
+    // Only checked when both arrive together; a patch that moves one of them
+    // alone is validated against the stored value in the service.
+    message: 'The free-delivery radius cannot exceed the delivery radius',
+    path: ['freeDeliveryRadiusM'],
+  },
+);
 
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;

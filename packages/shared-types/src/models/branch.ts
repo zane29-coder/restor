@@ -14,7 +14,15 @@ export interface Branch extends BaseEntity {
   deliveryRadiusM: number | null;
   /** Minor units (so 25 000 UZS is stored as 25000 — UZS has no subunit). */
   minOrderAmount: number;
+  /** Base charge. Zero is valid: a branch that delivers free sets only this. */
   deliveryPrice: number;
+  /** Free inside this distance; `null` means the base charge applies from
+      the first metre. */
+  freeDeliveryRadiusM: number | null;
+  /** Free once the discounted goods total reaches this, at any distance. */
+  freeDeliveryFrom: number | null;
+  /** Added per started km beyond the free radius; `null` keeps it flat. */
+  deliveryPricePerKm: number | null;
   /** Default minutes from ACCEPTED to READY, used for customer-facing ETAs. */
   averagePrepMinutes: number;
   timezone: string;
@@ -44,9 +52,13 @@ export interface CreateBranchRequest {
   phone?: string;
   latitude?: number;
   longitude?: number;
-  deliveryRadiusM?: number;
+  /** `null` clears the limit; the schema accepts it and the service stores it. */
+  deliveryRadiusM?: number | null;
   minOrderAmount?: number;
   deliveryPrice?: number;
+  freeDeliveryRadiusM?: number | null;
+  freeDeliveryFrom?: number | null;
+  deliveryPricePerKm?: number | null;
   averagePrepMinutes?: number;
   timezone?: string;
   acceptsDelivery?: boolean;

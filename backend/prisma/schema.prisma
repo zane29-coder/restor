@@ -532,9 +532,23 @@ model Branch {
   latitude  Float?
   longitude Float?
 
+  /// How far this branch will deliver at all. `null` means no limit; an
+  /// address beyond it is refused outright rather than priced.
   deliveryRadiusM    Int?
   minOrderAmount     Int     @default(0)
+  /// Base delivery charge. `0` is a perfectly good value — a branch that
+  /// delivers free needs no other setting.
   deliveryPrice      Int     @default(0)
+  /// Delivery is free inside this distance, charged beyond it. `null` means
+  /// no free zone, so `deliveryPrice` applies from the first metre.
+  freeDeliveryRadiusM Int?
+  /// Delivery is free once the order reaches this amount, at any distance.
+  /// Measured on the goods total AFTER discounts, which is what the customer
+  /// actually pays.
+  freeDeliveryFrom    Int?
+  /// Charged per started kilometre beyond the free radius, on top of
+  /// `deliveryPrice`. `null` keeps the charge flat at any distance.
+  deliveryPricePerKm  Int?
   averagePrepMinutes Int     @default(20)
   timezone           String  @default("Asia/Tashkent") @db.VarChar(64)
 

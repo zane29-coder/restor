@@ -155,6 +155,9 @@ export class BranchesService {
         deliveryRadiusM: input.deliveryRadiusM,
         minOrderAmount: input.minOrderAmount,
         deliveryPrice: input.deliveryPrice,
+        freeDeliveryRadiusM: input.freeDeliveryRadiusM ?? null,
+        freeDeliveryFrom: input.freeDeliveryFrom ?? null,
+        deliveryPricePerKm: input.deliveryPricePerKm ?? null,
         averagePrepMinutes: input.averagePrepMinutes,
         timezone: input.timezone,
         acceptsDelivery: input.acceptsDelivery,
@@ -188,6 +191,22 @@ export class BranchesService {
   async update(id: string, input: UpdateBranchInput): Promise<Branch> {
     const before = await this.get(id);
 
+    // The schema can only compare the two radii when both are in the same
+    // request. A patch that moves one alone is checked against what is
+    // already stored, so the pair cannot be walked into an invalid state one
+    // field at a time.
+    const radiusM = input.deliveryRadiusM !== undefined ? input.deliveryRadiusM : before.deliveryRadiusM;
+    const freeRadiusM =
+      input.freeDeliveryRadiusM !== undefined
+        ? input.freeDeliveryRadiusM
+        : before.freeDeliveryRadiusM;
+
+    if (freeRadiusM != null && radiusM != null && freeRadiusM > radiusM) {
+      throw AppException.badRequest(
+        'The free-delivery radius cannot exceed the delivery radius',
+      );
+    }
+
     const row = await this.prisma.transaction(async (tx) => {
       if (input.workingHours) {
         // Replaced wholesale — the editor always submits the full week.
@@ -215,6 +234,9 @@ export class BranchesService {
             'deliveryRadiusM',
             'minOrderAmount',
             'deliveryPrice',
+            'freeDeliveryRadiusM',
+            'freeDeliveryFrom',
+            'deliveryPricePerKm',
             'averagePrepMinutes',
             'timezone',
             'acceptsDelivery',
@@ -323,6 +345,9 @@ function toBranch(row: BranchRow): Branch {
     deliveryRadiusM: row.deliveryRadiusM,
     minOrderAmount: row.minOrderAmount,
     deliveryPrice: row.deliveryPrice,
+    freeDeliveryRadiusM: row.freeDeliveryRadiusM,
+    freeDeliveryFrom: row.freeDeliveryFrom,
+    deliveryPricePerKm: row.deliveryPricePerKm,
     averagePrepMinutes: row.averagePrepMinutes,
     timezone: row.timezone,
     isActive: row.isActive,

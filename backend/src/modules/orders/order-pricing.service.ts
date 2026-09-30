@@ -65,6 +65,64 @@ export interface PricingResult {
   estimatedPrepMinutes: number;
 }
 
+/** The delivery-charge rules a branch can configure (TZ §11). */
+export interface DeliveryPricing {
+  deliveryPrice: number;
+  freeDeliveryRadiusM: number | null;
+  freeDeliveryFrom: number | null;
+  deliveryPricePerKm: number | null;
+}
+
+/**
+ * What a delivery costs.
+ *
+ * Extracted and pure so the arithmetic can be tested exhaustively without a
+ * database: this decides what a customer is charged, and an off-by-one in the
+ * kilometre rounding is the kind of error nobody notices until a month of
+ * orders has been mispriced.
+ *
+ * Three rules a restaurant can combine, checked in this order:
+ *
+ *  1. `freeDeliveryFrom` — free once the order is big enough, at any
+ *     distance. The usual "free over 100 000" offer.
+ *  2. `freeDeliveryRadiusM` — free close to the branch. "Free within 1 km."
+ *  3. `deliveryPricePerKm` — beyond the free zone, a charge per started
+ *     kilometre on top of the base price. `null` keeps the price flat.
+ *
+ * A branch that sets none of them keeps a single flat `deliveryPrice`, and one
+ * that also sets that to zero delivers free everywhere. Both stay valid: this
+ * adds options, it does not require them.
+ *
+ * `distanceM` is `null` when the distance is unknown — a phone order with no
+ * map pin. Every distance-based rule then stands down and the flat price
+ * applies, which is the only honest answer when nobody knows how far it is.
+ */
+export function deliveryFeeFor(
+  branch: DeliveryPricing,
+  distanceM: number | null,
+  goodsTotal: number,
+): number {
+  if (branch.freeDeliveryFrom != null && goodsTotal >= branch.freeDeliveryFrom) {
+    return 0;
+  }
+
+  const freeRadiusM = branch.freeDeliveryRadiusM;
+  if (freeRadiusM != null && distanceM != null && distanceM <= freeRadiusM) {
+    return 0;
+  }
+
+  if (branch.deliveryPricePerKm == null || distanceM == null) {
+    return branch.deliveryPrice;
+  }
+
+  // Charged from the edge of the free zone outwards, per started kilometre:
+  // 1 200 m with a 1 km free zone is one chargeable kilometre, not two.
+  const chargeableM = Math.max(0, distanceM - (freeRadiusM ?? 0));
+  const chargeableKm = Math.ceil(chargeableM / 1000);
+
+  return addMoney(branch.deliveryPrice, multiplyMoney(branch.deliveryPricePerKm, chargeableKm));
+}
+
 /**
  * Prices a cart entirely from server-side data (TZ §76).
  *
@@ -90,7 +148,10 @@ export class OrderPricingService {
     const items = await this.priceItems(request);
     const subtotal = addMoney(...items.map((item) => item.total));
 
-    const deliveryFee = this.deliveryFeeFor(request, branch, warnings);
+    // Deliverability is settled before any discount work: an address outside
+    // the radius is refused, not priced, and there is no point evaluating
+    // promotions for an order that cannot be delivered.
+    const distanceM = this.assertDeliverable(request, branch, warnings);
 
     // Promotions first, then the promo code on top of the already-reduced
     // subtotal — otherwise a 20% promotion plus a 20% code could exceed 40%.
@@ -107,6 +168,12 @@ export class OrderPricingService {
     if (promo.applied) appliedPromotions.push(promo.applied);
 
     const discountTotal = addMoney(promotionDiscount, promo.discount);
+
+    // The free-delivery threshold is measured on what the customer actually
+    // pays for the goods, not the pre-discount subtotal: a code that halves a
+    // basket should not still earn the reward for a large order.
+    const goodsTotal = subtractMoney(subtotal, discountTotal);
+    const deliveryFee = this.deliveryFeeFor(request, branch, distanceM, goodsTotal);
     const effectiveDeliveryFee = promo.freeDelivery ? 0 : deliveryFee;
 
     if (subtotal < branch.minOrderAmount && request.type === OrderType.DELIVERY) {
@@ -292,48 +359,70 @@ export class OrderPricingService {
     return resolved;
   }
 
-  private deliveryFeeFor(
+  /**
+   * Refuses an undeliverable address and reports how far it is.
+   *
+   * Returns `null` when the distance is unknown — either the branch has no
+   * coordinates or the address does not. That is not an error: plenty of
+   * orders are typed in by phone with no map pin, and refusing them would be
+   * worse than pricing them at the flat rate.
+   */
+  private assertDeliverable(
     request: PricingRequest,
     branch: {
-      deliveryPrice: number;
       deliveryRadiusM: number | null;
       latitude: number | null;
       longitude: number | null;
       acceptsDelivery: boolean;
     },
     warnings: string[],
-  ): number {
-    if (request.type !== OrderType.DELIVERY) return 0;
+  ): number | null {
+    if (request.type !== OrderType.DELIVERY) return null;
 
     if (!branch.acceptsDelivery) {
       throw AppException.badRequest('This branch does not deliver');
     }
 
-    const hasTarget =
-      request.deliveryLatitude != null && request.deliveryLongitude != null;
+    const hasTarget = request.deliveryLatitude != null && request.deliveryLongitude != null;
     const hasOrigin = branch.latitude != null && branch.longitude != null;
 
-    if (hasTarget && hasOrigin) {
-      const origin = { latitude: branch.latitude!, longitude: branch.longitude! };
-      const target = {
-        latitude: request.deliveryLatitude!,
-        longitude: request.deliveryLongitude!,
-      };
-
-      if (!isWithinRadius(origin, target, branch.deliveryRadiusM)) {
-        throw new AppException(
-          ErrorCode.OUTSIDE_DELIVERY_RADIUS,
-          'That address is outside this branch’s delivery area',
-          422,
-        );
+    if (!hasTarget || !hasOrigin) {
+      if (branch.deliveryRadiusM != null) {
+        // Without coordinates the radius cannot be checked; the order is still
+        // accepted, but the dispatcher is told to confirm.
+        warnings.push('Delivery address has no coordinates; the radius was not verified');
       }
-    } else if (branch.deliveryRadiusM != null) {
-      // Without coordinates the radius cannot be checked; the order is still
-      // accepted, but the dispatcher is told to confirm.
-      warnings.push('Delivery address has no coordinates; the radius was not verified');
+      return null;
     }
 
-    return branch.deliveryPrice;
+    const distanceM = distanceMeters(
+      { latitude: branch.latitude!, longitude: branch.longitude! },
+      { latitude: request.deliveryLatitude!, longitude: request.deliveryLongitude! },
+    );
+
+    if (!isWithinRadius(
+      { latitude: branch.latitude!, longitude: branch.longitude! },
+      { latitude: request.deliveryLatitude!, longitude: request.deliveryLongitude! },
+      branch.deliveryRadiusM,
+    )) {
+      throw new AppException(
+        ErrorCode.OUTSIDE_DELIVERY_RADIUS,
+        'That address is outside this branch’s delivery area',
+        422,
+      );
+    }
+
+    return distanceM;
+  }
+
+  private deliveryFeeFor(
+    request: PricingRequest,
+    branch: DeliveryPricing,
+    distanceM: number | null,
+    goodsTotal: number,
+  ): number {
+    if (request.type !== OrderType.DELIVERY) return 0;
+    return deliveryFeeFor(branch, distanceM, goodsTotal);
   }
 
   /**
