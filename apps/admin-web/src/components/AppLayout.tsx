@@ -3,10 +3,12 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Permission } from '@restor/shared-types';
 import {
   IconBranch,
+  IconCourier,
   IconDashboard,
   IconLogout,
   IconMenu,
   IconOrders,
+  IconTag,
   IconTelegram,
   IconUsers,
   type IconProps,
@@ -27,6 +29,13 @@ const NAV: NavItem[] = [
   { to: '/menu', label: 'Menyu', Icon: IconMenu, permission: Permission.PRODUCTS_VIEW },
   { to: '/branches', label: 'Filiallar', Icon: IconBranch, permission: Permission.BRANCHES_VIEW },
   { to: '/employees', label: 'Xodimlar', Icon: IconUsers, permission: Permission.EMPLOYEES_VIEW },
+  { to: '/couriers', label: 'Kuryerlar', Icon: IconCourier, permission: Permission.COURIERS_VIEW },
+  {
+    to: '/marketing',
+    label: 'Aksiyalar',
+    Icon: IconTag,
+    permission: Permission.PROMOTIONS_VIEW,
+  },
   { to: '/telegram', label: 'Telegram', Icon: IconTelegram, permission: Permission.TELEGRAM_VIEW },
 ];
 
@@ -36,6 +45,8 @@ const TITLES: Record<string, string> = {
   '/menu': 'Menyu',
   '/branches': 'Filiallar',
   '/employees': 'Xodimlar',
+  '/couriers': 'Kuryerlar va dispetcher',
+  '/marketing': 'Aksiyalar va promokodlar',
   '/telegram': 'Telegram sozlamalari',
 };
 

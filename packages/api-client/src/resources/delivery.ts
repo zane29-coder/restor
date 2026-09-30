@@ -6,6 +6,7 @@ import type {
   CourierStatus,
   CourierTransaction,
   CourierWallet,
+  Order,
   Paginated,
   PaginationQuery,
   ReportLocationRequest,
@@ -54,9 +55,34 @@ export class CouriersResource {
     );
   }
 
-  /** Cashier confirming cash a courier declared (TZ §28). */
-  confirmHandover(handoverId: string): Promise<CashHandover> {
-    return this.http.post<CashHandover>(`handovers/${handoverId}/confirm`);
+  /** Puts a waiting delivery on a courier (TZ §23). */
+  assign(
+    orderId: string,
+    payload: { courierId: string; courierFee?: number; comment?: string },
+  ): Promise<Order> {
+    return this.http.post<Order>(`orders/${orderId}/courier`, payload);
+  }
+
+  /** Couriers ranked by current load, then distance. */
+  suggestions(orderId: string): Promise<Array<Courier & { distanceM?: number }>> {
+    return this.http.get<Array<Courier & { distanceM?: number }>>(
+      `orders/${orderId}/courier-suggestions`,
+    );
+  }
+
+  /**
+   * Cashier confirming cash a courier declared (TZ §28).
+   *
+   * `amount` is what was actually counted. Omitting it accepts the declared
+   * figure; sending a different one records a discrepancy rather than
+   * silently overwriting the claim — that difference is the point of a
+   * two-sided confirmation.
+   */
+  confirmHandover(
+    handoverId: string,
+    payload?: { amount?: number; cashShiftId?: string; comment?: string },
+  ): Promise<CashHandover> {
+    return this.http.post<CashHandover>(`handovers/${handoverId}/confirm`, payload ?? {});
   }
 
   listHandovers(query?: PaginationQuery & { branchId?: string; courierId?: string }): Promise<

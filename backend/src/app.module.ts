@@ -25,6 +25,7 @@ import { CouriersModule } from './modules/couriers/couriers.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { HealthModule } from './modules/health/health.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -135,6 +136,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
     // --- Phase 9: money ---
     CashModule,
     PaymentsModule,
+
+    // --- Phase 10: marketing ---
+    MarketingModule,
   ],
   providers: [
     /**

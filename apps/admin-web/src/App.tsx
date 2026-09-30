@@ -9,6 +9,8 @@ import { OrdersPage } from './pages/OrdersPage';
 import { MenuPage } from './pages/MenuPage';
 import { BranchesPage } from './pages/BranchesPage';
 import { EmployeesPage } from './pages/EmployeesPage';
+import { CouriersPage } from './pages/CouriersPage';
+import { MarketingPage } from './pages/MarketingPage';
 import { TelegramPage } from './pages/TelegramPage';
 
 export function App() {
@@ -47,6 +49,8 @@ export function App() {
         <Route path="menu" element={<MenuPage />} />
         <Route path="branches" element={<BranchesPage />} />
         <Route path="employees" element={<EmployeesPage />} />
+        <Route path="couriers" element={<CouriersPage />} />
+        <Route path="marketing" element={<MarketingPage />} />
         <Route path="telegram" element={<TelegramPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

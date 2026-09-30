@@ -212,6 +212,26 @@ export const IconMapPin = (props: IconProps) => (
   </Icon>
 );
 
+/** A scooter: the vehicle most RESTOR deliveries actually arrive on. */
+export const IconCourier = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="5.5" cy="17.5" r="2.5" />
+    <circle cx="18" cy="17.5" r="2.5" />
+    <path d="M8 17.5h7.5" />
+    <path d="M13 6h3l2 11.5" />
+    <path d="M5.5 15V11h5l2.5 3" />
+    <path d="M4 8h3" />
+  </Icon>
+);
+
+/** A price tag: promotions and promo codes. */
+export const IconTag = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M11.5 3.5H19a1.5 1.5 0 0 1 1.5 1.5v7.5a2 2 0 0 1-.6 1.4l-6.5 6.5a2 2 0 0 1-2.8 0l-6.5-6.5a2 2 0 0 1 0-2.8l6.5-6.5a2 2 0 0 1 1.4-.6Z" />
+    <circle cx="16" cy="8" r="1.5" />
+  </Icon>
+);
+
 export const IconLogout = (props: IconProps) => (
   <Icon {...props}>
     <path d="M14 4.5h4a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-4" />

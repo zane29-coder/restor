@@ -19,5 +19,6 @@ export * from './catalog';
 export * from './order';
 export * from './payment';
 export * from './cash';
+export * from './marketing';
 export * from './courier';
 export * from './telegram';

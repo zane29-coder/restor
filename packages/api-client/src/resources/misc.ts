@@ -5,6 +5,7 @@ import type {
   Paginated,
   PaginationQuery,
   PromoCode,
+  PromoCodeUsage,
   Promotion,
   RestaurantTable,
   TelegramConfig,
@@ -56,8 +57,14 @@ export class CustomersResource {
 export class MarketingResource {
   constructor(private readonly http: HttpClient) {}
 
-  listPromotions(query?: PaginationQuery): Promise<Paginated<Promotion>> {
+  listPromotions(
+    query?: PaginationQuery & { branchId?: string; isActive?: boolean; search?: string },
+  ): Promise<Paginated<Promotion>> {
     return this.http.getPaginated<Promotion>('promotions', { query });
+  }
+
+  getPromotion(id: string): Promise<Promotion> {
+    return this.http.get<Promotion>(`promotions/${id}`);
   }
 
   createPromotion(payload: unknown): Promise<Promotion> {
@@ -68,12 +75,40 @@ export class MarketingResource {
     return this.http.patch<Promotion>(`promotions/${id}`, payload);
   }
 
-  listPromoCodes(query?: PaginationQuery): Promise<Paginated<PromoCode>> {
+  /** Soft delete: orders already priced with it still name it. */
+  deletePromotion(id: string): Promise<void> {
+    return this.http.delete<void>(`promotions/${id}`);
+  }
+
+  listPromoCodes(
+    query?: PaginationQuery & { isActive?: boolean; search?: string },
+  ): Promise<Paginated<PromoCode>> {
     return this.http.getPaginated<PromoCode>('promo-codes', { query });
+  }
+
+  getPromoCode(id: string): Promise<PromoCode> {
+    return this.http.get<PromoCode>(`promo-codes/${id}`);
   }
 
   createPromoCode(payload: unknown): Promise<PromoCode> {
     return this.http.post<PromoCode>('promo-codes', payload);
+  }
+
+  /** The code itself is not patchable — customers already have it. */
+  updatePromoCode(id: string, payload: unknown): Promise<PromoCode> {
+    return this.http.patch<PromoCode>(`promo-codes/${id}`, payload);
+  }
+
+  deletePromoCode(id: string): Promise<void> {
+    return this.http.delete<void>(`promo-codes/${id}`);
+  }
+
+  /** Who redeemed a code and for how much — the campaign's actual result. */
+  listPromoCodeUsages(
+    id: string,
+    query?: PaginationQuery,
+  ): Promise<Paginated<PromoCodeUsage>> {
+    return this.http.getPaginated<PromoCodeUsage>(`promo-codes/${id}/usages`, { query });
   }
 
   /** Checks a code against a cart before the order is placed. */
