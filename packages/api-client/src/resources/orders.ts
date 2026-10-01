@@ -3,6 +3,7 @@ import type {
   CreateOrderRequest,
   CreatePaymentRequest,
   DashboardStats,
+  FinanceReport,
   KitchenTicket,
   MixedPaymentRequest,
   Order,
@@ -12,6 +13,8 @@ import type {
   Paginated,
   Payment,
   RefundRequest,
+  SalesReport,
+  TopProductRow,
   UpdateOrderStatusRequest,
 } from '@restor/shared-types';
 import type { HttpClient } from '../http-client';
@@ -182,11 +185,31 @@ export class KitchenResource {
 export class ReportsResource {
   constructor(private readonly http: HttpClient) {}
 
-  dashboard(query?: {
-    branchId?: string;
-    dateFrom?: string;
-    dateTo?: string;
-  }): Promise<DashboardStats> {
+  dashboard(query?: ReportQuery): Promise<DashboardStats> {
     return this.http.get<DashboardStats>('reports/dashboard', { query });
   }
+
+  /** Revenue by type, source, tender and time. */
+  sales(query?: ReportQuery & { granularity?: Granularity }): Promise<SalesReport> {
+    return this.http.get<SalesReport>('reports/sales', { query });
+  }
+
+  /** Ranked by revenue, with an ABC split for kitchen planning. */
+  products(query?: ReportQuery & { limit?: number }): Promise<TopProductRow[]> {
+    return this.http.get<TopProductRow[]>('reports/products', { query });
+  }
+
+  /** Shift totals and every closing discrepancy. Needs `finance.view`. */
+  finance(query?: ReportQuery): Promise<FinanceReport> {
+    return this.http.get<FinanceReport>('reports/finance', { query });
+  }
 }
+
+/** Dates are `YYYY-MM-DD`; the server resolves them in the branch's timezone. */
+export interface ReportQuery {
+  branchId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export type Granularity = 'hour' | 'day' | 'week' | 'month';

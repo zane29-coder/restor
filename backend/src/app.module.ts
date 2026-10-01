@@ -32,6 +32,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { RbacModule } from './modules/rbac/rbac.module';
+import { ReportsModule } from './modules/reports/reports.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
@@ -141,6 +142,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
     // --- Phase 10: marketing & CRM ---
     MarketingModule,
     CustomersModule,
+
+    // --- Phase 11: reporting ---
+    ReportsModule,
   ],
   providers: [
     /**

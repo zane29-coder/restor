@@ -12,6 +12,7 @@ import { EmployeesPage } from './pages/EmployeesPage';
 import { CouriersPage } from './pages/CouriersPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { MarketingPage } from './pages/MarketingPage';
+import { ReportsPage } from './pages/ReportsPage';
 import { TelegramPage } from './pages/TelegramPage';
 
 export function App() {
@@ -53,6 +54,7 @@ export function App() {
         <Route path="couriers" element={<CouriersPage />} />
         <Route path="customers" element={<CustomersPage />} />
         <Route path="marketing" element={<MarketingPage />} />
+        <Route path="reports" element={<ReportsPage />} />
         <Route path="telegram" element={<TelegramPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

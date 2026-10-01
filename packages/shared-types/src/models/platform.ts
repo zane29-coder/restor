@@ -4,6 +4,8 @@ import type {
   NotificationChannel,
   NotificationStatus,
   OrderSource,
+  OrderType,
+  PaymentMethod,
   StorageProvider,
   TelegramEvent,
   WaiterCallStatus,
@@ -253,4 +255,81 @@ export interface TopProductRow {
   name: string;
   quantity: number;
   revenue: number;
+  /**
+   * ABC class by share of revenue: A is the top 80%, B the next 15%, C the
+   * rest. The point of the split is that A items are what a kitchen must
+   * never run out of, and C items are what a menu can afford to lose.
+   */
+  abcClass?: 'A' | 'B' | 'C';
+  /** This product's share of the period's revenue, as a percentage. */
+  revenueSharePercent?: number;
+}
+
+/** How a period's takings were tendered (TZ §35). */
+export interface PaymentBreakdownRow {
+  method: PaymentMethod;
+  amount: number;
+  count: number;
+  sharePercent: number;
+}
+
+/** One period's trading, the figures an owner checks daily (TZ §7). */
+export interface SalesReport {
+  dateFrom: string;
+  dateTo: string;
+  branchId: string | null;
+  revenue: number;
+  /** Refunds issued in the period, already subtracted from `revenue`. */
+  refunds: number;
+  ordersCount: number;
+  averageCheck: number;
+  /** Discounts and promotions given away — what the offers actually cost. */
+  discountTotal: number;
+  deliveryFees: number;
+  byType: Array<{ type: OrderType; count: number; revenue: number }>;
+  bySource: Array<{ source: OrderSource; count: number; revenue: number }>;
+  byPayment: PaymentBreakdownRow[];
+  timeline: RevenuePoint[];
+}
+
+/** Cash accountability across a period's shifts (TZ §19). */
+export interface FinanceReport {
+  dateFrom: string;
+  dateTo: string;
+  branchId: string | null;
+  shiftsCount: number;
+  /**
+   * Shifts still open, excluded from the reconciliation below.
+   *
+   * An open shift has nothing counted yet, so including it would make
+   * `expectedCash` and `countedCash` disagree by its whole balance and leave
+   * a reader wondering where the gap came from.
+   */
+  openShiftsCount: number;
+  openingCash: number;
+  cashSales: number;
+  cardSales: number;
+  onlineSales: number;
+  refunds: number;
+  cashIn: number;
+  cashOut: number;
+  courierHandovers: number;
+  /** Expected in the drawers of CLOSED shifts. Ties to `countedCash`. */
+  expectedCash: number;
+  countedCash: number;
+  /** `countedCash − expectedCash`. Negative is a shortage. */
+  difference: number;
+  /** Still sitting in the drawers of shifts nobody has closed yet. */
+  cashInOpenShifts: number;
+  /** Shifts that closed with a difference, newest first — what to look at. */
+  discrepancies: Array<{
+    shiftId: string;
+    branchId: string;
+    closedAt: string | null;
+    expectedCash: number;
+    actualCash: number | null;
+    difference: number;
+    closedByName: string | null;
+    comment: string | null;
+  }>;
 }
