@@ -77,7 +77,11 @@ export class CustomersService {
     // It also sidesteps a sharp edge in URLs: a raw `+` in a query string
     // decodes as a space, so even an exactly-correct number can arrive
     // mangled. Digits survive that.
-    const digits = search?.replace(/\D/g, '') ?? '';
+    // Only when the term has NO letters. "Ali 999" is a name that happens to
+    // contain digits; stripping it to "999" would match every phone with 999
+    // anywhere in it, which is how a search for a missing customer came back
+    // with somebody else's.
+    const digits = search && !/\p{L}/u.test(search) ? search.replace(/\D/g, '') : '';
 
     const where = {
       deletedAt: null,
