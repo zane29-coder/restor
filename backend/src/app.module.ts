@@ -25,6 +25,7 @@ import { CouriersModule } from './modules/couriers/couriers.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { HealthModule } from './modules/health/health.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -149,6 +150,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
 
     // --- Phase 12: dine-in QR service ---
     TablesModule,
+
+    // --- Phase 13: inventory ---
+    InventoryModule,
   ],
   providers: [
     /**

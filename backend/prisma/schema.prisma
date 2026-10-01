@@ -242,6 +242,31 @@ enum WaiterCallStatus {
   CANCELLED
 }
 
+/// How a stock item is measured. Recipe quantities use the item's own unit.
+enum StockUnit {
+  KG
+  G
+  L
+  ML
+  PCS
+}
+
+enum StockMovementType {
+  /// Delivery from a supplier. Raises quantity.
+  RECEIPT
+  /// Used making an order. Lowers quantity, written automatically.
+  CONSUMPTION
+  /// Spoiled, dropped, burnt. Lowers quantity and is reported separately —
+  /// waste is the number a manager acts on.
+  WASTE
+  /// A stock-take correcting the books to the shelf. Signed.
+  ADJUSTMENT
+  /// Sent to another branch. Lowers quantity here.
+  TRANSFER_OUT
+  /// Received from another branch. Raises it there.
+  TRANSFER_IN
+}
+
 enum StorageProvider {
   LOCAL
   S3
@@ -304,6 +329,9 @@ model Tenant {
   loyaltyAccounts LoyaltyAccount[]
   telegramConfigs TelegramConfig[]
   paymentProviders PaymentProviderConfig[]
+  suppliers        Supplier[]
+  stockItems       StockItem[]
+  stockMovements   StockMovement[]
   tables          RestaurantTable[]
   waiterCalls     WaiterCall[]
   kitchenStations KitchenStation[]
@@ -412,6 +440,7 @@ model User {
   shiftsClosed        CashShift[]           @relation("ShiftClosedBy")
   cashTransactions    CashTransaction[]
   courierTransactions CourierTransaction[]
+  stockMovements      StockMovement[]
   handoversConfirmed  CashHandover[]        @relation("HandoverCashier")
   waiterCallsHandled  WaiterCall[]
   auditLogs           AuditLog[]
@@ -586,6 +615,7 @@ model Branch {
   cashHandovers    CashHandover[]
   telegramConfigs  TelegramConfig[]
   telegramRoutes   TelegramRoute[]
+  stockItems       StockItem[]
   tables           RestaurantTable[]
   waiterCalls      WaiterCall[]
   kitchenStations  KitchenStation[]
@@ -766,6 +796,8 @@ model Product {
   modifierGroups ProductModifierGroup[]
   branchSettings ProductBranch[]
   orderItems     OrderItem[]
+  /// What one unit consumes. Empty means the product is not stock-tracked.
+  ingredients    ProductIngredient[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, categoryId, isActive])
@@ -970,6 +1002,7 @@ model Order {
   delivery        Delivery?
   cashTransactions CashTransaction[]
   courierTransactions CourierTransaction[]
+  stockMovements      StockMovement[]
   promoCodeUsage  PromoCodeUsage?
   appliedPromotions OrderPromotion[]
   loyaltyTransactions LoyaltyTransaction[]
@@ -1907,4 +1940,131 @@ model FileAsset {
   @@unique([provider, key])
   @@index([tenantId, createdAt])
   @@map("files")
+}
+
+// =============================================================================
+// INVENTORY (TZ 29-31)
+// =============================================================================
+
+/// Who a restaurant buys from.
+model Supplier {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  name    String  @db.VarChar(200)
+  phone   String? @db.VarChar(20)
+  contact String? @db.VarChar(200)
+  comment String? @db.VarChar(500)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  movements StockMovement[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, isActive])
+  @@map("suppliers")
+}
+
+/// One tracked ingredient or supply, held AT A BRANCH.
+///
+/// Stock is per branch, never per tenant: flour sitting in Chilonzor cannot be
+/// used by Yunusobod, and a single pooled figure would let a branch sell a
+/// dish it has no ingredients for.
+model StockItem {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  name String    @db.VarChar(200)
+  unit StockUnit @default(PCS)
+
+  /// On hand. Decimal, not Float: 0.1 kg three hundred times must come to
+  /// exactly 30 kg, and binary floats do not.
+  quantity Decimal @default(0) @db.Decimal(14, 3)
+  /// Reorder threshold. At or below it the item shows as low.
+  minQuantity Decimal? @db.Decimal(14, 3)
+  /// Last known purchase cost of ONE unit, in minor units.
+  costPerUnit Int @default(0)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  movements   StockMovement[]
+  ingredients ProductIngredient[]
+
+  @@unique([branchId, name])
+  @@index([tenantId, branchId])
+  @@map("stock_items")
+}
+
+/// Every change to a stock level, append-only.
+///
+/// The quantity on StockItem is a running total of these rows. Keeping both
+/// means a stock level can always be explained, and a disagreement between
+/// them is itself a finding.
+model StockMovement {
+  id          String @id @default(uuid()) @db.Uuid
+  tenantId    String @db.Uuid
+  stockItemId String @db.Uuid
+
+  type StockMovementType
+  /// Signed: the sign IS the direction, so summing the ledger reproduces the
+  /// level without knowing each type's rules.
+  quantity Decimal @db.Decimal(14, 3)
+  /// Cost of one unit for a RECEIPT; null for everything else.
+  costPerUnit Int?
+
+  supplierId String? @db.Uuid
+  /// Set on CONSUMPTION so a deduction can be traced to the sale that caused it.
+  orderId    String? @db.Uuid
+  comment    String? @db.VarChar(500)
+
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  supplier  Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  order     Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdBy User?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([stockItemId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([orderId])
+  @@map("stock_movements")
+}
+
+/// What one unit of a product consumes.
+///
+/// A product with no rows here is simply not stock-tracked, which is the
+/// incremental path: a restaurant can cost its ten busiest dishes without
+/// having to model every item on the menu first.
+model ProductIngredient {
+  id          String @id @default(uuid()) @db.Uuid
+  productId   String @db.Uuid
+  stockItemId String @db.Uuid
+
+  /// In the stock item's own unit.
+  quantity Decimal @db.Decimal(14, 3)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, stockItemId])
+  @@index([stockItemId])
+  @@map("product_ingredients")
 }

@@ -23,5 +23,6 @@ export * from './marketing';
 export * from './customer';
 export * from './report';
 export * from './table';
+export * from './inventory';
 export * from './courier';
 export * from './telegram';

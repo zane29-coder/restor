@@ -13,6 +13,7 @@ import { CouriersPage } from './pages/CouriersPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { MarketingPage } from './pages/MarketingPage';
 import { ReportsPage } from './pages/ReportsPage';
+import { InventoryPage } from './pages/InventoryPage';
 import { TablesPage } from './pages/TablesPage';
 import { TelegramPage } from './pages/TelegramPage';
 
@@ -57,6 +58,7 @@ export function App() {
         <Route path="marketing" element={<MarketingPage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="tables" element={<TablesPage />} />
+        <Route path="inventory" element={<InventoryPage />} />
         <Route path="telegram" element={<TelegramPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

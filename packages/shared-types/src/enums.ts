@@ -374,3 +374,33 @@ export const Currency = {
   USD: 'USD',
 } as const;
 export type Currency = (typeof Currency)[keyof typeof Currency];
+
+/* -------------------------------------------------------------------------- */
+/* Inventory (TZ 29-31)                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** How a stock item is measured. Recipe quantities use the item's own unit. */
+export const StockUnit = {
+  KG: 'KG',
+  G: 'G',
+  L: 'L',
+  ML: 'ML',
+  PCS: 'PCS',
+} as const;
+export type StockUnit = (typeof StockUnit)[keyof typeof StockUnit];
+
+export const StockMovementType = {
+  /** Delivery from a supplier. Raises the level. */
+  RECEIPT: 'RECEIPT',
+  /** Used making an order. Lowers it, written automatically. */
+  CONSUMPTION: 'CONSUMPTION',
+  /** Spoiled, dropped, burnt. Reported separately -- waste is what a manager
+      acts on, and burying it in consumption hides it. */
+  WASTE: 'WASTE',
+  /** A stock-take correcting the books to the shelf. Carries its own sign. */
+  ADJUSTMENT: 'ADJUSTMENT',
+  TRANSFER_OUT: 'TRANSFER_OUT',
+  TRANSFER_IN: 'TRANSFER_IN',
+} as const;
+export type StockMovementType =
+  (typeof StockMovementType)[keyof typeof StockMovementType];

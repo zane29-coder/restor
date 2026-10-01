@@ -6,6 +6,7 @@ import {
   IconCourier,
   IconDashboard,
   IconInbox,
+  IconInfo,
   IconLogout,
   IconKitchen,
   IconMenu,
@@ -46,6 +47,7 @@ const NAV: NavItem[] = [
     permission: Permission.PROMOTIONS_VIEW,
   },
   { to: '/tables', label: 'Stollar', Icon: IconKitchen, permission: Permission.TABLES_VIEW },
+  { to: '/inventory', label: 'Ombor', Icon: IconInfo, permission: Permission.INVENTORY_VIEW },
   { to: '/reports', label: 'Hisobotlar', Icon: IconPos, permission: Permission.REPORTS_VIEW },
   { to: '/telegram', label: 'Telegram', Icon: IconTelegram, permission: Permission.TELEGRAM_VIEW },
 ];
@@ -60,6 +62,7 @@ const TITLES: Record<string, string> = {
   '/customers': 'Mijozlar va sodiqlik',
   '/marketing': 'Aksiyalar va promokodlar',
   '/tables': 'Stollar va QR xizmat',
+  '/inventory': 'Ombor va yetkazib beruvchilar',
   '/reports': 'Hisobotlar',
   '/telegram': 'Telegram sozlamalari',
 };

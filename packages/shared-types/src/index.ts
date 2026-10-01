@@ -19,4 +19,5 @@ export * from './models/catalog';
 export * from './models/order';
 export * from './models/operations';
 export * from './models/crm';
+export * from './models/inventory';
 export * from './models/platform';

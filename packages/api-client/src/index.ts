@@ -22,6 +22,7 @@ export {
 export type { TokenStore, StoredTokens } from './token-store';
 
 export { AuthResource } from './resources/auth';
+export { InventoryResource } from './resources/inventory';
 export { PlatformResource } from './resources/platform';
 export {
   BranchesResource,

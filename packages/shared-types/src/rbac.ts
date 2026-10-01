@@ -124,6 +124,18 @@ export const Permission = {
   TABLES_MANAGE: 'tables.manage',
   WAITER_CALLS_HANDLE: 'waiter_calls.handle',
 
+  // --- Inventory (TZ §29-§31) ---
+  INVENTORY_VIEW: 'inventory.view',
+  /**
+   * Covers stock levels, suppliers AND recipes.
+   *
+   * Not split finer on purpose: a storekeeper who records a delivery is the
+   * same person who corrects a level after a stock-take, and a recipe is what
+   * makes the deduction happen at all. Three permissions here would be three
+   * things an owner has to remember to grant together.
+   */
+  INVENTORY_MANAGE: 'inventory.manage',
+
   // --- Telegram (TZ §15) ---
   TELEGRAM_VIEW: 'telegram.view',
   TELEGRAM_MANAGE: 'telegram.manage',
@@ -247,6 +259,7 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly Permission[]>> 
     Permission.TABLES_MANAGE,
     Permission.WAITER_CALLS_HANDLE,
   ],
+  Inventory: [Permission.INVENTORY_VIEW, Permission.INVENTORY_MANAGE],
   Telegram: [Permission.TELEGRAM_VIEW, Permission.TELEGRAM_MANAGE],
   Finance: [
     Permission.FINANCE_VIEW,
@@ -355,6 +368,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<
     Permission.COURIERS_TRACK,
     Permission.COURIER_WALLET_VIEW,
     Permission.COURIER_WALLET_SETTLE,
+    // A branch manager runs the shelf: deliveries land on their shift and a
+    // stock-take is their job, so withholding this would make the module
+    // unusable at the only place stock physically exists.
+    Permission.INVENTORY_VIEW,
+    Permission.INVENTORY_MANAGE,
     Permission.CUSTOMERS_VIEW,
     Permission.TABLES_VIEW,
     Permission.TABLES_MANAGE,
@@ -413,6 +431,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<
   FINANCE: [
     Permission.FINANCE_VIEW,
     Permission.FINANCE_MANAGE,
+    // Read-only: the value sitting on the shelves is a balance-sheet number,
+    // but moving stock is the storekeeper's job, not finance's.
+    Permission.INVENTORY_VIEW,
     Permission.PAYMENTS_VIEW,
     Permission.PAYMENTS_REFUND,
     Permission.CASHBOX_VIEW,

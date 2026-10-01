@@ -62,6 +62,12 @@ const STRICT_TENANT_MODELS = new Set<string>([
   'AuditLog',
   'Notification',
   'FileAsset',
+  'Supplier',
+  'StockItem',
+  'StockMovement',
+  // `ProductIngredient` is deliberately absent: it has no `tenantId` of its
+  // own and is reachable only through a scoped Product or StockItem. See the
+  // child-table boundary noted above.
 ]);
 
 /**

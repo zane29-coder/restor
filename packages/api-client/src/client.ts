@@ -21,6 +21,7 @@ import {
   PaymentsResource,
   ReportsResource,
 } from './resources/orders';
+import { InventoryResource } from './resources/inventory';
 import { PlatformResource } from './resources/platform';
 import { CashResource, PosResource } from './resources/pos';
 
@@ -54,6 +55,7 @@ export class RestorClient {
   readonly tables: TablesResource;
   readonly audit: AuditResource;
   readonly reports: ReportsResource;
+  readonly inventory: InventoryResource;
 
   constructor(options: HttpClientOptions) {
     this.http = new HttpClient(options);
@@ -78,6 +80,7 @@ export class RestorClient {
     this.tables = new TablesResource(this.http);
     this.audit = new AuditResource(this.http);
     this.reports = new ReportsResource(this.http);
+    this.inventory = new InventoryResource(this.http);
   }
 }
 
