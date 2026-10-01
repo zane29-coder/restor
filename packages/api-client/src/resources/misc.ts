@@ -218,6 +218,19 @@ export class TelegramResource {
 }
 
 /** QR tables and waiter calls (TZ §29, §30). */
+/** What a guest sees after scanning, before they have ordered anything. */
+export interface TableSession {
+  tableId: string;
+  tableNumber: string;
+  tableName: string | null;
+  branchId: string;
+  branchName: string;
+  tenantSlug: string;
+  /** An order already open on this table, so a second scan rejoins it. */
+  openOrderId: string | null;
+  openOrderNumber: string | null;
+}
+
 export class TablesResource {
   constructor(private readonly http: HttpClient) {}
 
@@ -225,8 +238,31 @@ export class TablesResource {
     return this.http.get<RestaurantTable[]>('tables', { query: { branchId } });
   }
 
-  create(payload: unknown): Promise<RestaurantTable> {
+  create(payload: {
+    branchId: string;
+    number: string;
+    name?: string | null;
+    seats?: number | null;
+    zone?: string | null;
+  }): Promise<RestaurantTable> {
     return this.http.post<RestaurantTable>('tables', payload);
+  }
+
+  update(
+    id: string,
+    payload: {
+      number?: string;
+      name?: string | null;
+      seats?: number | null;
+      zone?: string | null;
+      isActive?: boolean;
+    },
+  ): Promise<RestaurantTable> {
+    return this.http.patch<RestaurantTable>(`tables/${id}`, payload);
+  }
+
+  remove(id: string): Promise<void> {
+    return this.http.delete<void>(`tables/${id}`);
   }
 
   /** Issues a new QR token, invalidating printed codes for that table. */
@@ -234,24 +270,37 @@ export class TablesResource {
     return this.http.post<RestaurantTable>(`tables/${id}/rotate-qr`);
   }
 
-  /** Public: resolves a scanned QR token to its table and branch. */
-  resolveQr(token: string): Promise<{ table: RestaurantTable; branchId: string }> {
-    return this.http.get<{ table: RestaurantTable; branchId: string }>(`tables/qr/${token}`, {
-      skipAuth: true,
-    });
+  /** Open calls, oldest first — the queue a waiter works. */
+  listCalls(query?: { branchId?: string; status?: string }): Promise<WaiterCall[]> {
+    return this.http.get<WaiterCall[]>('waiter-calls', { query });
   }
 
-  /** Public: guest pressing "Call waiter" / "Request bill". */
-  call(token: string, type: WaiterCallType): Promise<WaiterCall> {
-    return this.http.post<WaiterCall>(`tables/qr/${token}/call`, { type }, { skipAuth: true });
-  }
-
-  pendingCalls(branchId: string): Promise<WaiterCall[]> {
-    return this.http.get<WaiterCall[]>('waiter-calls', { query: { branchId, status: 'PENDING' } });
+  acknowledgeCall(id: string): Promise<WaiterCall> {
+    return this.http.post<WaiterCall>(`waiter-calls/${id}/acknowledge`);
   }
 
   resolveCall(id: string): Promise<WaiterCall> {
     return this.http.post<WaiterCall>(`waiter-calls/${id}/resolve`);
+  }
+
+  /**
+   * Public: resolves a scanned QR token.
+   *
+   * `skipAuth` because a guest has no account — the token in the path is the
+   * whole credential, and it reaches one table at one branch.
+   */
+  resolveQr(token: string): Promise<TableSession> {
+    return this.http.get<TableSession>(`t/${token}`, { skipAuth: true });
+  }
+
+  /** Public: guest pressing "Call waiter" / "Request bill". */
+  call(token: string, type: WaiterCallType): Promise<WaiterCall> {
+    return this.http.post<WaiterCall>(`t/${token}/call`, { type }, { skipAuth: true });
+  }
+
+  /** Just the ones nobody has picked up yet. */
+  pendingCalls(branchId: string): Promise<WaiterCall[]> {
+    return this.http.get<WaiterCall[]>('waiter-calls', { query: { branchId, status: 'PENDING' } });
   }
 }
 

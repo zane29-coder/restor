@@ -36,6 +36,7 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { TablesModule } from './modules/tables/tables.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 
 @Module({
@@ -145,6 +146,9 @@ import { TelegramModule } from './modules/telegram/telegram.module';
 
     // --- Phase 11: reporting ---
     ReportsModule,
+
+    // --- Phase 12: dine-in QR service ---
+    TablesModule,
   ],
   providers: [
     /**

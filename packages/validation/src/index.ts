@@ -22,5 +22,6 @@ export * from './cash';
 export * from './marketing';
 export * from './customer';
 export * from './report';
+export * from './table';
 export * from './courier';
 export * from './telegram';

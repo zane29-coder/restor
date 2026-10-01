@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconInbox,
   IconLogout,
+  IconKitchen,
   IconMenu,
   IconOrders,
   IconPos,
@@ -44,6 +45,7 @@ const NAV: NavItem[] = [
     Icon: IconTag,
     permission: Permission.PROMOTIONS_VIEW,
   },
+  { to: '/tables', label: 'Stollar', Icon: IconKitchen, permission: Permission.TABLES_VIEW },
   { to: '/reports', label: 'Hisobotlar', Icon: IconPos, permission: Permission.REPORTS_VIEW },
   { to: '/telegram', label: 'Telegram', Icon: IconTelegram, permission: Permission.TELEGRAM_VIEW },
 ];
@@ -57,6 +59,7 @@ const TITLES: Record<string, string> = {
   '/couriers': 'Kuryerlar va dispetcher',
   '/customers': 'Mijozlar va sodiqlik',
   '/marketing': 'Aksiyalar va promokodlar',
+  '/tables': 'Stollar va QR xizmat',
   '/reports': 'Hisobotlar',
   '/telegram': 'Telegram sozlamalari',
 };
