@@ -16,7 +16,11 @@ import { ErrorState, Empty, Loading } from '../components/States';
  *
  * Changing a price is the operation that matters most here — it is the one a
  * restaurant performs weekly, and until this screen supported it the only way
- * was a database edit. Variants and modifier groups remain API-only.
+ * was a database edit.
+ *
+ * Variants (size options) remain API-only: they are set once when a product is
+ * created and almost never edited afterwards, so a form for them would be
+ * screen weight nobody uses.
  */
 export function MenuPage() {
   const queryClient = useQueryClient();
@@ -27,6 +31,7 @@ export function MenuPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [editing, setEditing] = useState<MenuProductRow | null>(null);
   const [showCategories, setShowCategories] = useState(false);
+  const [showModifiers, setShowModifiers] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const categories = useQuery({
@@ -104,6 +109,16 @@ export function MenuPage() {
           </button>
         )}
 
+        {can(Permission.PRODUCTS_UPDATE) && (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => setShowModifiers((value) => !value)}
+          >
+            Qoʻshimchalar
+          </button>
+        )}
+
         {can(Permission.PRODUCTS_CREATE) && (
           <button type="button" className="btn" onClick={() => setIsCreating((value) => !value)}>
             {isCreating ? (
@@ -130,6 +145,17 @@ export function MenuPage() {
           canDelete={can(Permission.CATEGORIES_DELETE)}
           onChanged={() => {
             void queryClient.invalidateQueries({ queryKey: ['categories'] });
+            void queryClient.invalidateQueries({ queryKey: ['products'] });
+          }}
+          onError={setError}
+        />
+      )}
+
+      {showModifiers && (
+        <ModifierGroupManager
+          canManage={can(Permission.PRODUCTS_UPDATE)}
+          onChanged={() => {
+            void queryClient.invalidateQueries({ queryKey: ['modifier-groups'] });
             void queryClient.invalidateQueries({ queryKey: ['products'] });
           }}
           onError={setError}
@@ -361,6 +387,8 @@ type MenuProductRow = {
   discountPrice: number | null;
   preparationTime: number;
   isActive: boolean;
+  imageUrl?: string | null;
+  modifierGroups?: Array<{ id: string; name: string }>;
 };
 
 /**
@@ -519,6 +547,20 @@ function ProductEditor({
           />
         </Labelled>
       </div>
+
+      <ImageField
+        productId={product.id}
+        current={product.imageUrl ?? null}
+        onUploaded={onSaved}
+        onError={onError}
+      />
+
+      <ModifierGroupPicker
+        productId={product.id}
+        attached={(product.modifierGroups ?? []).map((group) => group.id)}
+        onChanged={onSaved}
+        onError={onError}
+      />
 
       <label className="row" style={{ gap: 8, marginTop: 14, fontSize: 13 }}>
         <input
@@ -775,4 +817,404 @@ const fieldStyle = {
 /** Digits only: a manager typing "45 000" means forty-five thousand. */
 function digits(value: string): number {
   return Number(value.replace(/\D/g, '')) || 0;
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Product image.
+ *
+ * Two steps on purpose: the file is uploaded first and the returned URL is
+ * then patched onto the product. A single combined endpoint would have to
+ * either hold the upload until the product saves, or leave an orphaned file
+ * behind when the save fails.
+ */
+function ImageField({
+  productId,
+  current,
+  onUploaded,
+  onError,
+}: {
+  productId: string;
+  current: string | null;
+  onUploaded: () => void;
+  onError: (message: string) => void;
+}) {
+  const [isBusy, setIsBusy] = useState(false);
+
+  async function upload(file: File) {
+    // 5 MB: a phone photo straight from the camera is often 8-12 MB, and
+    // sending that for a 200px menu thumbnail wastes the kitchen's data plan.
+    if (file.size > 5 * 1024 * 1024) {
+      onError('Rasm 5 MB dan kichik boʻlishi kerak');
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const uploaded = await api.catalog.uploadImage(file, file.name);
+      await api.catalog.updateProduct(productId, { imageUrl: uploaded.url });
+      onUploaded();
+    } catch (caught) {
+      onError(caught instanceof RestorApiError ? caught.message : 'Rasm yuklanmadi');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function clear() {
+    setIsBusy(true);
+    try {
+      await api.catalog.updateProduct(productId, { imageUrl: null });
+      onUploaded();
+    } catch (caught) {
+      onError(caught instanceof RestorApiError ? caught.message : 'Oʻchirilmadi');
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>Rasm</span>
+      <div className="row" style={{ gap: 12, marginTop: 8, alignItems: 'flex-start' }}>
+        {current ? (
+          <img
+            src={current}
+            alt=""
+            width={88}
+            height={88}
+            style={{ borderRadius: 8, objectFit: 'cover', border: '1px solid var(--border)' }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 8,
+              border: '1px dashed var(--border)',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 11,
+              color: '#9CA3AF',
+            }}
+          >
+            rasm yoʻq
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gap: 8 }}>
+          <label className="btn btn--ghost" style={{ cursor: 'pointer' }}>
+            {isBusy ? 'Yuklanmoqda…' : current ? 'Almashtirish' : 'Rasm yuklash'}
+            <input
+              type="file"
+              accept="image/*"
+              hidden
+              disabled={isBusy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void upload(file);
+                // Reset so re-selecting the same file fires change again.
+                event.target.value = '';
+              }}
+            />
+          </label>
+          {current && (
+            <button type="button" className="btn btn--ghost" disabled={isBusy} onClick={() => void clear()}>
+              Rasmni olib tashlash
+            </button>
+          )}
+          <span className="muted" style={{ fontSize: 12 }}>
+            JPG yoki PNG, 5 MB gacha
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Which modifier groups a product offers.
+ *
+ * Groups are shared across products -- "Sauce" is defined once and attached to
+ * every dish that takes one -- so this attaches and detaches rather than
+ * editing. The group's own contents are managed in the section below.
+ */
+function ModifierGroupPicker({
+  productId,
+  attached,
+  onChanged,
+  onError,
+}: {
+  productId: string;
+  attached: string[];
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const groups = useQuery({
+    queryKey: ['modifier-groups'],
+    queryFn: () => api.catalog.listModifierGroups(),
+  });
+
+  const save = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.catalog.updateProduct(productId, { modifierGroupIds: ids }),
+    onSuccess: onChanged,
+    onError: (caught) =>
+      onError(caught instanceof RestorApiError ? caught.message : 'Saqlanmadi'),
+  });
+
+  const all = groups.data ?? [];
+  if (all.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <span style={{ fontSize: 13, fontWeight: 600 }}>Qoʻshimchalar</span>
+      <div className="row" style={{ gap: 14, marginTop: 8, flexWrap: 'wrap' }}>
+        {all.map((group) => {
+          const isOn = attached.includes(group.id);
+          return (
+            <label key={group.id} className="row" style={{ gap: 6, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={isOn}
+                disabled={save.isPending}
+                onChange={() =>
+                  save.mutate(
+                    isOn
+                      ? attached.filter((id) => id !== group.id)
+                      : [...attached, group.id],
+                  )
+                }
+              />
+              {group.name}
+              <span className="muted">
+                ({group.minSelect}–{group.maxSelect})
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Modifier groups, defined once and reused.
+ *
+ * `minSelect` and `maxSelect` are the whole point of a group: "Sauce 0-2" is
+ * optional and lets a guest pick two, "Size 1-1" forces exactly one choice.
+ * Getting those two numbers wrong is how a checkout either blocks a valid
+ * order or lets a guest order a pizza with no size.
+ */
+function ModifierGroupManager({
+  canManage,
+  onChanged,
+  onError,
+}: {
+  canManage: boolean;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [isCreating, setIsCreating] = useState(false);
+
+  const groups = useQuery({
+    queryKey: ['modifier-groups'],
+    queryFn: () => api.catalog.listModifierGroups(),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.catalog.deleteModifierGroup(id),
+    onSuccess: onChanged,
+    onError: (caught) =>
+      onError(caught instanceof RestorApiError ? caught.message : 'Oʻchirilmadi'),
+  });
+
+  const all = groups.data ?? [];
+
+  return (
+    <div className="card">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <h3 style={{ fontSize: 15, margin: 0 }}>Qoʻshimcha guruhlari</h3>
+        <div className="spacer" />
+        {canManage && (
+          <button type="button" className="btn btn--ghost" onClick={() => setIsCreating((v) => !v)}>
+            {isCreating ? 'Yopish' : 'Guruh qoʻshish'}
+          </button>
+        )}
+      </div>
+
+      {all.length === 0 && !isCreating ? (
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+          Guruh yoʻq. Masalan "Sous 0–2" yoki "Oʻlcham 1–1" — bir marta
+          yaratiladi va koʻp mahsulotga ulanadi.
+        </p>
+      ) : (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {all.map((group) => (
+            <div key={group.id} className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: 14, minWidth: 120 }}>{group.name}</strong>
+              <span className="badge" style={{ background: '#E0F2FE', color: '#075985' }}>
+                {group.minSelect === group.maxSelect
+                  ? `aniq ${group.minSelect} ta`
+                  : `${group.minSelect}–${group.maxSelect} ta`}
+              </span>
+              <span className="muted" style={{ fontSize: 13, flex: 1 }}>
+                {group.modifiers.map((m) => m.name).join(', ')}
+              </span>
+              {canManage && (
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  style={{ padding: '5px 10px', minHeight: 30, fontSize: 12 }}
+                  disabled={remove.isPending}
+                  onClick={() => remove.mutate(group.id)}
+                >
+                  Oʻchirish
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isCreating && (
+        <ModifierGroupForm
+          onSaved={() => {
+            setIsCreating(false);
+            onChanged();
+          }}
+          onError={onError}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModifierGroupForm({
+  onSaved,
+  onError,
+}: {
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [minSelect, setMinSelect] = useState('0');
+  const [maxSelect, setMaxSelect] = useState('1');
+  const [rows, setRows] = useState<Array<{ name: string; price: string }>>([
+    { name: '', price: '0' },
+  ]);
+
+  const modifiers = rows
+    .filter((row) => row.name.trim().length > 0)
+    .map((row, index) => ({
+      name: row.name.trim(),
+      price: digits(row.price),
+      sortOrder: index,
+    }));
+
+  const min = digits(minSelect);
+  const max = digits(maxSelect);
+
+  const error =
+    name.trim().length < 2
+      ? 'Guruh nomini kiriting'
+      : modifiers.length === 0
+        ? 'Kamida bitta qoʻshimcha kiriting'
+        : min > max
+          ? 'Eng kami eng kopdan katta boʻlmasligi kerak'
+          : max > modifiers.length
+            ? `Eng koʻpi ${modifiers.length} dan oshmasligi kerak`
+            : null;
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.catalog.createModifierGroup({
+        name: name.trim(),
+        minSelect: min,
+        maxSelect: max,
+        modifiers,
+      }),
+    onSuccess: onSaved,
+    onError: (caught) =>
+      onError(caught instanceof RestorApiError ? caught.message : 'Saqlanmadi'),
+  });
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 12,
+        }}
+      >
+        <Labelled label="Guruh nomi">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Sous" style={fieldStyle} />
+        </Labelled>
+        <Labelled label="Eng kami" hint="0 — ixtiyoriy">
+          <input inputMode="numeric" value={minSelect} onChange={(e) => setMinSelect(e.target.value)} style={fieldStyle} />
+        </Labelled>
+        <Labelled label="Eng koʻpi">
+          <input inputMode="numeric" value={maxSelect} onChange={(e) => setMaxSelect(e.target.value)} style={fieldStyle} />
+        </Labelled>
+      </div>
+
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {rows.map((row, index) => (
+          <div key={index} className="row" style={{ gap: 8 }}>
+            <input
+              value={row.name}
+              onChange={(e) =>
+                setRows(rows.map((r, i) => (i === index ? { ...r, name: e.target.value } : r)))
+              }
+              placeholder="Ketchup"
+              style={{ ...fieldStyle, flex: 1 }}
+            />
+            <input
+              inputMode="numeric"
+              value={row.price}
+              onChange={(e) =>
+                setRows(rows.map((r, i) => (i === index ? { ...r, price: e.target.value } : r)))
+              }
+              placeholder="0"
+              style={{ ...fieldStyle, width: 120 }}
+            />
+            {rows.length > 1 && (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                style={{ padding: '5px 10px', minHeight: 30, fontSize: 12 }}
+                onClick={() => setRows(rows.filter((_, i) => i !== index))}
+              >
+                —
+              </button>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          className="btn btn--ghost"
+          style={{ justifySelf: 'start' }}
+          onClick={() => setRows([...rows, { name: '', price: '0' }])}
+        >
+          <IconPlus size={14} /> Yana bitta
+        </button>
+      </div>
+
+      {error && (
+        <p style={{ color: '#991B1B', fontSize: 13, marginTop: 10 }}>{error}</p>
+      )}
+
+      <button
+        type="button"
+        className="btn"
+        style={{ marginTop: 12 }}
+        disabled={Boolean(error) || save.isPending}
+        onClick={() => save.mutate()}
+      >
+        {save.isPending ? 'Saqlanmoqda…' : 'Guruhni saqlash'}
+      </button>
+    </div>
+  );
 }
