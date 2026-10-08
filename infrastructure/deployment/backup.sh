@@ -16,8 +16,23 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# shellcheck disable=SC1091
-set -a; source .env.prod; set +a
+# Which deployment is this? The two styles use different env files and compose
+# files, and reading the wrong one meant this script simply exited — so the
+# shared-host deployment had no working backup at all until someone ran pg_dump
+# by hand.
+if [[ -f .env.server ]]; then
+  ENV_FILE=.env.server
+  COMPOSE_FILE=docker-compose.server.yml
+elif [[ -f .env.prod ]]; then
+  ENV_FILE=.env.prod
+  COMPOSE_FILE=docker-compose.prod.yml
+else
+  echo '✖ Neither .env.server nor .env.prod is present — nothing to back up' >&2
+  exit 1
+fi
+
+# shellcheck disable=SC1090
+set -a; source "$ENV_FILE"; set +a
 
 BACKUP_DIR="infrastructure/database/backups"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
@@ -26,7 +41,7 @@ FILE="restor-${STAMP}.sql.gz"
 
 mkdir -p "$BACKUP_DIR"
 
-COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
+COMPOSE="docker compose -f $COMPOSE_FILE --env-file $ENV_FILE"
 
 echo "▸ Dumping ${POSTGRES_DB}"
 # `--clean --if-exists` makes the dump restorable over an existing database.
@@ -61,6 +76,5 @@ cat <<EOF
 
 To restore (DESTRUCTIVE — overwrites the target database):
   gunzip -c $BACKUP_DIR/$FILE | \\
-    docker compose -f docker-compose.prod.yml --env-file .env.prod \\
-      exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB
+    $COMPOSE exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB
 EOF

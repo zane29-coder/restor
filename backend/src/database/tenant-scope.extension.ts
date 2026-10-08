@@ -176,8 +176,32 @@ export function createTenantScopeExtension() {
 
             const tenantId = context.tenantId;
             if (!tenantId) {
-              // Naming the query matters: without it this error tells an
-              // operator only that "something" ran unscoped.
+              // Two very different situations end up here, and conflating them
+              // reported a normal visit to the platform's bare domain as a
+              // server fault:
+              //
+              //  * No authenticated user — a public storefront request that
+              //    never named a restaurant (no `X-Tenant-Slug`, and the Host
+              //    is not a tenant's own domain). The client is missing
+              //    something, so it is a 400 and the storefront renders a
+              //    "pick a restaurant" page from the code.
+              //
+              //  * An authenticated user with no tenant — scope was supposed
+              //    to come from their token and did not. Nothing a client can
+              //    cause, so it stays a 500 and names the query: without the
+              //    name this tells an operator only that "something" ran
+              //    unscoped.
+              //
+              // Either way the query is REFUSED. Failing closed is the whole
+              // point of this guard; only the reporting differs.
+              if (!context.userId) {
+                throw new AppException(
+                  ErrorCode.TENANT_NOT_SPECIFIED,
+                  'No restaurant was specified for this request',
+                  400,
+                );
+              }
+
               throw new AppException(
                 ErrorCode.TENANT_SCOPE_MISSING,
                 `No tenant in the request context for ${model}.${operation}; ` +

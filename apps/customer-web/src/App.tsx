@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ErrorCode } from '@restor/shared-types';
 import type { BranchMenu, BranchSummary, Order } from '@restor/shared-types';
 import { formatMoney } from '@restor/shared-utils';
 import { RestorApiError } from '@restor/api-client';
@@ -24,6 +25,10 @@ export function App() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Kept beside the message because one failure is not a failure at all: at the
+  // platform's own address no restaurant has been named yet, and that gets a
+  // page of its own rather than a red alert.
+  const [errorCode, setErrorCode] = useState<string | null>(null);
 
   const cart = useCart();
 
@@ -35,13 +40,14 @@ export function App() {
         // One branch is the common case; skip the picker entirely.
         if (loaded.length === 1) setBranch(loaded[0]!);
       })
-      .catch((caught) =>
-        setError(
-          caught instanceof RestorApiError
-            ? caught.message
-            : 'Restoran maʼlumotlari yuklanmadi',
-        ),
-      );
+      .catch((caught) => {
+        if (caught instanceof RestorApiError) {
+          setErrorCode(caught.code);
+          setError(caught.message);
+        } else {
+          setError('Restoran maʼlumotlari yuklanmadi');
+        }
+      });
   }, []);
 
   useEffect(() => {
@@ -64,6 +70,13 @@ export function App() {
       setPlacedOrder(null);
       cart.clear();
     }} />;
+  }
+
+  // Nothing named a restaurant. Expected at the platform's bare domain, so it
+  // is explained rather than reported as an error — and "Qayta urinish" would
+  // be useless advice, because retrying cannot name one.
+  if (errorCode === ErrorCode.TENANT_NOT_SPECIFIED) {
+    return <NoRestaurantChosen />;
   }
 
   if (error && !branches) {
@@ -222,6 +235,44 @@ export function App() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Shown at the platform's own address, where no restaurant has been named.
+ *
+ * Deliberately NOT a list of the restaurants on this install: which companies
+ * use RESTOR is their business, not a public directory. What a visitor here
+ * actually needs is the shape of the link they are missing.
+ */
+function NoRestaurantChosen() {
+  return (
+    <div className="center">
+      <div style={{ maxWidth: 420 }}>
+        <p style={{ fontSize: 46, margin: '0 0 10px', lineHeight: 1 }}>🍽️</p>
+        <h1 style={{ fontSize: 21, margin: '0 0 10px', color: 'var(--text)' }}>
+          Restoran tanlanmagan
+        </h1>
+        <p className="muted" style={{ fontSize: 14, lineHeight: 1.65, margin: '0 0 18px' }}>
+          Bu manzil — RESTOR platformasining umumiy sahifasi, biror restoranning
+          menyusi emas. Buyurtma berish uchun restoranning oʻz havolasini
+          oching yoki stoldagi QR kodni skanerlang.
+        </p>
+        <p
+          className="muted"
+          style={{
+            fontSize: 13,
+            margin: 0,
+            padding: '10px 14px',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+          }}
+        >
+          {window.location.host}/r/<span style={{ color: 'var(--primary)' }}>restoran</span>
+        </p>
+      </div>
     </div>
   );
 }

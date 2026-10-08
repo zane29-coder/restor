@@ -112,7 +112,7 @@ done
 ## 2. Configure
 
 ```bash
-cd ~/restor
+cd /opt/restor          # wherever the checkout lives on this server
 git pull
 chmod +x infrastructure/deployment/*.sh    # the repo does not carry the bit
 

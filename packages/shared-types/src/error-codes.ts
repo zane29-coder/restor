@@ -27,6 +27,18 @@ export const ErrorCode = {
   // --- Tenant / subscription ---
   TENANT_NOT_FOUND: 'TENANT_NOT_FOUND',
   TENANT_BLOCKED: 'TENANT_BLOCKED',
+  /**
+   * A public request never said which restaurant it meant — no
+   * `X-Tenant-Slug`, and the Host is not a restaurant's own domain. The
+   * storefront shows a "pick a restaurant" page for this; it is the expected
+   * answer at the platform's bare domain, not a fault.
+   */
+  TENANT_NOT_SPECIFIED: 'TENANT_NOT_SPECIFIED',
+  /**
+   * A tenant-scoped query ran with no tenant in context on an AUTHENTICATED
+   * request — a server bug, not something a client can cause. Public requests
+   * get TENANT_NOT_SPECIFIED instead.
+   */
   TENANT_SCOPE_MISSING: 'TENANT_SCOPE_MISSING',
   CROSS_TENANT_ACCESS: 'CROSS_TENANT_ACCESS',
   SUBSCRIPTION_EXPIRED: 'SUBSCRIPTION_EXPIRED',

@@ -163,18 +163,34 @@ ok 'nginx reloaded'
 # and that is exactly the failure a deploy should catch rather than a user.
 log 'Verifying'
 
-curl -fsS "https://$API_HOST/health" >/dev/null \
-  && ok "https://$API_HOST/health responds" \
+# `systemctl reload` returns as soon as the master has been signalled, while the
+# old workers keep accepting connections until they drain. A request landing on
+# one of those is answered from the PREVIOUS config — which, the first time a
+# host is added, means the wrong certificate and a verification failure for a
+# deploy that actually worked. So each check is given a few seconds to settle.
+verify() { # verify <label> <curl args...>
+  local label="$1"; shift
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    if curl -fsS --max-time 15 "$@" >/dev/null 2>&1; then
+      ok "$label"
+      return 0
+    fi
+    sleep 2
+  done
+  # Repeat it without -s so the actual error is in the deploy output.
+  curl -f --max-time 15 "$@" >/dev/null || true
+  return 1
+}
+
+verify "https://$API_HOST/health responds" "https://$API_HOST/health" \
   || fail "https://$API_HOST/health did not respond"
 
 for host in "${WEB_HOSTS[@]}"; do
   # --head: the index page, not its contents. A vhost whose root is missing
   # answers 403/404 here instead of 200.
-  if curl -fsS --head "https://$host/" >/dev/null; then
-    ok "https://$host/ serves"
-  else
-    fail "https://$host/ did not serve — check /var/log/nginx/restor-*-error.log"
-  fi
+  verify "https://$host/ serves" --head "https://$host/" \
+    || fail "https://$host/ did not serve — check /var/log/nginx/restor-*-error.log"
 done
 
 $COMPOSE ps
