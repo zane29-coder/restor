@@ -2,10 +2,11 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Permission, type Customer } from '@restor/shared-types';
 import { formatMoney, formatPhone } from '@restor/shared-utils';
-import { IconAlert, IconCheckCircle, IconSearch } from '@restor/ui';
+import { IconSearch } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ErrorState, Loading } from '../components/States';
+import { Drawer } from '../components/Drawer';
+import { ErrorState, Loading, Notice } from '../components/States';
 
 /**
  * Customers and loyalty (TZ §10).
@@ -38,19 +39,7 @@ export function CustomersPage() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {notice && (
-        <div
-          className="card row"
-          style={{
-            gap: 10,
-            background: notice.ok ? '#F0FDF4' : '#FEF2F2',
-            borderColor: notice.ok ? '#BBF7D0' : '#FECACA',
-          }}
-        >
-          {notice.ok ? <IconCheckCircle /> : <IconAlert />}
-          <span style={{ fontSize: 14 }}>{notice.text}</span>
-        </div>
-      )}
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
       {can(Permission.LOYALTY_VIEW) && (
         <LoyaltySettings
@@ -167,6 +156,7 @@ export function CustomersPage() {
           customerId={selected}
           canUpdate={can(Permission.CUSTOMERS_UPDATE)}
           onNotice={setNotice}
+          onClose={() => setSelected(null)}
         />
       )}
     </div>
@@ -179,10 +169,12 @@ function CustomerDetail({
   customerId,
   canUpdate,
   onNotice,
+  onClose,
 }: {
   customerId: string;
   canUpdate: boolean;
   onNotice: (n: { ok: boolean; text: string }) => void;
+  onClose: () => void;
 }) {
   const queryClient = useQueryClient();
 
@@ -216,17 +208,33 @@ function CustomerDetail({
       }),
   });
 
-  if (customer.isLoading) return <Loading />;
-  if (!customer.data) return null;
+  if (!customer.data) {
+    return (
+      <Drawer title="Mijoz" onClose={onClose}>
+        {customer.isError ? (
+          <ErrorState error={customer.error} onRetry={() => void customer.refetch()} />
+        ) : (
+          <Loading />
+        )}
+      </Drawer>
+    );
+  }
 
   const detail = customer.data as Customer;
 
   return (
-    <div className="card">
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h3 style={{ fontSize: 15, margin: 0 }}>
-          {detail.fullName ?? formatPhone(detail.phone)}
-        </h3>
+    <Drawer title={detail.fullName ?? formatPhone(detail.phone)} onClose={onClose}>
+      {/* The page notice sits behind the drawer; show a failed block here too. */}
+      {toggleBlock.isError && (
+        <div className="alert alert--error">
+          {toggleBlock.error instanceof RestorApiError
+            ? toggleBlock.error.message
+            : 'Amal bajarilmadi'}
+        </div>
+      )}
+
+      <div className="row" style={{ marginBottom: 18 }}>
+        <span className="muted">{formatPhone(detail.phone)}</span>
         <div className="spacer" />
         {detail.loyalty && (
           <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>
@@ -314,7 +322,7 @@ function CustomerDetail({
           )}
         </div>
       </div>
-    </div>
+    </Drawer>
   );
 }
 

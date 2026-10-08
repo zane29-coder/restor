@@ -119,7 +119,7 @@ export function DashboardPage() {
                     </td>
                     <td>{order.branch?.name ?? '—'}</td>
                     <td>{order.customerName ?? order.customerPhone ?? '—'}</td>
-                    <td>{order.type}</td>
+                    <td>{ORDER_TYPE_LABELS[order.type] ?? order.type}</td>
                     <td>
                       <StatusBadge status={order.status} />
                     </td>
@@ -159,11 +159,32 @@ const STATUS_TONES: Record<string, { bg: string; fg: string }> = {
   REFUNDED: { bg: '#F3E8FF', fg: '#6B21A8' },
 };
 
+/** What staff read instead of the raw enum ("WAITING_COURIER"). */
+export const STATUS_LABELS: Record<string, string> = {
+  NEW: 'Yangi',
+  ACCEPTED: 'Qabul qilindi',
+  PREPARING: 'Tayyorlanmoqda',
+  READY: 'Tayyor',
+  WAITING_COURIER: 'Kuryer kutilmoqda',
+  COURIER_ASSIGNED: 'Kuryer biriktirildi',
+  ON_DELIVERY: 'Yoʻlda',
+  DELIVERED: 'Topshirildi',
+  CANCELLED: 'Bekor qilindi',
+  REFUNDED: 'Qaytarildi',
+};
+
+export const ORDER_TYPE_LABELS: Record<string, string> = {
+  DELIVERY: 'Yetkazish',
+  PICKUP: 'Olib ketish',
+  DINE_IN: 'Zalda',
+  TABLE: 'Stol (QR)',
+};
+
 export function StatusBadge({ status }: { status: string }) {
   const tone = STATUS_TONES[status] ?? { bg: 'var(--surface-alt)', fg: 'var(--text)' };
   return (
     <span className="badge" style={{ background: tone.bg, color: tone.fg }}>
-      {status}
+      {STATUS_LABELS[status] ?? status}
     </span>
   );
 }

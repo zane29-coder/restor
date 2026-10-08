@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Permission, type TelegramConfig, type TelegramRoute } from '@restor/shared-types';
-import { IconAlert, IconCheckCircle, IconClose, IconPlus } from '@restor/ui';
+import { IconAlert, IconClose, IconPlus } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ErrorState, Loading } from '../components/States';
+import { ErrorState, Loading, Notice } from '../components/States';
 
 /**
  * Telegram settings (TZ §15).
@@ -76,15 +76,7 @@ export function TelegramPage() {
         </select>
       </div>
 
-      {notice && (
-        <div
-          className={`alert ${notice.ok ? 'alert--info' : 'alert--error'}`}
-          style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}
-        >
-          {notice.ok ? <IconCheckCircle size={16} /> : <IconAlert size={16} />}
-          {notice.text}
-        </div>
-      )}
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
       <BotForm
         config={config.data ?? null}

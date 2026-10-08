@@ -44,7 +44,7 @@ Point the app at a backend in `app.json` → `expo.extra.apiUrl`:
 
 | Target | Value |
 | --- | --- |
-| Deployed | `https://restore-1.duckdns.org/api/v1` |
+| Deployed | `https://api.restor.uz/api/v1` |
 | Local, physical phone | `http://<your-LAN-IP>:3000/api/v1` |
 | Local, Android emulator | `http://10.0.2.2:3000/api/v1` |
 
@@ -89,6 +89,17 @@ The script lives at [`infrastructure/deployment/build-courier-apk.sh`](../../inf
 
 Set `expo.extra.apiUrl` in `app.json` **before** building — it is baked into
 the binary and cannot be changed afterwards without a rebuild.
+
+### The 0.2.0 APKs still in the field
+
+Version 0.2.0 was built against `https://restore-1.duckdns.org/api/v1`, before
+each app moved to its own sub-domain. Those phones keep working because that
+host still proxies `/api/`, `/realtime/` and `/uploads/` to the same backend —
+see the transitional block in
+[`infrastructure/nginx/host/restor.conf`](../../infrastructure/nginx/host/restor.conf).
+Remove the block only once every courier is on 0.2.1 or later; a 301 is not a
+substitute, because an HTTP client is not required to replay a POST body
+against the new location.
 
 ### The keystore
 

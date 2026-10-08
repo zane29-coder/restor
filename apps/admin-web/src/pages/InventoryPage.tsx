@@ -7,10 +7,10 @@ import {
   type StockItem,
 } from '@restor/shared-types';
 import { formatMoney } from '@restor/shared-utils';
-import { IconAlert, IconCheckCircle, IconPlus } from '@restor/ui';
+import { IconPlus } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ErrorState, Loading } from '../components/States';
+import { ErrorState, Loading, Notice } from '../components/States';
 
 type Tab = 'stock' | 'movements' | 'suppliers';
 
@@ -42,19 +42,7 @@ export function InventoryPage() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {notice && (
-        <div
-          className="card row"
-          style={{
-            gap: 10,
-            background: notice.ok ? '#F0FDF4' : '#FEF2F2',
-            borderColor: notice.ok ? '#BBF7D0' : '#FECACA',
-          }}
-        >
-          {notice.ok ? <IconCheckCircle /> : <IconAlert />}
-          <span style={{ fontSize: 14 }}>{notice.text}</span>
-        </div>
-      )}
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
       {summary.data && (
         <div style={cardGrid}>

@@ -22,6 +22,7 @@ import type {
   UpdateTenantInput,
 } from '@restor/validation';
 import { AppException } from '../../common/errors/app-exception';
+import { RESERVED_HOST_LABELS } from '../../common/constants';
 import { runUnscoped } from '../../common/context/request-context';
 import { PrismaService, type PrismaTransaction } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -464,7 +465,17 @@ export class TenantsService {
     const existing = await runUnscoped(() =>
       this.prisma.db.tenant.findMany({ select: { slug: true } }),
     );
-    return uniqueSlug(slugify(source), new Set(existing.map((row) => row.slug)));
+
+    // The platform's own sub-domain labels count as taken: a tenant reaches its
+    // storefront at `{slug}.restor.uz` (TZ §49), and one slugged `pos` or `api`
+    // would collide with a host this deployment already serves. `uniqueSlug`
+    // then suffixes it — a restaurant called "App" becomes `app-2`, not `app`.
+    const taken = new Set<string>([
+      ...existing.map((row) => row.slug),
+      ...RESERVED_HOST_LABELS,
+    ]);
+
+    return uniqueSlug(slugify(source), taken);
   }
 }
 

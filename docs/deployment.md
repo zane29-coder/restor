@@ -5,6 +5,12 @@ Deploying RESTOR to a single VPS: Docker Compose, nginx, Let's Encrypt.
 Written for: whoever operates the server. Assumes comfort with SSH and DNS, not
 with this codebase.
 
+> **On a server that already runs other sites**, this is the wrong document —
+> the stack here claims ports 80 and 443. Use
+> [deployment-shared-host.md](deployment-shared-host.md) instead, which adds
+> RESTOR to the host's existing nginx. Both serve the same sub-domains, so the
+> URLs below apply either way.
+
 ---
 
 ## What gets deployed
@@ -37,17 +43,28 @@ bound to a host port.
 2 GB works with the swap the setup script adds, but builds are slow. 4 GB is
 the realistic floor.
 
-**DNS** — point these A records at the server's IP before starting:
+**DNS** — point these A records at the server's IP before starting. One
+sub-domain per app: a staff member types one name and lands in one app, a kiosk
+browser has nothing to navigate away to, each app gets its own cookie scope and
+its own access log, and every bundle is built with `--base=/` so no app has to
+know where it is mounted.
 
-| Record | Purpose |
+| Record | Serves |
 | --- | --- |
 | `restor.uz` | Customer storefront |
-| `www.restor.uz` | Redirect |
-| `api.restor.uz` | API |
-| `admin.restor.uz` | Admin panel, POS, KDS |
+| `www.restor.uz` | Redirect to the apex |
+| `api.restor.uz` | API, realtime, uploads |
+| `app.restor.uz` | Admin panel |
+| `pos.restor.uz` | POS terminal |
+| `kds.restor.uz` | Kitchen display |
+| `tg.restor.uz` | Telegram Mini App |
 
-Wait for propagation (`dig +short restor.uz`) before requesting certificates —
-Let's Encrypt validates over HTTP and will fail otherwise.
+Wait for propagation (`dig +short app.restor.uz`) before requesting
+certificates — Let's Encrypt validates over HTTP, and one name that does not
+resolve fails the whole request, including the names that would have worked.
+
+The courier app is an Android APK with no web build, so it needs no record of
+its own; it calls `api.restor.uz`.
 
 ---
 
@@ -98,7 +115,7 @@ openssl rand -base64 32
 ```ini
 NODE_ENV=production
 PORT=3000
-CORS_ORIGINS=https://restor.uz,https://admin.restor.uz
+CORS_ORIGINS=https://restor.uz,https://www.restor.uz,https://app.restor.uz,https://pos.restor.uz,https://kds.restor.uz,https://tg.restor.uz
 API_BASE_URL=https://api.restor.uz
 CUSTOMER_WEB_URL=https://restor.uz
 
@@ -127,9 +144,14 @@ the deploy, not surface as a breach later.
 ```
 
 Runs once. It stands up a temporary HTTP-only nginx (the real config references
-certificates that do not exist yet), requests one certificate covering all four
-hostnames, then tears the temporary server down. Renewal afterwards is handled
-by the `certbot` container.
+certificates that do not exist yet), requests one certificate covering all
+seven hostnames, then tears the temporary server down. Renewal afterwards is
+handled by the `certbot` container.
+
+`--cert-name $DOMAIN` keeps the certificate at
+`/etc/letsencrypt/live/restor.uz/` even when a name is added later. Without it,
+certbot would write `restor.uz-0001` on the next run and nginx would go on
+quietly serving the old certificate until it expired.
 
 If it fails, DNS almost certainly has not propagated. Check with
 `dig +short api.restor.uz` and retry.
@@ -207,7 +229,7 @@ read -rs ADMIN_PASSWORD && export ADMIN_PASSWORD
 export ADMIN_PHONE='+998901234567'
 ```
 
-Then sign in at `https://admin.restor.uz` and create the first restaurant
+Then sign in at `https://app.restor.uz` and create the first restaurant
 through **Platform → Tenants**, which provisions its owner, its roles and its
 subscription in one transaction.
 

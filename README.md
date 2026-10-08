@@ -147,6 +147,20 @@ npm run dev:kds        # http://localhost:5176  kitchen display
 npm run dev:miniapp    # http://localhost:5177  Telegram Mini App
 ```
 
+In production each app gets its own host, and every one of them proxies
+`/api/v1` to the single backend — so the API is same-origin everywhere and no
+app knows its own domain:
+
+| App | Development | Production |
+| --- | --- | --- |
+| Storefront | `localhost:5174` | `restor.uz` |
+| Admin panel | `localhost:5173` | `app.restor.uz` |
+| POS | `localhost:5175` | `pos.restor.uz` |
+| Kitchen display | `localhost:5176` | `kds.restor.uz` |
+| Telegram Mini App | `localhost:5177` | `tg.restor.uz` |
+| API | `localhost:3000` | `api.restor.uz` |
+| Courier app | Expo Go / APK | APK, calls `api.restor.uz` |
+
 ### Seeded credentials — development only
 
 Password for every account: `Restor2026dev`
@@ -215,7 +229,8 @@ records by id.
 | [docs/authentication.md](docs/authentication.md) | Tokens, refresh rotation, Telegram sign-in |
 | [docs/permissions.md](docs/permissions.md) | The RBAC catalog and role defaults |
 | [docs/order-flow.md](docs/order-flow.md) | Pricing, state machine, idempotency |
-| [docs/deployment.md](docs/deployment.md) | VPS setup, TLS, deploy, backups |
+| [docs/deployment.md](docs/deployment.md) | Dedicated VPS: Docker stack, TLS, deploy, backups |
+| [docs/deployment-shared-host.md](docs/deployment-shared-host.md) | A server that already runs other sites; the sub-domain layout |
 | [backend/tests/README.md](backend/tests/README.md) | What is tested and why |
 
 ---

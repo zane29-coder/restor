@@ -2,10 +2,10 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Permission, type Branch } from '@restor/shared-types';
 import { formatMoney, formatPhone } from '@restor/shared-utils';
-import { IconCheckCircle, IconAlert } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ErrorState, Empty, Loading } from '../components/States';
+import { Drawer } from '../components/Drawer';
+import { ErrorState, Empty, Loading, Notice } from '../components/States';
 
 /** Branch list and delivery settings (TZ §8, §11). */
 export function BranchesPage() {
@@ -32,19 +32,7 @@ export function BranchesPage() {
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      {notice && (
-        <div
-          className="card row"
-          style={{
-            gap: 10,
-            background: notice.ok ? '#F0FDF4' : '#FEF2F2',
-            borderColor: notice.ok ? '#BBF7D0' : '#FECACA',
-          }}
-        >
-          {notice.ok ? <IconCheckCircle /> : <IconAlert />}
-          <span style={{ fontSize: 14 }}>{notice.text}</span>
-        </div>
-      )}
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
       <div
         style={{
@@ -112,7 +100,7 @@ export function BranchesPage() {
             {canManage && (
               <button
                 type="button"
-                className="btn-ghost"
+                className="btn btn--ghost"
                 style={{ marginTop: 14, width: '100%' }}
                 onClick={() => {
                   setNotice(null);
@@ -207,91 +195,93 @@ function DeliverySettings({
   }
 
   return (
-    <form className="card" onSubmit={submit}>
-      <div className="row" style={{ marginBottom: 4 }}>
-        <h2 style={{ fontSize: 15, margin: 0 }}>{branch.name} — yetkazish</h2>
-        <div className="spacer" />
-        <button type="button" className="btn-ghost" onClick={onClose}>
-          Yopish
+    <Drawer title={`${branch.name} — yetkazish`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
+          Boʻsh qoldirilgan maydon — qoida ishlatilmaydi.
+        </p>
+
+        {/* The page notice sits behind the drawer; show a failed save here too. */}
+        {save.isError && (
+          <div className="alert alert--error">
+            {save.error instanceof RestorApiError ? save.error.message : 'Saqlanmadi'}
+          </div>
+        )}
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 14,
+          }}
+        >
+          <Field
+            label="Yetkazish radiusi (km)"
+            hint="Bundan uzoqqa buyurtma qabul qilinmaydi. Boʻsh — cheklovsiz."
+            value={radiusKm}
+            onChange={setRadiusKm}
+            placeholder="5"
+          />
+          <Field
+            label="Bepul zona (km)"
+            hint="Shu masofagacha yetkazish bepul."
+            value={freeRadiusKm}
+            onChange={setFreeRadiusKm}
+            placeholder="1"
+          />
+          <Field
+            label="Yetkazish narxi"
+            hint="Bepul zonadan tashqarida olinadi. 0 — har doim bepul."
+            value={price}
+            onChange={setPrice}
+            placeholder="15000"
+          />
+          <Field
+            label="Har km uchun qoʻshimcha"
+            hint="Bepul zona chekkasidan boshlab, har boshlangan km uchun."
+            value={perKm}
+            onChange={setPerKm}
+            placeholder="3000"
+          />
+          <Field
+            label="Shu summadan bepul"
+            hint="Buyurtma shu summaga yetsa, masofadan qatʼi nazar bepul."
+            value={freeFrom}
+            onChange={setFreeFrom}
+            placeholder="150000"
+          />
+          <Field
+            label="Minimal buyurtma"
+            hint="Bundan kam buyurtma uchun ogohlantirish chiqadi."
+            value={minOrder}
+            onChange={setMinOrder}
+            placeholder="50000"
+          />
+        </div>
+
+        {needsCoordinates && (
+          <p style={{ color: '#991B1B', fontSize: 13, marginTop: 14 }}>
+            Radius ishlashi uchun filialga koordinata kiritilishi kerak.
+          </p>
+        )}
+        {radiusConflict && (
+          <p style={{ color: '#991B1B', fontSize: 13, marginTop: 14 }}>
+            Bepul zona yetkazish radiusidan katta boʻlishi mumkin emas.
+          </p>
+        )}
+
+        <Preview {...payload} />
+
+        <button
+          type="submit"
+          className="btn"
+          style={{ marginTop: 16 }}
+          disabled={save.isPending || radiusConflict || needsCoordinates}
+        >
+          {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
         </button>
-      </div>
-      <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
-        Boʻsh qoldirilgan maydon — qoida ishlatilmaydi.
-      </p>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: 14,
-        }}
-      >
-        <Field
-          label="Yetkazish radiusi (km)"
-          hint="Bundan uzoqqa buyurtma qabul qilinmaydi. Boʻsh — cheklovsiz."
-          value={radiusKm}
-          onChange={setRadiusKm}
-          placeholder="5"
-        />
-        <Field
-          label="Bepul zona (km)"
-          hint="Shu masofagacha yetkazish bepul."
-          value={freeRadiusKm}
-          onChange={setFreeRadiusKm}
-          placeholder="1"
-        />
-        <Field
-          label="Yetkazish narxi"
-          hint="Bepul zonadan tashqarida olinadi. 0 — har doim bepul."
-          value={price}
-          onChange={setPrice}
-          placeholder="15000"
-        />
-        <Field
-          label="Har km uchun qoʻshimcha"
-          hint="Bepul zona chekkasidan boshlab, har boshlangan km uchun."
-          value={perKm}
-          onChange={setPerKm}
-          placeholder="3000"
-        />
-        <Field
-          label="Shu summadan bepul"
-          hint="Buyurtma shu summaga yetsa, masofadan qatʼi nazar bepul."
-          value={freeFrom}
-          onChange={setFreeFrom}
-          placeholder="150000"
-        />
-        <Field
-          label="Minimal buyurtma"
-          hint="Bundan kam buyurtma uchun ogohlantirish chiqadi."
-          value={minOrder}
-          onChange={setMinOrder}
-          placeholder="50000"
-        />
-      </div>
-
-      {needsCoordinates && (
-        <p style={{ color: '#991B1B', fontSize: 13, marginTop: 14 }}>
-          Radius ishlashi uchun filialga koordinata kiritilishi kerak.
-        </p>
-      )}
-      {radiusConflict && (
-        <p style={{ color: '#991B1B', fontSize: 13, marginTop: 14 }}>
-          Bepul zona yetkazish radiusidan katta boʻlishi mumkin emas.
-        </p>
-      )}
-
-      <Preview {...payload} />
-
-      <button
-        type="submit"
-        className="btn"
-        style={{ marginTop: 16 }}
-        disabled={save.isPending || radiusConflict || needsCoordinates}
-      >
-        {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-      </button>
-    </form>
+      </form>
+    </Drawer>
   );
 }
 

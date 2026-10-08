@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { useEffect, useRef, type ComponentType } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Permission } from '@restor/shared-types';
 import {
@@ -70,8 +70,17 @@ const TITLES: Record<string, string> = {
 export function AppLayout() {
   const { user, logout, can } = useAuth();
   const location = useLocation();
+  const navRef = useRef<HTMLElement>(null);
 
   const visible = NAV.filter((item) => !item.permission || can(item.permission));
+
+  // On narrow screens the nav is a horizontal strip; bring the current section
+  // into view so the user can see where they are.
+  useEffect(() => {
+    navRef.current
+      ?.querySelector('.nav-link--active')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [location.pathname]);
 
   return (
     <div className="layout">
@@ -80,7 +89,7 @@ export function AppLayout() {
           RES<span>TOR</span>
         </div>
 
-        <nav>
+        <nav ref={navRef} className="sidebar__nav" aria-label="Asosiy menyu">
           {visible.map(({ to, label, Icon }) => (
             <NavLink
               key={to}
@@ -95,7 +104,7 @@ export function AppLayout() {
         </nav>
 
         <div className="sidebar__footer">
-          <div>{user?.fullName}</div>
+          <div className="sidebar__user">{user?.fullName}</div>
           <div>{user?.roles.join(', ')}</div>
         </div>
       </aside>
@@ -103,11 +112,16 @@ export function AppLayout() {
       <div className="main">
         <header className="header">
           <h1 className="header__title">{TITLES[location.pathname] ?? 'RESTOR'}</h1>
-          <div className="row">
-            <span className="muted">{user?.tenantSlug ?? 'platform'}</span>
-            <button type="button" className="btn btn--ghost" onClick={() => void logout()}>
+          <div className="header__actions">
+            <span className="header__tenant">{user?.tenantSlug ?? 'platform'}</span>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              aria-label="Chiqish"
+              onClick={() => void logout()}
+            >
               <IconLogout size={16} />
-              Chiqish
+              <span className="header__logout-label">Chiqish</span>
             </button>
           </div>
         </header>

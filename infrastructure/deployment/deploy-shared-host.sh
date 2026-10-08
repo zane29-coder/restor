@@ -9,6 +9,10 @@
 # starts the API on loopback, and adds one site file to the host's existing
 # nginx.
 #
+# Each app is served from its own sub-domain (restor.uz, app., pos., kds., tg.,
+# api.). Run init-ssl-host.sh once first — the site config references the
+# certificate and will not load without it.
+#
 # Every change is additive. The only shared file touched is nginx's config
 # directory, and the config is validated with `nginx -t` before any reload —
 # so a mistake here cannot take the other sites down.
@@ -19,9 +23,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-DOMAIN="${RESTOR_DOMAIN:-restore-1.duckdns.org}"
+DOMAIN="${RESTOR_DOMAIN:-restor.uz}"
 WEB_ROOT="/var/www/restor"
 COMPOSE="docker compose -f docker-compose.server.yml --env-file .env.server"
+
+# One host per app — see infrastructure/nginx/host/restor.conf. The API host is
+# verified separately because it answers /health and not an index.html.
+API_HOST="api.$DOMAIN"
+WEB_HOSTS=("$DOMAIN" "app.$DOMAIN" "pos.$DOMAIN" "kds.$DOMAIN" "tg.$DOMAIN")
 
 log()  { printf '\033[0;34m▸\033[0m %s\n' "$1"; }
 ok()   { printf '\033[0;32m✔\033[0m %s\n' "$1"; }
@@ -55,17 +64,20 @@ if [[ "$SKIP_WEB" == false ]]; then
   log 'Building shared packages'
   npm run build:packages
 
-  # Same-origin API behind the host nginx, so no CORS preflight anywhere.
+  # Same-origin API: every app host proxies /api/ to the same backend, so there
+  # is no CORS preflight anywhere and no app has to know its own domain.
   export VITE_API_URL=/api/v1
 
-  # Each sub-path app is built with a matching `--base`, or its asset URLs
-  # would resolve against the domain root and 404.
+  # Every app now owns a sub-domain, so each is mounted at the root of its own
+  # host and `--base=/` is correct for all of them. (Under the old path-based
+  # layout each needed a matching `--base=/admin/`, `/pos/`, … or its asset URLs
+  # resolved against the domain root and 404'd.)
   log 'Building web apps'
   ( cd apps/customer-web      && npx vite build --base=/ )
-  ( cd apps/admin-web         && npx vite build --base=/admin/ )
-  ( cd apps/pos               && npx vite build --base=/pos/ )
-  ( cd apps/kitchen-display   && npx vite build --base=/kds/ )
-  ( cd apps/telegram-mini-app && npx vite build --base=/tg/ )
+  ( cd apps/admin-web         && npx vite build --base=/ )
+  ( cd apps/pos               && npx vite build --base=/ )
+  ( cd apps/kitchen-display   && npx vite build --base=/ )
+  ( cd apps/telegram-mini-app && npx vite build --base=/ )
 
   log "Publishing to $WEB_ROOT"
   sudo mkdir -p "$WEB_ROOT"/{customer,admin,pos,kds,miniapp}
@@ -115,9 +127,22 @@ fi
 # --- nginx -------------------------------------------------------------------
 log 'Installing the nginx site'
 
+# The certificate must already exist: the site config references
+# /etc/letsencrypt/live/restor.uz/ and `nginx -t` fails without it. Checking
+# here gives a clear message instead of a config-test dump.
+#
+# `sudo test` rather than `[[ -s ]]`: the live/ symlink points into
+# /etc/letsencrypt/archive/, which is mode 0700, so an unprivileged stat through
+# it fails even when the certificate is there.
+if ! sudo test -s "/etc/letsencrypt/live/$DOMAIN/fullchain.pem"; then
+  fail "No certificate for $DOMAIN — run infrastructure/deployment/init-ssl-host.sh first"
+fi
+
 sudo install -m 644 infrastructure/nginx/host/restor-ratelimit.conf /etc/nginx/conf.d/restor-ratelimit.conf
 sudo mkdir -p /etc/nginx/snippets
-sudo install -m 644 infrastructure/nginx/host/restor-proxy.conf /etc/nginx/snippets/restor-proxy.conf
+for snippet in restor-proxy restor-tls restor-headers restor-spa; do
+  sudo install -m 644 "infrastructure/nginx/host/$snippet.conf" "/etc/nginx/snippets/$snippet.conf"
+done
 sudo install -m 644 infrastructure/nginx/host/restor.conf /etc/nginx/sites-available/restor
 sudo ln -sfn /etc/nginx/sites-available/restor /etc/nginx/sites-enabled/restor
 
@@ -133,8 +158,26 @@ sudo systemctl reload nginx
 ok 'nginx reloaded'
 
 # --- Verify ------------------------------------------------------------------
+# One check per host. A certificate covering every name and an nginx that
+# reloaded cleanly still leave room for a vhost pointing at an empty directory,
+# and that is exactly the failure a deploy should catch rather than a user.
 log 'Verifying'
-curl -fsS "https://$DOMAIN/health" >/dev/null && ok "https://$DOMAIN/health responds"
+
+curl -fsS "https://$API_HOST/health" >/dev/null \
+  && ok "https://$API_HOST/health responds" \
+  || fail "https://$API_HOST/health did not respond"
+
+for host in "${WEB_HOSTS[@]}"; do
+  # --head: the index page, not its contents. A vhost whose root is missing
+  # answers 403/404 here instead of 200.
+  if curl -fsS --head "https://$host/" >/dev/null; then
+    ok "https://$host/ serves"
+  else
+    fail "https://$host/ did not serve — check /var/log/nginx/restor-*-error.log"
+  fi
+done
 
 $COMPOSE ps
 ok "Deploy complete — https://$DOMAIN"
+printf '  %s\n' "admin: https://app.$DOMAIN" "POS: https://pos.$DOMAIN" \
+  "KDS: https://kds.$DOMAIN" "Mini App: https://tg.$DOMAIN" "API: https://$API_HOST"

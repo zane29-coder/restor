@@ -17,6 +17,9 @@ out/
 .env
 .env.*
 !.env.example
+# Templates for the real files (.env.prod.example, .env.server.example …).
+# `.env.*` above is what keeps the filled-in `.env.prod` and `.env.server` out.
+!.env.*.example
 *.pem
 *.key
 *.p12

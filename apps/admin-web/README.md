@@ -43,8 +43,13 @@ npm run build                # → dist/
 npm run preview
 ```
 
-Deployed as static files; `infrastructure/deployment/deploy.sh` publishes
-`dist/` to the nginx web root.
+Deployed as static files on its own host, `app.<domain>` — in production
+`https://app.restor.uz`. `infrastructure/deployment/deploy.sh` (or
+`deploy-shared-host.sh`) publishes `dist/` to the nginx web root.
+
+The bundle is built with `--base=/` and does not know its domain: `/api/v1` is
+proxied by whichever host serves it, which is what keeps `VITE_API_URL`
+relative and every request same-origin.
 
 ## Screens
 

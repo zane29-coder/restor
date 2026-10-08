@@ -54,11 +54,11 @@ reaches `READY` only once every station is done.
 
 ## Deployment
 
-Served by nginx at `admin.<domain>/kds/`. On a dedicated tablet, open it in
-kiosk mode:
+Served by nginx on its own host, `kds.<domain>`. On a dedicated tablet, open it
+in kiosk mode:
 
 ```bash
-chromium --kiosk --app=https://admin.restor.uz/kds/
+chromium --kiosk --app=https://kds.restor.uz/
 ```
 
 Disable the device's screen timeout and auto-updates — a kitchen screen that

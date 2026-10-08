@@ -1,7 +1,7 @@
 # End-to-end check of the courier profile + wallet + handover flow.
 # ASCII only: PowerShell 5.1 reads .ps1 as ANSI and Uzbek apostrophes break it.
 $ErrorActionPreference = 'Stop'
-$API = 'https://restore-1.duckdns.org/api/v1'
+$API = 'https://api.restor.uz/api/v1'
 $pass = 0; $fail = 0
 
 function Api($method, $path, $body = $null, $jwt = $null) {

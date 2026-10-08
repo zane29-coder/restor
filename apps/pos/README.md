@@ -61,11 +61,16 @@ its own lifecycle and offline requirements, which is why it is a separate app.
 
 ## Deployment
 
-Served by nginx at `admin.<domain>/pos/`, in kiosk mode:
+Served by nginx on its own host, `pos.<domain>`, in kiosk mode:
 
 ```bash
-chromium --kiosk --app=https://admin.restor.uz/pos/
+chromium --kiosk --app=https://pos.restor.uz/
 ```
+
+Its own host rather than a sub-path under the admin panel: a cashier types one
+name, the kiosk browser has nothing to navigate away to, and the POS keeps its
+own cookie scope and its own access log. The bundle is built with `--base=/`
+and does not know its domain — `/api/v1` is proxied on whichever host serves it.
 
 ## Not yet built
 

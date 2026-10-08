@@ -2,7 +2,7 @@
   "expo": {
     "name": "RESTOR Kuryer",
     "slug": "restor-courier",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "orientation": "portrait",
     "scheme": "restorcourier",
     "userInterfaceStyle": "light",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "uz.restor.courier",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": { "backgroundColor": "#FF6B00" },
       "permissions": [
         "ACCESS_COARSE_LOCATION",
@@ -40,7 +40,8 @@
       ]
     ],
     "extra": {
-      "apiUrl": "https://restore-1.duckdns.org/api/v1"
+      "comment:apiUrl": "Baked into the binary at build time — a courier cannot change it, so it must be the final public host. The APKs already on couriers' phones carry the old restore-1.duckdns.org value, which is why that host still proxies /api/ (see infrastructure/nginx/host/restor.conf).",
+      "apiUrl": "https://api.restor.uz/api/v1"
     }
   }
 }

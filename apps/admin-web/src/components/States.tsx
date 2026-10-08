@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { IconAlert, IconInbox } from '@restor/ui';
+import { IconAlert, IconCheckCircle, IconClose, IconInbox } from '@restor/ui';
 import { RestorApiError } from '../lib/api';
 
 export function Loading({ label = 'Yuklanmoqda…' }: { label?: string }) {
@@ -54,10 +54,32 @@ export function Empty({ title, description }: { title: string; description?: Rea
   return (
     <div className="card center" style={{ minHeight: 180 }}>
       <div style={{ display: 'grid', justifyItems: 'center', gap: 10, textAlign: 'center' }}>
-        <IconInbox size={34} strokeWidth={1.5} style={{ color: 'var(--border)' }} />
+        <IconInbox size={34} strokeWidth={1.5} style={{ color: 'var(--text-subtle)' }} />
         <p style={{ fontWeight: 600, color: 'var(--text)', margin: 0 }}>{title}</p>
         {description && <p className="muted" style={{ margin: 0 }}>{description}</p>}
       </div>
+    </div>
+  );
+}
+
+/** The outcome of an action, shown at the top of a page until dismissed. */
+export function Notice({
+  notice,
+  onClose,
+}: {
+  notice: { ok: boolean; text: string };
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className={`notice ${notice.ok ? 'notice--ok' : 'notice--error'}`}
+      role={notice.ok ? 'status' : 'alert'}
+    >
+      {notice.ok ? <IconCheckCircle size={18} /> : <IconAlert size={18} />}
+      <span className="notice__text">{notice.text}</span>
+      <button type="button" className="icon-btn" aria-label="Yopish" onClick={onClose}>
+        <IconClose size={16} />
+      </button>
     </div>
   );
 }

@@ -11,10 +11,10 @@ import {
   type Order,
 } from '@restor/shared-types';
 import { formatMoney, formatPhone } from '@restor/shared-utils';
-import { IconAlert, IconCheckCircle, IconMapPin, IconPhone } from '@restor/ui';
+import { IconMapPin, IconPhone } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ErrorState, Loading } from '../components/States';
+import { ErrorState, Loading, Notice } from '../components/States';
 
 /**
  * Dispatch (TZ §23-§28).
@@ -74,19 +74,7 @@ export function CouriersPage() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      {notice && (
-        <div
-          className="card row"
-          style={{
-            gap: 10,
-            background: notice.ok ? '#F0FDF4' : '#FEF2F2',
-            borderColor: notice.ok ? '#BBF7D0' : '#FECACA',
-          }}
-        >
-          {notice.ok ? <IconCheckCircle /> : <IconAlert />}
-          <span style={{ fontSize: 14 }}>{notice.text}</span>
-        </div>
-      )}
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
       {pending.length > 0 && can(Permission.COURIER_WALLET_SETTLE) && (
         <HandoverQueue

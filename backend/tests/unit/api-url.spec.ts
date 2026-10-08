@@ -1,4 +1,9 @@
-import { API_GLOBAL_PREFIX, apiUrl } from '../../src/common/constants';
+import {
+  API_GLOBAL_PREFIX,
+  RESERVED_HOST_LABELS,
+  apiUrl,
+  platformHostnames,
+} from '../../src/common/constants';
 
 /**
  * Absolute URLs back to this API (TZ §36).
@@ -53,5 +58,61 @@ describe('apiUrl', () => {
     // Both read this constant; the test pins its value so a change has to be
     // deliberate rather than a passing thought.
     expect(API_GLOBAL_PREFIX).toBe('api/v1');
+  });
+});
+
+/**
+ * The platform's own hostnames (TZ §47, §49).
+ *
+ * The tenant resolver reads the leading label of the Host as a tenant slug, so
+ * `demo.restor.uz` serves the `demo` tenant without any configuration. Once
+ * each app has a sub-domain, that same rule makes `pos.restor.uz` resolve to a
+ * tenant slugged `pos` — which is why the resolver skips the label rule on
+ * these hosts, and why tenant creation will not hand the labels out.
+ *
+ * An explicit `Tenant.domain` still matches them: that is a deliberate act by
+ * a platform admin, and how a single-tenant deployment serves its storefront
+ * from the bare domain.
+ */
+describe('platformHostnames', () => {
+  const hosts = platformHostnames('https://restor.uz');
+
+  it('includes the apex and every app host', () => {
+    expect(hosts.has('restor.uz')).toBe(true);
+    expect(hosts.has('app.restor.uz')).toBe(true);
+    expect(hosts.has('pos.restor.uz')).toBe(true);
+    expect(hosts.has('kds.restor.uz')).toBe(true);
+    expect(hosts.has('tg.restor.uz')).toBe(true);
+    expect(hosts.has('api.restor.uz')).toBe(true);
+    expect(hosts.has('www.restor.uz')).toBe(true);
+  });
+
+  it('covers every reserved label', () => {
+    for (const label of RESERVED_HOST_LABELS) {
+      expect(hosts.has(`${label}.restor.uz`)).toBe(true);
+    }
+  });
+
+  it('leaves a tenant sub-domain resolvable', () => {
+    // The white-label feature depends on this NOT matching.
+    expect(hosts.has('demo.restor.uz')).toBe(false);
+  });
+
+  it('does not reserve the same label under another apex', () => {
+    // Only labels under this platform's own domain are ours. A tenant's
+    // white-label host may legitimately be `app.burgerking.uz`.
+    expect(hosts.has('app.burgerking.uz')).toBe(false);
+  });
+
+  it('derives the apex from the URL rather than a hard-coded domain', () => {
+    const staging = platformHostnames('https://restor-staging.example.com:8443');
+    expect(staging.has('restor-staging.example.com')).toBe(true);
+    expect(staging.has('pos.restor-staging.example.com')).toBe(true);
+    // The port belongs to the URL, not to the hostname.
+    expect(staging.has('restor-staging.example.com:8443')).toBe(false);
+  });
+
+  it('ignores a path and a trailing slash on the configured URL', () => {
+    expect(platformHostnames('https://restor.uz/').has('restor.uz')).toBe(true);
   });
 });

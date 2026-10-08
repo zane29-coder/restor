@@ -1,14 +1,26 @@
 import { Injectable, type NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { TenantStatus } from '@restor/shared-types';
+import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../database/prisma.service';
 import { patchContext, runUnscoped } from '../context/request-context';
+import { platformHostnames } from '../constants';
 
 interface CachedTenant {
   id: string;
   status: string;
   expiresAt: number;
 }
+
+/**
+ * What the request offered as evidence of which tenant it belongs to.
+ *
+ * `matchLeadingLabel` is false on the platform's own hostnames: there, only an
+ * explicitly configured `Tenant.domain` counts.
+ */
+type TenantHint =
+  | { kind: 'slug'; value: string }
+  | { kind: 'domain'; value: string; matchLeadingLabel: boolean };
 
 /** How long a slug→tenant mapping is trusted without re-reading the database. */
 const CACHE_TTL_MS = 60_000;
@@ -25,6 +37,13 @@ const CACHE_TTL_MS = 60_000;
  *   1. `X-Tenant-Slug` header — what the storefront SPA sends.
  *   2. `Host` matching a tenant's white-label `domain`.
  *   3. The leading label of the host, e.g. `demo.restor.uz` → `demo`.
+ *
+ * Rule 3 does NOT apply on this deployment's own hostnames. Each app has a
+ * sub-domain of its own, so reading the leading label there would make
+ * `pos.restor.uz` resolve to a tenant slugged `pos` on every unauthenticated
+ * request. Rule 2 still applies to them: pointing a tenant's `domain` at the
+ * apex is a deliberate act by a platform admin, and it is how a single-tenant
+ * deployment serves its storefront from the bare domain.
  *
  * This only ever SETS a tenant when the context has none. It runs before the
  * auth guard, so a real token always wins: a client cannot widen its scope by
@@ -43,7 +62,17 @@ export class TenantResolverMiddleware implements NestMiddleware {
    */
   private readonly cache = new Map<string, CachedTenant>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  /** This deployment's own hostnames; a tenant slug never reaches one. */
+  private readonly platformHosts: ReadonlySet<string>;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    config: AppConfig,
+  ) {
+    // Computed in the constructor body, not as a field initializer: the latter
+    // would run before the injected config is assigned.
+    this.platformHosts = platformHostnames(config.customerWebUrl);
+  }
 
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
     const hint = this.extractHint(req);
@@ -62,7 +91,7 @@ export class TenantResolverMiddleware implements NestMiddleware {
   }
 
   /** The slug or hostname to look up, or `null` when there is nothing to go on. */
-  private extractHint(req: Request): { kind: 'slug' | 'domain'; value: string } | null {
+  private extractHint(req: Request): TenantHint | null {
     const header = req.headers['x-tenant-slug'];
     const slug = (Array.isArray(header) ? header[0] : header)?.trim().toLowerCase();
     if (slug) return { kind: 'slug', value: slug.slice(0, 80) };
@@ -70,13 +99,18 @@ export class TenantResolverMiddleware implements NestMiddleware {
     const host = req.headers.host?.split(':')[0]?.toLowerCase();
     if (!host || host === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
 
-    return { kind: 'domain', value: host };
+    return {
+      kind: 'domain',
+      value: host,
+      // `app.restor.uz`, `pos.restor.uz`, the apex itself: this deployment's
+      // own hosts, where the leading label is an app name and not a slug.
+      matchLeadingLabel: !this.platformHosts.has(host),
+    };
   }
 
-  private async resolve(hint: {
-    kind: 'slug' | 'domain';
-    value: string;
-  }): Promise<{ id: string; status: string } | null> {
+  private async resolve(hint: TenantHint): Promise<{ id: string; status: string } | null> {
+    // `matchLeadingLabel` is derived from the host, so it does not need to be
+    // part of the key: the same host always asks the same question.
     const cacheKey = `${hint.kind}:${hint.value}`;
     const cached = this.cache.get(cacheKey);
 
@@ -95,8 +129,11 @@ export class TenantResolverMiddleware implements NestMiddleware {
                 OR: [
                   { domain: hint.value },
                   // `demo.restor.uz` → slug `demo`, so a tenant gets a
-                  // subdomain without configuring a custom domain.
-                  { slug: hint.value.split('.')[0] ?? '' },
+                  // subdomain without configuring a custom domain. Skipped on
+                  // the platform's own hosts, where the label names an app.
+                  ...(hint.matchLeadingLabel
+                    ? [{ slug: hint.value.split('.')[0] ?? '' }]
+                    : []),
                 ],
               },
         select: { id: true, status: true },

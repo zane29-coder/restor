@@ -17,10 +17,12 @@
   --warning: #f59e0b;
   --warning-light: #fef3c7;
   --danger: #dc2626;
+  --danger-dark: #b91c1c;
   --danger-light: #fee2e2;
 
   --text: #111827;
   --text-muted: #6b7280;
+  --text-subtle: #9ca3af;
   --bg: #f9fafb;
   --surface: #ffffff;
   --surface-alt: #f3f4f6;
@@ -32,6 +34,8 @@
 
   --sidebar-width: 236px;
   --header-height: 60px;
+  /* Height of the horizontal nav bar on narrow screens. */
+  --mobile-nav-height: 56px;
 }
 
 * {
@@ -57,21 +61,81 @@ a {
   text-decoration: none;
 }
 
+/*
+ * Form controls. Pages size their filters and inputs inline, so these rules
+ * use :where() (zero specificity) and only supply what the inline styles
+ * leave out: the app font (browsers default inputs to their own), one shared
+ * height that lines up with .btn, and a visible focus ring.
+ */
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+}
+
+:where(
+    input:not([type='checkbox'], [type='radio'], [type='file'], [type='range'], [type='color']),
+    select
+  ) {
+  min-height: 38px;
+  background-color: var(--surface);
+}
+
+:where(input, select, textarea)::placeholder {
+  color: var(--text-subtle);
+}
+
+:where(input, select, textarea):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -1px;
+}
+
+:where(input, select, textarea):disabled {
+  background-color: var(--surface-alt);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--primary);
+}
+
+:where(.btn, .nav-link, summary, a):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* ---------------- Layout ---------------- */
 
 .layout {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
 }
 
+/*
+ * Sticky and viewport-tall, so the navigation and the signed-in user stay in
+ * view on long pages instead of scrolling away with the content.
+ */
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   background: var(--secondary);
   color: #fff;
   display: flex;
   flex-direction: column;
   padding: 16px 12px;
   gap: 4px;
+  z-index: 20;
+}
+
+.sidebar__nav {
+  display: grid;
+  gap: 2px;
 }
 
 .sidebar__brand {
@@ -109,10 +173,21 @@ a {
 
 .sidebar__footer {
   margin-top: auto;
-  padding-top: 16px;
+  padding: 16px 12px 4px;
   border-top: 1px solid rgb(255 255 255 / 12%);
   font-size: 12px;
   color: rgb(255 255 255 / 60%);
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar__user {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .main {
@@ -136,6 +211,26 @@ a {
   font-size: 17px;
   font-weight: 600;
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.header__tenant {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .content {
@@ -199,12 +294,20 @@ a {
   background: var(--primary);
   color: #fff;
   font-weight: 500;
+  line-height: 1.2;
   min-height: 38px;
-  transition: opacity 120ms ease;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
 }
 
 .btn:hover:not(:disabled) {
   background: var(--primary-dark);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .btn:disabled {
@@ -224,6 +327,35 @@ a {
 
 .btn--danger {
   background: var(--danger);
+}
+
+/* Without this the generic .btn hover above turned red buttons orange. */
+.btn--danger:hover:not(:disabled) {
+  background: var(--danger-dark);
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.icon-btn:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 
 .field {
@@ -322,6 +454,51 @@ tbody tr:hover {
   color: #9a3412;
 }
 
+/*
+ * Result of an action ("Saqlandi", or the server's error). Sticky so it stays
+ * on screen when the action was taken far down a long page.
+ */
+.notice {
+  position: sticky;
+  top: 12px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px 10px 14px;
+  border: 1px solid;
+  border-radius: var(--radius);
+  font-size: 14px;
+  box-shadow: var(--shadow-md);
+}
+
+.notice--ok {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #14532d;
+}
+
+.notice--error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #7f1d1d;
+}
+
+.notice__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice .icon-btn {
+  width: 28px;
+  height: 28px;
+  color: inherit;
+}
+
+.notice .icon-btn:hover {
+  background: rgb(0 0 0 / 6%);
+}
+
 .muted {
   color: var(--text-muted);
 }
@@ -398,18 +575,102 @@ tbody tr:hover {
   animation: spin 0.8s linear infinite;
 }
 
+/* ---------------- Drawer ---------------- */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(17 24 39 / 45%);
+  animation: fade-in 150ms ease;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 41;
+  width: min(560px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow: -12px 0 32px rgb(17 24 39 / 16%);
+  animation: slide-in 180ms ease;
+}
+
+.drawer:focus {
+  outline: none;
+}
+
+.drawer__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--header-height);
+  padding: 10px 12px 10px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .drawer-backdrop {
+    animation: none;
+  }
+}
+
 /* ---------------- Responsive ---------------- */
 
 @media (max-width: 860px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    /* Keep the nav bar its own height; the content row takes the rest. */
+    grid-template-rows: auto 1fr;
   }
 
+  /* The sidebar becomes a horizontally scrolling bar pinned to the top. */
   .sidebar {
+    height: var(--mobile-nav-height);
     flex-direction: row;
-    overflow-x: auto;
-    padding: 8px;
     align-items: center;
+    padding: 0 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    display: none;
   }
 
   .sidebar__brand,
@@ -417,11 +678,52 @@ tbody tr:hover {
     display: none;
   }
 
+  .sidebar__nav {
+    display: flex;
+    gap: 4px;
+  }
+
   .nav-link {
     white-space: nowrap;
+    padding: 8px 12px;
+  }
+
+  .header {
+    padding: 0 16px;
+    height: 52px;
+  }
+
+  .header__title {
+    font-size: 16px;
+  }
+
+  .header__tenant {
+    display: none;
   }
 
   .content {
     padding: 16px;
+  }
+
+  .notice {
+    top: calc(var(--mobile-nav-height) + 8px);
+  }
+
+  .drawer__body {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header__logout-label {
+    display: none;
+  }
+
+  .login__card {
+    padding: 24px 20px;
+  }
+
+  .stat__value {
+    font-size: 22px;
   }
 }

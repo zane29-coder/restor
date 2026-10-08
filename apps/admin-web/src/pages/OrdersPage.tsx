@@ -9,8 +9,9 @@ import {
 import { formatMoney } from '@restor/shared-utils';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { Drawer } from '../components/Drawer';
 import { ErrorState, Empty, Loading } from '../components/States';
-import { StatusBadge } from './DashboardPage';
+import { ORDER_TYPE_LABELS, STATUS_LABELS, StatusBadge } from './DashboardPage';
 
 /**
  * Order management (TZ §46).
@@ -53,7 +54,8 @@ export function OrdersPage() {
       }),
     onSuccess: (updated) => {
       setActionError(null);
-      setSelected(updated);
+      // Refresh the open panel, but don't pop it open for a change made from the table.
+      setSelected((current) => (current?.id === updated.id ? updated : current));
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
     onError: (error) => {
@@ -77,7 +79,7 @@ export function OrdersPage() {
           <option value="">Barcha statuslar</option>
           {Object.values(OrderStatus).map((value) => (
             <option key={value} value={value}>
-              {value}
+              {STATUS_LABELS[value] ?? value}
             </option>
           ))}
         </select>
@@ -136,7 +138,7 @@ export function OrdersPage() {
                   </td>
                   <td>{order.branch?.name ?? '—'}</td>
                   <td>{order.customerName ?? order.customerPhone ?? '—'}</td>
-                  <td>{order.type}</td>
+                  <td>{ORDER_TYPE_LABELS[order.type] ?? order.type}</td>
                   <td>
                     <StatusBadge status={order.status} />
                   </td>
@@ -191,7 +193,7 @@ function StatusActions({
           disabled={isPending}
           onClick={() => onChange(candidate)}
         >
-          {candidate}
+          → {STATUS_LABELS[candidate] ?? candidate}
         </button>
       ))}
     </div>
@@ -205,16 +207,22 @@ function OrderDetail({ order, onClose }: { order: Order; onClose: () => void }) 
   });
 
   return (
-    <div className="card">
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h2 style={{ fontSize: 16, margin: 0 }}>Buyurtma {order.displayNumber}</h2>
+    <Drawer title={`Buyurtma ${order.displayNumber}`} onClose={onClose}>
+      <div className="row" style={{ marginBottom: 18 }}>
+        <StatusBadge status={order.status} />
+        <span className="muted">{ORDER_TYPE_LABELS[order.type] ?? order.type}</span>
         <div className="spacer" />
-        <button type="button" className="btn btn--ghost" onClick={onClose}>
-          Yopish
-        </button>
+        <span className="muted">
+          {new Date(order.createdAt).toLocaleString('uz-UZ', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
         <section>
           <h3 style={{ fontSize: 13, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
             Tarkibi
@@ -271,7 +279,7 @@ function OrderDetail({ order, onClose }: { order: Order; onClose: () => void }) 
           <ol style={{ margin: 0, paddingLeft: 18 }}>
             {timeline.data?.map((entry) => (
               <li key={entry.id} style={{ marginBottom: 6 }}>
-                <strong>{entry.toStatus}</strong>
+                <strong>{STATUS_LABELS[entry.toStatus] ?? entry.toStatus}</strong>
                 <div className="muted" style={{ fontSize: 12 }}>
                   {new Date(entry.createdAt).toLocaleTimeString('uz-UZ', {
                     hour: '2-digit',
@@ -284,7 +292,7 @@ function OrderDetail({ order, onClose }: { order: Order; onClose: () => void }) 
           </ol>
         </section>
       </div>
-    </div>
+    </Drawer>
   );
 }
 

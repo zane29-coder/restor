@@ -1,6 +1,6 @@
 # Courier flow end-to-end against the live deployment.
 # ASCII only: PowerShell 5.1 reads this file as ANSI.
-param([string]$BaseUrl = 'https://restore-1.duckdns.org/api/v1')
+param([string]$BaseUrl = 'https://api.restor.uz/api/v1')
 
 $ErrorActionPreference = 'Stop'
 $API = $BaseUrl.TrimEnd('/')

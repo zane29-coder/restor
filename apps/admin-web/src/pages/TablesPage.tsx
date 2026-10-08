@@ -7,10 +7,10 @@ import {
   type RestaurantTable,
   type WaiterCall,
 } from '@restor/shared-types';
-import { IconAlert, IconCheckCircle, IconPlus } from '@restor/ui';
+import { IconPlus } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { ErrorState, Loading } from '../components/States';
+import { ErrorState, Loading, Notice } from '../components/States';
 
 /**
  * Tables and QR service (TZ §20).
@@ -61,19 +61,7 @@ export function TablesPage() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      {notice && (
-        <div
-          className="card row"
-          style={{
-            gap: 10,
-            background: notice.ok ? '#F0FDF4' : '#FEF2F2',
-            borderColor: notice.ok ? '#BBF7D0' : '#FECACA',
-          }}
-        >
-          {notice.ok ? <IconCheckCircle /> : <IconAlert />}
-          <span style={{ fontSize: 14 }}>{notice.text}</span>
-        </div>
-      )}
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
       {canHandle && openCalls.length > 0 && (
         <CallQueue

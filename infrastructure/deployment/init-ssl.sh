@@ -24,7 +24,21 @@ set -a; source .env.prod; set +a
 COMPOSE="docker compose -f docker-compose.prod.yml --env-file .env.prod"
 
 # One certificate covering every host, so nginx can reference a single path.
-DOMAIN_ARGS=(-d "$DOMAIN" -d "www.$DOMAIN" -d "${API_DOMAIN:-api.$DOMAIN}" -d "${ADMIN_DOMAIN:-admin.$DOMAIN}")
+# `--cert-name` pins the live directory to $DOMAIN: without it, adding a name
+# later makes certbot create `restor.uz-0001` and nginx goes on quietly serving
+# the old certificate.
+CERT_DOMAINS=(
+  "$DOMAIN"
+  "www.$DOMAIN"
+  "${API_DOMAIN:-api.$DOMAIN}"
+  "${ADMIN_DOMAIN:-app.$DOMAIN}"
+  "${POS_DOMAIN:-pos.$DOMAIN}"
+  "${KDS_DOMAIN:-kds.$DOMAIN}"
+  "${MINIAPP_DOMAIN:-tg.$DOMAIN}"
+)
+
+DOMAIN_ARGS=(--cert-name "$DOMAIN")
+for domain in "${CERT_DOMAINS[@]}"; do DOMAIN_ARGS+=(-d "$domain"); done
 
 log() { printf '\033[0;34m▸\033[0m %s\n' "$1"; }
 
@@ -46,7 +60,7 @@ mkdir -p infrastructure/nginx/conf.d-bootstrap infrastructure/nginx/www
 cat > infrastructure/nginx/conf.d-bootstrap/bootstrap.conf <<EOF
 server {
   listen 80;
-  server_name $DOMAIN www.$DOMAIN ${API_DOMAIN:-api.$DOMAIN} ${ADMIN_DOMAIN:-admin.$DOMAIN};
+  server_name ${CERT_DOMAINS[*]};
   location /.well-known/acme-challenge/ { root /var/www/certbot; }
   location / { return 200 'RESTOR bootstrap'; add_header Content-Type text/plain; }
 }

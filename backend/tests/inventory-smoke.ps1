@@ -1,6 +1,6 @@
 # Inventory: items, movements, recipes and automatic deduction. ASCII only.
 $ErrorActionPreference = 'Stop'
-$API = 'https://restore-1.duckdns.org/api/v1'
+$API = 'https://api.restor.uz/api/v1'
 $pass = 0; $fail = 0
 
 function Api($method, $path, $body = $null, $jwt = $null) {

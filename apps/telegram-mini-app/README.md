@@ -23,6 +23,18 @@ verify, and it says so rather than pretending. To test:
 npm run build --workspace=@restor/telegram-mini-app
 ```
 
+## Deployment
+
+Served by nginx on its own host, `tg.<domain>` — in production
+`https://tg.restor.uz`. Register exactly that URL in
+[@BotFather](https://t.me/BotFather) (`/newapp`, or Bot Settings → Menu Button);
+it is not read from any environment variable, so changing the host means
+updating BotFather too.
+
+That vhost is the one that must **not** send `X-Frame-Options` — Telegram
+renders the Mini App inside a frame, and the header would leave the user
+staring at a blank sheet.
+
 ## Authentication
 
 This is the whole Telegram integration, and it is worth being precise about:
@@ -56,14 +68,6 @@ a token to `localStorage` risks handing one Telegram user another's session.
 
 **Haptics on add-to-cart and on the order result**, which is what makes a Mini
 App feel native rather than like a web page in a frame.
-
-## Deployment
-
-Served at `<domain>/tg/`. Note that the storefront host deliberately does
-**not** send `X-Frame-Options: DENY` — Telegram renders the Mini App inside a
-frame.
-
-Register the production URL with BotFather once deployed.
 
 ## Not yet built
 
