@@ -13,8 +13,25 @@ import { AppException } from '../../common/errors/app-exception';
 import { PrismaService } from '../../database/prisma.service';
 import { runUnscoped } from '../../common/context/request-context';
 
+/**
+ * Who a session belongs to.
+ *
+ * Staff and customers are separate tables on purpose — a customer holds no
+ * permissions and never reaches a staff surface — so a session has to say
+ * which one it points at. Spelled out rather than inferred from the roles
+ * array: a silent default is the wrong thing to have in the auth core.
+ */
+export type TokenSubjectKind = 'USER' | 'CUSTOMER';
+
+export interface TokenSubject {
+  kind: TokenSubjectKind;
+  id: string;
+}
+
 export interface AccessTokenClaims {
   userId: string;
+  /** Which table `userId` names. */
+  subjectKind: TokenSubjectKind;
   tenantId: string | null;
   roles: string[];
   permissions: Permission[];
@@ -72,7 +89,11 @@ export class TokenService {
       this.jwt.signAsync(refreshPayload, { secret: refreshSecret, expiresIn: refreshTtl }),
     ]);
 
-    await this.storeRefreshToken(claims.userId, refreshToken, context);
+    await this.storeRefreshToken(
+      { kind: claims.subjectKind, id: claims.userId },
+      refreshToken,
+      context,
+    );
 
     return {
       accessToken,
@@ -83,13 +104,13 @@ export class TokenService {
   }
 
   /**
-   * Verifies a refresh token and returns the user it belongs to.
+   * Verifies a refresh token and returns who it belongs to.
    *
    * Rejects tokens that were revoked or already rotated. A presented token
    * whose row carries `replacedByTokenHash` means someone is replaying an old
-   * token — every session for that user is killed rather than just this one.
+   * token — every session for that subject is killed rather than just this one.
    */
-  async verifyRefreshToken(token: string): Promise<{ userId: string; tokenId: string }> {
+  async verifyRefreshToken(token: string): Promise<{ subject: TokenSubject; tokenId: string }> {
     let payload: JwtRefreshPayload;
     try {
       payload = await this.jwt.verifyAsync<JwtRefreshPayload>(token, {
@@ -114,10 +135,22 @@ export class TokenService {
       throw AppException.unauthorized('Refresh token not recognised', ErrorCode.REFRESH_TOKEN_REVOKED);
     }
 
+    // The CHECK constraint guarantees exactly one is set; this reads it back
+    // without trusting that at runtime.
+    const subject: TokenSubject | null = stored.userId
+      ? { kind: 'USER', id: stored.userId }
+      : stored.customerId
+        ? { kind: 'CUSTOMER', id: stored.customerId }
+        : null;
+
+    if (!subject) {
+      throw AppException.unauthorized('Session belongs to nobody', ErrorCode.REFRESH_TOKEN_REVOKED);
+    }
+
     if (stored.revokedAt) {
       if (stored.replacedByTokenHash) {
         // Replay of an already-rotated token: assume the token was stolen.
-        await this.revokeAllForUser(stored.userId);
+        await this.revokeAllFor(subject);
       }
       throw AppException.unauthorized('Refresh token has been revoked', ErrorCode.REFRESH_TOKEN_REVOKED);
     }
@@ -126,7 +159,7 @@ export class TokenService {
       throw AppException.unauthorized('Refresh token has expired', ErrorCode.TOKEN_EXPIRED);
     }
 
-    return { userId: stored.userId, tokenId: stored.id };
+    return { subject, tokenId: stored.id };
   }
 
   /** Marks the old token as replaced by the new one. */
@@ -148,14 +181,22 @@ export class TokenService {
     );
   }
 
-  /** Kills every session for a user — password change, or a detected replay. */
-  async revokeAllForUser(userId: string): Promise<void> {
+  /** Kills every session for one subject — password change, or a replay. */
+  async revokeAllFor(subject: TokenSubject): Promise<void> {
     await runUnscoped(() =>
       this.prisma.db.refreshToken.updateMany({
-        where: { userId, revokedAt: null },
+        where: {
+          ...(subject.kind === 'CUSTOMER' ? { customerId: subject.id } : { userId: subject.id }),
+          revokedAt: null,
+        },
         data: { revokedAt: new Date() },
       }),
     );
+  }
+
+  /** The staff case, which is most callers. */
+  async revokeAllForUser(userId: string): Promise<void> {
+    await this.revokeAllFor({ kind: 'USER', id: userId });
   }
 
   /** Housekeeping: drops rows that can no longer authenticate anything. */
@@ -169,7 +210,7 @@ export class TokenService {
   }
 
   private async storeRefreshToken(
-    userId: string,
+    subject: TokenSubject,
     token: string,
     context: IssueContext,
   ): Promise<void> {
@@ -178,7 +219,8 @@ export class TokenService {
     await runUnscoped(() =>
       this.prisma.db.refreshToken.create({
         data: {
-          userId,
+          // Exactly one of the two, which the CHECK constraint also enforces.
+          ...(subject.kind === 'CUSTOMER' ? { customerId: subject.id } : { userId: subject.id }),
           tokenHash: hashToken(token),
           expiresAt: new Date(decoded.exp * 1000),
           ip: context.ip?.slice(0, 64),

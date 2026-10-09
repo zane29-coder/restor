@@ -256,6 +256,18 @@ export function buildTestMessage(event: TelegramEvent, branchName?: string | nul
     .join('\n');
 }
 
+/**
+ * The Uzbek name of an order status, without its emoji.
+ *
+ * Exported so the bot's customer-facing replies use the same words the staff
+ * group does — a customer told "Tayyor" and a cook reading "Tayyor" are then
+ * talking about the same thing. Unknown values fall back to the raw code
+ * rather than to an empty string, which would read as a missing status.
+ */
+export function orderStatusLabel(status: string): string {
+  return STATUSES[status]?.label ?? status;
+}
+
 /** Maps a domain event to the template that renders it. */
 export const EVENT_TEMPLATES: Record<string, string> = {
   [TelegramEvent.NEW_ORDER]: 'order.new',

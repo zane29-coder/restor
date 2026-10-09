@@ -9,6 +9,30 @@ import {
   TelegramApiClient,
   type TelegramWebhookInfo,
 } from '../../integrations/telegram/telegram-api.client';
+import { miniAppUrlFor } from '../../integrations/telegram/bot-reply.builder';
+
+/** What the bot should look like to a customer, pushed from the pasted token. */
+export interface BotProfile {
+  restaurantName: string;
+  /** Already carries `?tenant=`; see `miniAppUrlFor`. */
+  miniAppUrl: string;
+}
+
+/**
+ * The command list every restaurant's bot gets.
+ *
+ * Uzbek, like every other customer-facing string. Telegram requires lower-case
+ * latin, digits and underscore in the command itself, so the names stay
+ * English while the descriptions do not.
+ */
+const BOT_COMMANDS = [
+  { command: 'start', description: 'Menyuni ochish' },
+  { command: 'buyurtmalarim', description: 'Oxirgi buyurtmalarim' },
+  { command: 'filiallar', description: 'Manzillar va telefonlar' },
+  { command: 'help', description: 'Yordam' },
+];
+
+const MENU_BUTTON_TEXT = 'Menyu';
 
 /**
  * Where Telegram delivers a bot's updates, and whether a delivery is genuine.
@@ -140,6 +164,69 @@ export class TelegramWebhookService implements OnApplicationBootstrap {
     return { url, pendingUpdateCount: 0, lastErrorAt: null, lastErrorMessage: null };
   }
 
+  /**
+   * Everything a bot needs to be usable, from one pasted token.
+   *
+   * The webhook is only half of it. A bot that answers but has no command
+   * list and no menu button still has to be finished by hand in @BotFather —
+   * `/setcommands`, then `/newapp`, then Bot Settings → Menu Button — which is
+   * exactly the part a restaurant owner should never be asked to do.
+   *
+   * So the profile is pushed here too. The webhook is applied first and its
+   * failure propagates, because without it nothing works; the profile is
+   * cosmetic by comparison and a failure there is logged, not thrown.
+   */
+  async connect(configId: string, botToken: string, profile: BotProfile): Promise<TelegramWebhookInfo> {
+    const info = await this.register(configId, botToken);
+    await this.applyProfile(botToken, profile);
+    return info;
+  }
+
+  /** The `connect` a save or a boot uses: never throws, always reports. */
+  async tryConnect(configId: string, botToken: string, profile: BotProfile): Promise<void> {
+    try {
+      await this.connect(configId, botToken, profile);
+    } catch (error) {
+      this.logger.warn(
+        { configId, err: error instanceof Error ? error.message : error },
+        'Could not connect the Telegram bot; it will not answer until it is',
+      );
+    }
+  }
+
+  /**
+   * Commands, menu button and descriptions.
+   *
+   * `allSettled`, not `all`: these are four independent cosmetic settings, and
+   * one Telegram rejection — a description over its length cap, say — must not
+   * cost the other three.
+   */
+  async applyProfile(botToken: string, profile: BotProfile): Promise<void> {
+    const name = profile.restaurantName.slice(0, 60);
+
+    const results = await Promise.allSettled([
+      this.api.setMyCommands(botToken, BOT_COMMANDS),
+      // Only an HTTPS URL is accepted, and only this removes the BotFather step.
+      profile.miniAppUrl.startsWith('https://')
+        ? this.api.setChatMenuButton(botToken, profile.miniAppUrl, MENU_BUTTON_TEXT)
+        : Promise.resolve(),
+      this.api.setMyShortDescription(botToken, `${name} — onlayn buyurtma`),
+      this.api.setMyDescription(
+        botToken,
+        `${name}\n\nMenyuni koʻrish va buyurtma berish uchun "Boshlash" tugmasini bosing.`,
+      ),
+    ]);
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        this.logger.warn(
+          { err: result.reason instanceof Error ? result.reason.message : result.reason },
+          'A Telegram bot profile setting was rejected',
+        );
+      }
+    }
+  }
+
   /** Stops delivery — for a bot being switched off or handed back. */
   async unregister(botToken: string): Promise<void> {
     await this.api.deleteWebhook(botToken);
@@ -147,26 +234,6 @@ export class TelegramWebhookService implements OnApplicationBootstrap {
 
   async describe(botToken: string): Promise<TelegramWebhookInfo> {
     return this.api.getWebhookInfo(botToken);
-  }
-
-  /**
-   * Best-effort registration, for the paths where a failure must not block the
-   * caller: saving a config, and boot.
-   *
-   * A restaurant's bot token is saved by the platform admin, and Telegram being
-   * briefly unreachable at that moment should not lose the token. The outcome is
-   * logged, and `GET telegram/bot/status` shows the admin what actually
-   * happened.
-   */
-  async tryRegister(configId: string, botToken: string): Promise<void> {
-    try {
-      await this.register(configId, botToken);
-    } catch (error) {
-      this.logger.warn(
-        { configId, err: error instanceof Error ? error.message : error },
-        'Could not register the Telegram webhook; the bot will not answer until it is',
-      );
-    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -209,7 +276,12 @@ export class TelegramWebhookService implements OnApplicationBootstrap {
     const configs = await runUnscoped(() =>
       this.prisma.db.telegramConfig.findMany({
         where: { isActive: true, botTokenEncrypted: { not: null } },
-        select: { id: true, tenantId: true, botTokenEncrypted: true },
+        select: {
+          id: true,
+          tenantId: true,
+          botTokenEncrypted: true,
+          tenant: { select: { name: true, slug: true } },
+        },
       }),
     ).catch((error: unknown) => {
       this.logger.warn({ err: error }, 'Could not read Telegram configs at boot');
@@ -231,7 +303,10 @@ export class TelegramWebhookService implements OnApplicationBootstrap {
       }
 
       try {
-        await this.register(config.id, token);
+        await this.connect(config.id, token, {
+          restaurantName: config.tenant.name,
+          miniAppUrl: miniAppUrlFor(this.config.telegram.miniAppUrl, config.tenant.slug),
+        });
         registered += 1;
       } catch (error) {
         this.logger.warn(

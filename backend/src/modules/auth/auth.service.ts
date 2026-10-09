@@ -183,6 +183,10 @@ export class AuthService {
     const tokens = await this.tokens.issuePair(
       {
         userId: customer.id,
+        // Without this the session row is written against `users`, whose
+        // foreign key a customer id cannot satisfy — which is what made every
+        // Mini App sign-in fail with a flat 400.
+        subjectKind: 'CUSTOMER',
         tenantId: tenant.id,
         roles: ['CUSTOMER'],
         permissions: [],
@@ -220,24 +224,72 @@ export class AuthService {
    * the old token, so a role change takes effect on the next refresh.
    */
   async refresh(refreshToken: string, context: IssueContext): Promise<TokenPair> {
-    const { userId } = await this.tokens.verifyRefreshToken(refreshToken);
+    const { subject } = await this.tokens.verifyRefreshToken(refreshToken);
 
+    const claims =
+      subject.kind === 'CUSTOMER'
+        ? await this.customerClaims(subject.id)
+        : await this.staffClaims(subject.id);
+
+    const tokens = await this.tokens.issuePair(claims, context);
+    await this.tokens.rotate(refreshToken, tokens.refreshToken);
+
+    return tokens;
+  }
+
+  /**
+   * Rebuilt from the database, never copied from the old token, so a role
+   * change takes effect on the next refresh.
+   */
+  private async staffClaims(userId: string): Promise<AccessTokenClaims> {
     const user = await runUnscoped(() =>
       this.prisma.db.user.findUnique({ where: { id: userId }, include: USER_WITH_ACCESS }),
     );
 
     if (!user || !user.isActive || user.deletedAt) {
-      await this.tokens.revokeAllForUser(userId);
+      await this.tokens.revokeAllFor({ kind: 'USER', id: userId });
       throw AppException.unauthorized('This account is no longer active', ErrorCode.USER_INACTIVE);
     }
 
     this.assertTenantUsable(user.tenant);
 
-    const claims = this.buildClaims(user);
-    const tokens = await this.tokens.issuePair(claims, context);
-    await this.tokens.rotate(refreshToken, tokens.refreshToken);
+    return this.buildClaims(user);
+  }
 
-    return tokens;
+  /**
+   * A customer carries no permissions at all, so there is nothing to rebuild
+   * but their continued existence — and that still has to be checked, or a
+   * blocked customer would keep ordering until their access token expired.
+   */
+  private async customerClaims(customerId: string): Promise<AccessTokenClaims> {
+    const customer = await runUnscoped(() =>
+      this.prisma.db.customer.findUnique({
+        where: { id: customerId },
+        select: {
+          id: true,
+          tenantId: true,
+          isBlocked: true,
+          deletedAt: true,
+          tenant: { select: { status: true, deletedAt: true } },
+        },
+      }),
+    );
+
+    if (!customer || customer.isBlocked || customer.deletedAt || customer.tenant.deletedAt) {
+      await this.tokens.revokeAllFor({ kind: 'CUSTOMER', id: customerId });
+      throw AppException.unauthorized('This account is no longer active', ErrorCode.USER_INACTIVE);
+    }
+
+    this.assertTenantUsable(customer.tenant);
+
+    return {
+      userId: customer.id,
+      subjectKind: 'CUSTOMER',
+      tenantId: customer.tenantId,
+      roles: ['CUSTOMER'],
+      permissions: [],
+      branchIds: [],
+    };
   }
 
   async logout(refreshToken: string | undefined, userId: string): Promise<void> {
@@ -245,7 +297,10 @@ export class AuthService {
       await this.tokens.revoke(refreshToken);
     } else {
       // No token supplied (e.g. the app lost it): end every session instead.
-      await this.tokens.revokeAllForUser(userId);
+      // Which table the id names is unknown here, so both are swept — an id
+      // only ever matches one of them.
+      await this.tokens.revokeAllFor({ kind: 'USER', id: userId });
+      await this.tokens.revokeAllFor({ kind: 'CUSTOMER', id: userId });
     }
 
     await this.audit.record({ action: AuditAction.LOGOUT, entity: 'User', entityId: userId });
@@ -369,6 +424,7 @@ export class AuthService {
 
     return {
       userId: user.id,
+      subjectKind: 'USER',
       tenantId: user.tenantId,
       roles,
       permissions: [...permissions],

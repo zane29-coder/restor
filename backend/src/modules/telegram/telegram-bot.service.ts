@@ -6,10 +6,14 @@ import { AppException } from '../../common/errors/app-exception';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../database/prisma.service';
 import {
+  BOT_BUTTONS,
   buildAddedToGroupReply,
+  buildBranchesReply,
   buildChatIdReply,
+  buildContactReply,
   buildFallbackReply,
   buildHelpReply,
+  buildMyOrdersReply,
   buildStartReply,
   miniAppUrlFor,
   parseCommand,
@@ -45,9 +49,12 @@ interface BotContext {
  *
  * | Where | Message | Reply |
  * | --- | --- | --- |
- * | Private | `/start`, `/menu` | greeting + a Mini App button |
+ * | Private | `/start`, `/menu` | greeting + the persistent keyboard |
+ * | Private | `🧾 Buyurtmalarim` | that customer's last five orders |
+ * | Private | `📍 Filiallar` | branch names, addresses, phones |
+ * | Private | `📞 Aloqa` | the restaurant's number |
  * | Private | `/help` | what the bot does |
- * | Private | anything else | a nudge back to the button |
+ * | Private | anything else | a nudge back to the keyboard |
  * | Group | `/id` | the chat and topic id, for the routing screen |
  * | Group | added to the group | the chat id, unprompted |
  * | Group | anything else | **silence** |
@@ -146,33 +153,138 @@ export class TelegramBotService {
   }
 
   private async onPrivateMessage(bot: BotContext, message: TelegramUpdateMessage): Promise<void> {
-    const command = parseCommand(message.text, bot.botUsername);
     const miniAppUrl = miniAppUrlFor(this.config.telegram.miniAppUrl, bot.tenantSlug);
+    const reply = await this.replyFor(bot, message, miniAppUrl);
+
+    await this.reply(bot, message, reply);
+  }
+
+  /**
+   * What a private message deserves back.
+   *
+   * Keyboard buttons are matched BEFORE commands because a reply-keyboard tap
+   * is not a callback — Telegram sends the button's own label as an ordinary
+   * message, so `🧾 Buyurtmalarim` arrives as plain text and the labels in
+   * {@link BOT_BUTTONS} are the only thing that identifies it.
+   */
+  private async replyFor(
+    bot: BotContext,
+    message: TelegramUpdateMessage,
+    miniAppUrl: string,
+  ): Promise<BotReply> {
+    const text = message.text?.trim();
+
+    switch (text) {
+      case BOT_BUTTONS.orders:
+        return this.myOrdersReply(bot, message.from?.id);
+      case BOT_BUTTONS.branches:
+        return this.branchesReply(bot);
+      case BOT_BUTTONS.contact:
+        return this.contactReply(bot);
+      case BOT_BUTTONS.menu:
+        // Only reachable where the Mini App button could not be rendered;
+        // otherwise the tap opens the Mini App and sends nothing.
+        return buildFallbackReply({ miniAppUrl });
+      default:
+        break;
+    }
+
+    const command = parseCommand(text, bot.botUsername);
 
     // `/start demo` and `/start table-7` both carry a payload we do not read
     // here: the Mini App gets the restaurant from the URL, and a deep link's
     // own payload reaches it as `start_param`.
-    const reply = ((): BotReply => {
-      switch (command?.name) {
-        case 'start':
-        case 'menu':
-        case 'buyurtma':
-          return buildStartReply({
-            restaurantName: bot.restaurantName,
-            customerName: message.from?.first_name ?? null,
-            miniAppUrl,
-          });
-        case 'help':
-        case 'yordam':
-          return buildHelpReply({ restaurantName: bot.restaurantName, miniAppUrl });
-        case 'id':
-          return buildChatIdReply({ chatId: String(message.chat.id) });
-        default:
-          return buildFallbackReply({ miniAppUrl });
-      }
-    })();
+    switch (command?.name) {
+      case 'start':
+      case 'menu':
+      case 'buyurtma':
+        return buildStartReply({
+          restaurantName: bot.restaurantName,
+          customerName: message.from?.first_name ?? null,
+          miniAppUrl,
+        });
+      case 'help':
+      case 'yordam':
+        return buildHelpReply({ restaurantName: bot.restaurantName, miniAppUrl });
+      case 'buyurtmalarim':
+        return this.myOrdersReply(bot, message.from?.id);
+      case 'filiallar':
+        return this.branchesReply(bot);
+      case 'id':
+        return buildChatIdReply({ chatId: String(message.chat.id) });
+      default:
+        return buildFallbackReply({ miniAppUrl });
+    }
+  }
 
-    await this.reply(bot, message, reply);
+  /**
+   * This customer's last few orders.
+   *
+   * Looked up by the Telegram id Telegram itself signed into the update, never
+   * by anything the message body claims — otherwise anyone could read another
+   * customer's history by sending a number.
+   */
+  private async myOrdersReply(bot: BotContext, telegramUserId?: number): Promise<BotReply> {
+    if (!telegramUserId) return buildMyOrdersReply([]);
+
+    const orders = await runUnscoped(() =>
+      this.prisma.db.order.findMany({
+        where: {
+          tenantId: bot.tenantId,
+          customer: { telegramId: String(telegramUserId), deletedAt: null },
+        },
+        select: { displayNumber: true, status: true, total: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }),
+    );
+
+    return buildMyOrdersReply(orders);
+  }
+
+  private async branchesReply(bot: BotContext): Promise<BotReply> {
+    const branches = await runUnscoped(() =>
+      this.prisma.db.branch.findMany({
+        where: { tenantId: bot.tenantId, isActive: true, deletedAt: null },
+        select: { name: true, address: true, phone: true },
+        orderBy: { name: 'asc' },
+        take: 10,
+      }),
+    );
+
+    return buildBranchesReply(branches);
+  }
+
+  /** The restaurant's number, falling back to whichever branch has one. */
+  private async contactReply(bot: BotContext): Promise<BotReply> {
+    const [tenant, branches] = await runUnscoped(() =>
+      Promise.all([
+        this.prisma.db.tenant.findUnique({
+          where: { id: bot.tenantId },
+          select: { phone: true },
+        }),
+        this.prisma.db.branch.findMany({
+          where: {
+            tenantId: bot.tenantId,
+            isActive: true,
+            deletedAt: null,
+            phone: { not: null },
+          },
+          select: { phone: true },
+          take: 5,
+        }),
+      ]),
+    );
+
+    const phones = [
+      ...(tenant?.phone ? [tenant.phone] : []),
+      ...branches.map((branch) => branch.phone!).filter(Boolean),
+    ];
+
+    return buildContactReply({
+      restaurantName: bot.restaurantName,
+      phones: [...new Set(phones)],
+    });
   }
 
   /**

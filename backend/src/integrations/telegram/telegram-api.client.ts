@@ -162,6 +162,46 @@ export class TelegramApiClient {
   }
 
   /**
+   * The command list a client shows in its own menu.
+   *
+   * Scoped to private chats: in a staff group the bot answers `/id` and
+   * nothing else, and offering a customer menu there is noise.
+   */
+  async setMyCommands(
+    botToken: string,
+    commands: Array<{ command: string; description: string }>,
+  ): Promise<void> {
+    await this.call(botToken, 'setMyCommands', {
+      commands,
+      scope: { type: 'all_private_chats' },
+    });
+  }
+
+  /**
+   * The button beside the message box.
+   *
+   * This is the call that removes the @BotFather step: pointing the menu
+   * button at a Web App here does what `/newapp` and Bot Settings → Menu
+   * Button do by hand, so a restaurant that pastes a token into the admin
+   * screen never has to open BotFather at all.
+   */
+  async setChatMenuButton(botToken: string, webAppUrl: string, text: string): Promise<void> {
+    await this.call(botToken, 'setChatMenuButton', {
+      menu_button: { type: 'web_app', text, web_app: { url: webAppUrl } },
+    });
+  }
+
+  /** Shown on the bot's profile, and above the Start button in an empty chat. */
+  async setMyDescription(botToken: string, description: string): Promise<void> {
+    await this.call(botToken, 'setMyDescription', { description });
+  }
+
+  /** The one-liner under the bot's name in a chat list. */
+  async setMyShortDescription(botToken: string, shortDescription: string): Promise<void> {
+    await this.call(botToken, 'setMyShortDescription', { short_description: shortDescription });
+  }
+
+  /**
    * Acknowledges a button press.
    *
    * Without it the client shows a loading spinner on the button for a minute.

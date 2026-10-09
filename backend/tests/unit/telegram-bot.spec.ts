@@ -1,10 +1,14 @@
 import {
+  BOT_BUTTONS,
   buildAddedToGroupReply,
+  buildBranchesReply,
   buildChatIdReply,
+  buildContactReply,
   buildFallbackReply,
   buildHelpReply,
+  buildMyOrdersReply,
   buildStartReply,
-  miniAppButton,
+  mainKeyboard,
   miniAppUrlFor,
   parseCommand,
 } from '../../src/integrations/telegram/bot-reply.builder';
@@ -85,17 +89,43 @@ describe('miniAppUrlFor', () => {
   });
 });
 
-describe('miniAppButton', () => {
-  it('is a web_app button on HTTPS', () => {
-    expect(miniAppButton('https://tg.restor.uz/?tenant=demo')).toEqual({
-      inline_keyboard: [[{ text: 'Menyuni ochish', web_app: { url: 'https://tg.restor.uz/?tenant=demo' } }]],
+/**
+ * The persistent keyboard, which is the bot's whole navigation.
+ *
+ * Preferred over an inline keyboard because an inline one scrolls away with
+ * the message that carried it; a customer who has sent anything since /start
+ * would have nothing left to press.
+ */
+describe('mainKeyboard', () => {
+  type Keyboard = { keyboard: Array<Array<{ text: string; web_app?: { url: string } }>> };
+
+  it('opens the Mini App from the first button on HTTPS', () => {
+    const markup = mainKeyboard('https://tg.restor.uz/?tenant=demo') as Keyboard;
+
+    expect(markup.keyboard[0]![0]).toEqual({
+      text: BOT_BUTTONS.menu,
+      web_app: { url: 'https://tg.restor.uz/?tenant=demo' },
     });
   });
 
-  it('is nothing on plain HTTP', () => {
-    // Telegram rejects a non-HTTPS web_app URL, and a rejected sendMessage
-    // means the customer gets no reply at all — the text link is the fallback.
-    expect(miniAppButton('http://localhost:5175/?tenant=demo')).toBeNull();
+  it('drops only the Mini App button on plain HTTP, never the rest', () => {
+    // Telegram rejects the WHOLE sendMessage over one non-HTTPS web_app URL,
+    // so keeping that button would cost the customer every other button too.
+    const markup = mainKeyboard('http://localhost:5175/?tenant=demo') as Keyboard;
+    const labels = markup.keyboard.flat().map((button) => button.text);
+
+    expect(labels).not.toContain(BOT_BUTTONS.menu);
+    expect(labels).toContain(BOT_BUTTONS.orders);
+    expect(labels).toContain(BOT_BUTTONS.branches);
+    expect(labels).toContain(BOT_BUTTONS.contact);
+  });
+
+  it('carries no web_app on the plain buttons', () => {
+    // Those are matched by the text a tap produces, not by a callback.
+    const markup = mainKeyboard('https://tg.restor.uz/?tenant=demo') as Keyboard;
+    const plain = markup.keyboard.flat().filter((button) => button.text !== BOT_BUTTONS.menu);
+
+    expect(plain.every((button) => button.web_app === undefined)).toBe(true);
   });
 });
 
@@ -149,19 +179,26 @@ describe('bot replies', () => {
     const insecure = 'http://localhost:5175/?tenant=demo';
     const reply = buildStartReply({ restaurantName: 'Osh Markazi', miniAppUrl: insecure });
 
-    expect(reply.replyMarkup).toBeUndefined();
     expect(reply.text).toContain(insecure);
   });
 
-  it('help lists the commands it actually handles', () => {
+  it('help names the buttons, which is what a customer actually sees', () => {
     const reply = buildHelpReply({ restaurantName: 'Osh Markazi', miniAppUrl });
 
-    expect(reply.text).toContain('/start');
-    expect(reply.text).toContain('/help');
+    expect(reply.text).toContain(BOT_BUTTONS.menu);
+    expect(reply.text).toContain(BOT_BUTTONS.orders);
   });
 
-  it('nudges an unrecognised message back to the menu', () => {
-    expect(buildFallbackReply({ miniAppUrl }).replyMarkup).toBeDefined();
+  it('every private reply carries the keyboard, so it is never lost', () => {
+    // An inline keyboard would scroll away; this one has to come back with
+    // each reply or the customer is left with no way to navigate.
+    for (const reply of [
+      buildStartReply({ restaurantName: 'Osh Markazi', miniAppUrl }),
+      buildHelpReply({ restaurantName: 'Osh Markazi', miniAppUrl }),
+      buildFallbackReply({ miniAppUrl }),
+    ]) {
+      expect(reply.replyMarkup).toBeDefined();
+    }
   });
 
   it('reports the chat id, which is what the routing screen needs', () => {
@@ -185,6 +222,74 @@ describe('bot replies', () => {
 
     expect(reply.text).not.toContain('<b>Zal</b>');
     expect(reply.text).toContain('-100123456');
+  });
+});
+
+/** What the keyboard buttons answer with. */
+describe('keyboard button replies', () => {
+  it('lists branches with address and phone', () => {
+    const reply = buildBranchesReply([
+      { name: 'Chilonzor', address: 'Bunyodkor 12', phone: '998901234567' },
+      { name: 'Yunusobod', address: 'Amir Temur 5', phone: null },
+    ]);
+
+    expect(reply.text).toContain('Chilonzor');
+    expect(reply.text).toContain('Bunyodkor 12');
+    expect(reply.text).toContain('Yunusobod');
+  });
+
+  it('says so plainly when there are no branches', () => {
+    expect(buildBranchesReply([]).text).toContain('kiritilmagan');
+  });
+
+  it('escapes a branch name', () => {
+    const reply = buildBranchesReply([
+      { name: '<b>Chilonzor</b>', address: 'Bunyodkor 12', phone: null },
+    ]);
+
+    expect(reply.text).not.toContain('<b>Chilonzor</b>');
+  });
+
+  it('shows an order number, its Uzbek status and its total', () => {
+    const reply = buildMyOrdersReply([
+      {
+        displayNumber: 'CH-1054',
+        status: 'DELIVERED',
+        total: 156_000,
+        createdAt: new Date('2026-10-09T09:30:00.000Z'),
+      },
+    ]);
+
+    expect(reply.text).toContain('CH-1054');
+    expect(reply.text).toContain('Yetkazildi');
+    expect(reply.text).toContain('156 000');
+  });
+
+  it('falls back to the raw status rather than an empty one', () => {
+    const reply = buildMyOrdersReply([
+      {
+        displayNumber: 'CH-1',
+        status: 'SOMETHING_NEW',
+        total: 1000,
+        createdAt: new Date('2026-10-09T09:30:00.000Z'),
+      },
+    ]);
+
+    expect(reply.text).toContain('SOMETHING_NEW');
+  });
+
+  it('says so plainly when the customer has never ordered', () => {
+    expect(buildMyOrdersReply([]).text).toContain('yoʻq');
+  });
+
+  it('lists contact numbers, and admits when there are none', () => {
+    expect(
+      buildContactReply({ restaurantName: 'Osh Markazi', phones: ['998901234567'] }).text,
+    ).toContain('Osh Markazi');
+
+    expect(buildContactReply({ restaurantName: 'Osh Markazi', phones: [] }).text).toContain(
+      'kiritilmagan',
+    );
   });
 });
 

@@ -1,4 +1,5 @@
-import { escapeHtml } from '@restor/shared-utils';
+import { escapeHtml, formatMoney, formatPhone } from '@restor/shared-utils';
+import { orderStatusLabel } from './message.builder';
 
 /**
  * What the bot says back (TZ §14).
@@ -19,8 +20,20 @@ import { escapeHtml } from '@restor/shared-utils';
  * implementation of all of it with no way to show a menu photo.
  */
 
-/** Inline keyboard button labels, in Uzbek like every other customer string. */
-const OPEN_MENU = 'Menyuni ochish';
+/**
+ * The persistent keyboard under the message box.
+ *
+ * Exported as constants because the handler matches the text a tap produces:
+ * a reply-keyboard button is not a callback, it simply sends its own label as
+ * an ordinary message. Change a label here and the handler follows; change one
+ * by hand in either place and the button silently stops working.
+ */
+export const BOT_BUTTONS = {
+  menu: '🍽 Menyu',
+  orders: '🧾 Buyurtmalarim',
+  branches: '📍 Filiallar',
+  contact: '📞 Aloqa',
+} as const;
 
 export interface BotReply {
   text: string;
@@ -29,19 +42,42 @@ export interface BotReply {
 }
 
 /**
- * A Mini App button.
+ * The persistent keyboard a customer sees under the message box.
  *
- * `web_app` buttons are accepted in private chats only, and Telegram rejects a
- * non-HTTPS URL outright — so a deployment without TLS gets the link as text
- * instead of a button that silently fails to appear.
+ * Preferred over an inline keyboard for the main navigation: an inline
+ * keyboard scrolls away with the message that carried it, so a customer who
+ * sent anything since `/start` has nothing left to press. This one stays.
+ *
+ * `Menyu` carries the Mini App; the rest are plain labels the handler reads
+ * back as text. On a deployment without TLS the Mini App button is dropped
+ * rather than sent — Telegram rejects the whole `sendMessage` over one
+ * non-HTTPS `web_app` URL, which would cost the customer every other button
+ * too.
  */
-export function miniAppButton(miniAppUrl: string, label = OPEN_MENU): unknown | null {
-  if (!miniAppUrl.startsWith('https://')) return null;
+export function mainKeyboard(miniAppUrl: string): unknown {
+  const menuButton = miniAppUrl.startsWith('https://')
+    ? [{ text: BOT_BUTTONS.menu, web_app: { url: miniAppUrl } }]
+    : null;
 
-  return { inline_keyboard: [[{ text: label, web_app: { url: miniAppUrl } }]] };
+  return {
+    keyboard: [
+      ...(menuButton ? [menuButton] : []),
+      [{ text: BOT_BUTTONS.orders }, { text: BOT_BUTTONS.branches }],
+      [{ text: BOT_BUTTONS.contact }],
+    ],
+    // Without this the keyboard takes up half a phone screen.
+    resize_keyboard: true,
+    is_persistent: true,
+  };
 }
 
-/** `/start` in a private chat — the first thing a customer ever sees. */
+/**
+ * `/start` in a private chat — the first thing a customer ever sees.
+ *
+ * Carries the persistent keyboard rather than an inline button: Telegram
+ * allows one `reply_markup` per message, and the keyboard is the one that
+ * survives the next message.
+ */
 export function buildStartReply(params: {
   restaurantName: string;
   customerName?: string | null;
@@ -51,26 +87,22 @@ export function buildStartReply(params: {
     ? `Assalomu alaykum, ${escapeHtml(params.customerName)}!`
     : 'Assalomu alaykum!';
 
-  const markup = miniAppButton(params.miniAppUrl);
+  const hasMenuButton = params.miniAppUrl.startsWith('https://');
 
   const lines = [
     greeting,
     '',
-    `🍽 <b>${escapeHtml(params.restaurantName)}</b> — buyurtma berish uchun quyidagi tugmani bosing.`,
+    `🍽 <b>${escapeHtml(params.restaurantName)}</b>`,
     '',
-    '📋 Menyu, savatcha va toʻlov — hammasi shu yerda.',
+    hasMenuButton
+      ? `Buyurtma berish uchun pastdagi <b>${BOT_BUTTONS.menu}</b> tugmasini bosing.`
+      : `Buyurtma berish: ${escapeHtml(params.miniAppUrl)}`,
+    '',
     '🚚 Yetkazib berish yoki oʻzingiz olib ketish — tanlaysiz.',
+    '🔔 Buyurtma holati shu yerga yoziladi.',
   ];
 
-  // No button means no TLS, so the link has to be readable as text.
-  if (!markup) {
-    lines.push('', `👉 ${escapeHtml(params.miniAppUrl)}`);
-  }
-
-  return {
-    text: lines.join('\n'),
-    ...(markup ? { replyMarkup: markup } : {}),
-  };
+  return { text: lines.join('\n'), replyMarkup: mainKeyboard(params.miniAppUrl) };
 }
 
 /** `/help` — what this bot can and cannot do. */
@@ -78,34 +110,111 @@ export function buildHelpReply(params: {
   restaurantName: string;
   miniAppUrl: string;
 }): BotReply {
-  const markup = miniAppButton(params.miniAppUrl);
-
   return {
     text: [
       `ℹ️ <b>${escapeHtml(params.restaurantName)}</b> boti`,
       '',
-      '/start — menyuni ochish',
-      '/help — shu yordam',
+      `${BOT_BUTTONS.menu} — menyu va buyurtma`,
+      `${BOT_BUTTONS.orders} — oxirgi buyurtmalaringiz`,
+      `${BOT_BUTTONS.branches} — manzillar va ish vaqti`,
+      `${BOT_BUTTONS.contact} — telefon raqam`,
       '',
       'Buyurtma holati haqida xabarni shu yerda olasiz.',
-      'Savollar boʻlsa, restoran bilan bogʻlaning.',
+      'Tugmalar koʻrinmasa /start yuboring.',
     ].join('\n'),
-    ...(markup ? { replyMarkup: markup } : {}),
+    replyMarkup: mainKeyboard(params.miniAppUrl),
   };
 }
 
 /** Anything the bot does not understand, in a private chat. */
 export function buildFallbackReply(params: { miniAppUrl: string }): BotReply {
-  const markup = miniAppButton(params.miniAppUrl);
+  const hasMenuButton = params.miniAppUrl.startsWith('https://');
 
   return {
     text: [
       'Buyurtmalar menyu orqali qabul qilinadi.',
-      markup
-        ? 'Pastdagi tugmani bosing yoki /start yuboring.'
-        : `/start yuboring yoki havolani oching: ${escapeHtml(params.miniAppUrl)}`,
+      hasMenuButton
+        ? `Pastdagi <b>${BOT_BUTTONS.menu}</b> tugmasini bosing.`
+        : `Havolani oching: ${escapeHtml(params.miniAppUrl)}`,
     ].join('\n'),
-    ...(markup ? { replyMarkup: markup } : {}),
+    replyMarkup: mainKeyboard(params.miniAppUrl),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
+/* What the keyboard buttons answer                                           */
+/* -------------------------------------------------------------------------- */
+
+export interface BranchSummary {
+  name: string;
+  address: string;
+  phone: string | null;
+}
+
+/** `📍 Filiallar` — where the restaurant physically is. */
+export function buildBranchesReply(branches: BranchSummary[]): BotReply {
+  if (branches.length === 0) {
+    return { text: 'Hozircha filial maʼlumotlari kiritilmagan.' };
+  }
+
+  const blocks = branches.map((branch) => {
+    const lines = [`📍 <b>${escapeHtml(branch.name)}</b>`, escapeHtml(branch.address)];
+    if (branch.phone) lines.push(`📞 ${escapeHtml(formatPhone(branch.phone))}`);
+    return lines.join('\n');
+  });
+
+  return { text: blocks.join('\n\n') };
+}
+
+export interface OrderSummary {
+  displayNumber: string;
+  status: string;
+  total: number;
+  createdAt: Date;
+}
+
+/**
+ * `🧾 Buyurtmalarim` — the customer's own recent orders.
+ *
+ * Only ever this customer's: the handler looks them up by the Telegram id
+ * Telegram itself signed, never by anything in the message.
+ */
+export function buildMyOrdersReply(orders: OrderSummary[]): BotReply {
+  if (orders.length === 0) {
+    return { text: 'Sizda hali buyurtma yoʻq.' };
+  }
+
+  const lines = orders.map((order) => {
+    const date = order.createdAt.toLocaleDateString('uz-UZ', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'Asia/Tashkent',
+    });
+
+    return [
+      `🧾 <b>${escapeHtml(order.displayNumber)}</b> — ${escapeHtml(orderStatusLabel(order.status))}`,
+      `   ${escapeHtml(formatMoney(order.total))} · ${date}`,
+    ].join('\n');
+  });
+
+  return { text: ['<b>Oxirgi buyurtmalaringiz</b>', '', ...lines].join('\n') };
+}
+
+/** `📞 Aloqa` — whoever the customer should call. */
+export function buildContactReply(params: {
+  restaurantName: string;
+  phones: string[];
+}): BotReply {
+  if (params.phones.length === 0) {
+    return { text: 'Telefon raqam kiritilmagan. Menyu orqali buyurtma qoldiring.' };
+  }
+
+  return {
+    text: [
+      `📞 <b>${escapeHtml(params.restaurantName)}</b>`,
+      '',
+      ...params.phones.map((phone) => escapeHtml(formatPhone(phone))),
+    ].join('\n'),
   };
 }
 

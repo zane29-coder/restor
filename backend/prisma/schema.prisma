@@ -455,9 +455,13 @@ model User {
   @@map("users")
 }
 
+/// One session. Belongs to a staff `User` OR to a `Customer` — exactly one,
+/// enforced by a CHECK constraint, because customers are not users and never
+/// hold permissions, yet a Mini App session still has to be revocable.
 model RefreshToken {
-  id     String @id @default(uuid()) @db.Uuid
-  userId String @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  userId     String? @db.Uuid
+  customerId String? @db.Uuid
 
   /// SHA-256 of the token. A database dump therefore does not hand out sessions.
   tokenHash String    @unique @db.VarChar(64)
@@ -472,9 +476,11 @@ model RefreshToken {
 
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
+  @@index([customerId, revokedAt])
   @@index([expiresAt])
   @@map("refresh_tokens")
 }
@@ -702,6 +708,7 @@ model Customer {
   orders         Order[]
   promoCodeUsages PromoCodeUsage[]
   loyaltyAccount LoyaltyAccount?
+  refreshTokens  RefreshToken[]
 
   @@unique([tenantId, phone])
   @@unique([tenantId, telegramId])

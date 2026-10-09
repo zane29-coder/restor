@@ -16,7 +16,7 @@ import { TelegramApiClient } from '../../integrations/telegram/telegram-api.clie
 import { buildTestMessage } from '../../integrations/telegram/message.builder';
 import { miniAppUrlFor } from '../../integrations/telegram/bot-reply.builder';
 import { AppConfig } from '../../config/configuration';
-import { TelegramWebhookService } from './telegram-webhook.service';
+import { TelegramWebhookService, type BotProfile } from './telegram-webhook.service';
 
 const CONFIG_INCLUDE = { routes: { orderBy: { event: 'asc' } } } as const;
 
@@ -118,9 +118,10 @@ export class TelegramService {
     });
 
     // Saving a token is how a bot is meant to start working, so pointing
-    // Telegram at us belongs here and not behind a second button nobody knows
-    // to press. Best-effort: Telegram being unreachable for a moment must not
-    // lose the token that was just typed — `getBotStatus` then says so.
+    // Telegram at us — and pushing the command list and menu button — belongs
+    // here and not behind a second button nobody knows to press. Best-effort:
+    // Telegram being unreachable for a moment must not lose the token that was
+    // just typed, and `getBotStatus` then says what actually happened.
     await this.syncWebhook(row.id, input.botToken, row.botTokenEncrypted, row.isActive);
 
     return toConfig(row);
@@ -149,7 +150,24 @@ export class TelegramService {
       return;
     }
 
-    await this.webhook.tryRegister(configId, token);
+    await this.webhook.tryConnect(configId, token, await this.botProfile());
+  }
+
+  /** Restaurant name and Mini App link, for the bot's own profile. */
+  private async botProfile(): Promise<BotProfile> {
+    const tenantId = this.requireTenant();
+
+    const tenant = await runUnscoped(() =>
+      this.prisma.db.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true, slug: true },
+      }),
+    );
+
+    return {
+      restaurantName: tenant?.name ?? 'RESTOR',
+      miniAppUrl: miniAppUrlFor(this.config.telegram.miniAppUrl, tenant?.slug ?? 'demo'),
+    };
   }
 
   /**
@@ -268,7 +286,7 @@ export class TelegramService {
     }
 
     try {
-      await this.webhook.register(row.id, token);
+      await this.webhook.connect(row.id, token, await this.botProfile());
     } catch (error) {
       throw AppException.badRequest(
         error instanceof Error ? error.message : 'Webhook ulanmadi',
