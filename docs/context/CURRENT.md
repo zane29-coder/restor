@@ -41,11 +41,32 @@ tested. The counts are passing smoke-test assertions.
 | Courier profile, wallet, handover | 17 |
 | Delivery pricing rules | 13 |
 
-Plus 173 backend unit tests and 4 api-client tests.
+Plus 217 backend unit tests and 4 api-client tests.
 
 Also working, verified earlier by hand rather than by a smoke suite: the
 Telegram bot (order notifications with emoji field markers), the kitchen
 display, the storefront and the Mini App.
+
+## Just built, not yet exercised against Telegram
+
+**The bot now answers.** It was write-only until 2026-10-09: `setWebhook` sat
+in the API client with no call site, no route existed for Telegram to POST to,
+and nothing handled a command — so `/start` produced nothing and the token
+looked like the culprit. Added: `POST /api/v1/webhooks/telegram/:configId`,
+`/start` `/help` `/menu` `/id` handling, a Mini App button, chat-id reporting
+when the bot joins a group, automatic webhook registration on save and at
+boot, and `GET /telegram/bot/status` behind a **Bot holati** card on the admin
+screen.
+
+Unit-tested (34 assertions) and typechecked. **Not yet run against the real
+Telegram API** — that needs a deploy, because Telegram only delivers to HTTPS
+and so the flow cannot be exercised from a dev machine at all. First test
+after deploying: open the restaurant's bot, press `/start`, expect a greeting
+and a menu button.
+
+Note for anyone who remembers the old instructions: `getUpdates` in a browser
+no longer works for finding a chat id. Telegram serves a webhook or
+`getUpdates`, never both. Send `/id` in the group instead.
 
 ## What has NOT been verified
 

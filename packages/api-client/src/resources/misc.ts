@@ -11,6 +11,7 @@ import type {
   PromoCodeUsage,
   Promotion,
   RestaurantTable,
+  TelegramBotStatus,
   TelegramConfig,
   TelegramRoute,
   UpsertTelegramRouteRequest,
@@ -187,12 +188,24 @@ export class MarketingResource {
   }
 }
 
-/** Telegram group and topic routing (TZ §15). */
+/** Telegram bot, group and topic routing (TZ §14, §15). */
 export class TelegramResource {
   constructor(private readonly http: HttpClient) {}
 
   getConfig(branchId?: string): Promise<TelegramConfig | null> {
     return this.http.get<TelegramConfig | null>('telegram/config', { query: { branchId } });
+  }
+
+  /** Whether Telegram is actually delivering to this deployment. */
+  getBotStatus(branchId?: string): Promise<TelegramBotStatus> {
+    return this.http.get<TelegramBotStatus>('telegram/bot/status', { query: { branchId } });
+  }
+
+  /** Points the bot's webhook back at this deployment. */
+  connectBot(branchId?: string): Promise<TelegramBotStatus> {
+    return this.http.post<TelegramBotStatus>('telegram/bot/connect', undefined, {
+      query: { branchId },
+    });
   }
 
   saveConfig(payload: unknown): Promise<TelegramConfig> {

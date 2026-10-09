@@ -52,6 +52,37 @@ export interface UpsertTelegramRouteRequest {
   isActive?: boolean;
 }
 
+/**
+ * Live state of a restaurant's bot (TZ §14).
+ *
+ * Exists to answer one question — "why is the bot silent?" — which the config
+ * alone cannot. A stored token says nothing about whether Telegram is actually
+ * delivering anywhere, and a bot that was never pointed at this deployment
+ * looks identical to a working one until somebody presses /start.
+ */
+export interface TelegramBotStatus {
+  hasToken: boolean;
+  isActive: boolean;
+  botUsername: string | null;
+  /** `https://t.me/{username}` — what a customer opens. */
+  botLink: string | null;
+  /** Mini App address for this restaurant, carrying its slug. */
+  miniAppUrl: string;
+  /** Where Telegram currently delivers this bot's updates; `null` when nowhere. */
+  webhookUrl: string | null;
+  /** Where this deployment needs them delivered. */
+  expectedWebhookUrl: string;
+  /** The two above agree. Anything else and the bot does not answer here. */
+  isConnected: boolean;
+  /** Updates Telegram is holding; a growing number means deliveries are failing. */
+  pendingUpdateCount: number;
+  lastErrorAt: string | null;
+  /** Telegram's own words about its last failed delivery. */
+  lastErrorMessage: string | null;
+  /** Screen-ready summary, in Uzbek. */
+  message: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Notifications (TZ §38)                                                     */
 /* -------------------------------------------------------------------------- */

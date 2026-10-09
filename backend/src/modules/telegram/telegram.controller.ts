@@ -14,6 +14,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
   TelegramEvent,
+  type TelegramBotStatus,
   type TelegramConfig,
   type TelegramRoute,
 } from '@restor/shared-types';
@@ -59,6 +60,35 @@ export class TelegramController {
     @Body(zodBody(telegramConfigSchema)) body: TelegramConfigInput,
   ): Promise<TelegramConfig> {
     return this.telegram.saveConfig(body);
+  }
+
+  /**
+   * Whether the bot is actually reachable, not just configured.
+   *
+   * Read-only, so `telegram.view` is enough: a restaurant admin who cannot
+   * change the bot still has to be able to see that it is down, and say so to
+   * whoever can.
+   */
+  @Get('bot/status')
+  @RequirePermissions(Permission.TELEGRAM_VIEW)
+  @ApiOperation({ summary: 'Is the bot connected, and if not, why' })
+  getBotStatus(@Query('branchId') branchId?: string): Promise<TelegramBotStatus> {
+    return this.telegram.getBotStatus(branchId);
+  }
+
+  /**
+   * Re-points the bot at this deployment.
+   *
+   * Needed when the same token has been used elsewhere — Telegram allows one
+   * webhook per bot, so the most recent registration wins and the other side
+   * goes quiet without any error anywhere.
+   */
+  @Post('bot/connect')
+  @RequirePermissions(Permission.TELEGRAM_MANAGE)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Register this deployment as the bot webhook' })
+  connectBot(@Query('branchId') branchId?: string): Promise<TelegramBotStatus> {
+    return this.telegram.connectBot(branchId);
   }
 
   /** The events an admin can route, for the settings screen's dropdown. */

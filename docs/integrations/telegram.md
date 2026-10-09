@@ -2,31 +2,86 @@
 
 Module: `backend/src/modules/telegram`.
 Client: `backend/src/integrations/telegram/telegram-api.client.ts`.
-Message builder: `backend/src/integrations/telegram/message.builder.ts`.
+Message builder: `backend/src/integrations/telegram/message.builder.ts` (outbound),
+`bot-reply.builder.ts` (inbound).
 Admin screen: `apps/admin-web/src/pages/TelegramPage.tsx`.
 
 Three separate things share the name:
 
-1. **The bot** — sends order notifications into staff groups.
+1. **The bot** — sends order notifications into staff groups, and answers
+   customers who message it.
 2. **The Mini App** — a customer-facing storefront inside Telegram.
 3. **Bot sign-in** — authenticating a customer from `initData`.
+
+One token does both bot jobs. A restaurant has **one** bot: it posts into the
+staff group and it is what a customer opens to order. There is no second token.
 
 ## The bot
 
 Per tenant, optionally per branch. Each restaurant brings its own token from
-@BotFather; there is no platform-wide bot.
+@BotFather; `TELEGRAM_BOT_TOKEN` is a platform-wide fallback used only for
+verifying Mini App `initData`.
 
 ```
 GET  /telegram/config       ?branchId — state only, never the token
-POST /telegram/config       botToken?, defaultChatId?, isActive
+PUT  /telegram/config       botToken?, defaultChatId?, isActive
+GET  /telegram/bot/status   ?branchId — is it actually connected, and if not why
+POST /telegram/bot/connect  ?branchId — re-register the webhook
 GET  /telegram/routes       ?branchId
-POST /telegram/routes       event → chat (+ optional forum topic)
+PUT  /telegram/routes       event → chat (+ optional forum topic)
 GET  /telegram/events       the routable event list
 ```
 
 The token is AES-256-GCM encrypted at rest and never returned. `req.body.botToken`
 is in the pino redaction list. Saving a chat id does not require re-typing the
 token — an omitted `botToken` leaves the stored one alone.
+
+### Inbound — the webhook
+
+`POST /api/v1/webhooks/telegram/:configId`, public, secret-verified.
+Handler: `telegram-webhook.controller.ts` → `telegram-bot.service.ts`.
+
+Under `webhooks/` deliberately: nginx exempts that prefix from rate limiting,
+the same exemption payment callbacks rely on. The application limiter is
+skipped too — it counts per IP, and every update in the world arrives from
+Telegram's handful of addresses.
+
+The path carries the **config id**, not the tenant slug: a tenant may also run
+a per-branch bot, and one rule then covers both. The matching secret is
+**derived, not stored** — `HMAC(base, "telegram-webhook:" + configId)`, where
+the base is `TELEGRAM_WEBHOOK_SECRET` or, unset, `ENCRYPTION_KEY`. That
+fallback is sound rather than lazy: a bot token cannot be stored without the
+encryption key, so wherever a webhook can exist a base for its secret does too.
+Telegram echoes the secret in `X-Telegram-Bot-Api-Secret-Token`, and it is
+checked before anything in the body is read.
+
+Registration happens in two places, both in `telegram-webhook.service.ts`:
+saving a token, and start-up — every active bot is re-pointed at this
+deployment on boot, un-awaited so a Telegram outage cannot hold the API off the
+network. That is what makes a deploy enough to get a configured bot answering.
+
+What the bot answers:
+
+| Where | Message | Reply |
+| --- | --- | --- |
+| Private | `/start`, `/menu` | greeting + a Mini App button |
+| Private | `/help` | what the bot does |
+| Private | anything else | a nudge back to the button |
+| Group | `/id` | the chat and topic id |
+| Group | being added | the chat id, unprompted |
+| Group | anything else | **silence** |
+
+Silence in a group is deliberate: a staff group is a work feed, and a bot that
+answers chatter there makes it unreadable.
+
+The bot takes no orders itself. Ordering is the Mini App's job — it already
+prices server-side, applies promotions and collects an address; a chat-based
+order flow would be a second implementation of all of it.
+
+**`getUpdates` no longer works.** Telegram serves a bot either a webhook or
+`getUpdates`, never both, so the browser trick for finding a chat id now
+answers 409. The bot reports the ids instead: unprompted when it is added to a
+group, and on `/id` afterwards.
 
 ### Routing
 
@@ -71,7 +126,13 @@ order otherwise gets a preview card appended.
 
 ## The Mini App
 
-Served at `/tg`, built from `apps/telegram-mini-app`.
+Served at `/tg` (or `tg.restor.uz` on a sub-domain deployment — set
+`TELEGRAM_MINI_APP_URL`), built from `apps/telegram-mini-app`.
+
+Which restaurant it serves comes from the URL: `start_param` first, then
+`?tenant={slug}`, then the build-time `VITE_TENANT_SLUG`. That is why the
+button the bot sends carries `?tenant=` — the Mini App is one bundle serving
+every tenant.
 
 Authentication is `initData` verified by **HMAC-SHA256 server-side** against
 the bot token. Never trust a `user` object a client sends; the signature is
@@ -91,15 +152,40 @@ and give `message.builder.ts` a case. Nothing in the emitting module changes.
 ## Setup for a restaurant
 
 1. @BotFather → new bot → token.
-2. Add the bot to the staff group as an administrator (it cannot post
-   otherwise).
-3. Paste the token in Admin → Telegram.
-4. Add the group's chat id, and routes per event if the defaults are not
-   enough.
+2. Paste the token in Admin → Telegram (the platform admin does this; a tenant
+   admin cannot). Saving it registers the webhook, and **Bot holati** then says
+   *Bot ulangan*.
+3. Press `/start` in a private chat with the bot. A greeting and a menu button
+   is the whole smoke test.
+4. Add the bot to the staff group **as an administrator** — it cannot post
+   otherwise. It replies with the group's chat id.
+5. Paste that id as the default chat, and add per-event routes if the default
+   is not enough.
 
-A token that has been pasted into a chat log should be revoked with
-`/revoke` and replaced.
+Optional, in @BotFather: `/setcommands` so `start` and `help` appear in the
+client's menu, and `/newapp` (or Bot Settings → Menu Button) pointed at
+`TELEGRAM_MINI_APP_URL` so the bot's own button opens the Mini App.
+
+A token that has been pasted into a chat log should be revoked with `/revoke`
+and replaced. Re-entering it in Admin → Telegram re-registers the webhook.
+
+### When the bot does not answer
+
+Read **Bot holati** on the Telegram screen first; it distinguishes the causes
+that look identical from the settings alone.
+
+| Symptom | Cause |
+| --- | --- |
+| *Webhook sozlanmagan* | Nobody registered one. Press **Qayta ulash**. |
+| *Bot boshqa serverga ulangan* | The same token is in use by another deployment. Telegram allows one webhook per bot, so the newest registration wins and the loser goes quiet with no error anywhere. **Qayta ulash** takes it back. |
+| *Server HTTPS emas* | `API_BASE_URL` is `http://`. Telegram only delivers over TLS, so the bot cannot answer on localhost at all — notifications still work, those are outbound. |
+| Pending updates climbing | Telegram is delivering and getting an error back. Its own message is shown under the card. |
+| *Saqlangan tokenni oʻqib boʻlmadi* | `ENCRYPTION_KEY` changed. The row survived, the plaintext did not; paste the token again. |
 
 ## Permissions
 
-`telegram.view`, `telegram.manage`.
+| Permission | Covers |
+| --- | --- |
+| `telegram.view` | Reading the config and the bot status — a restaurant admin can see the bot is down even though they cannot fix it |
+| `telegram.manage` | The token, and connecting the webhook. Platform-only (TZ §6) |
+| `telegram.routes.manage` | Event → chat routes, the restaurant's own call |

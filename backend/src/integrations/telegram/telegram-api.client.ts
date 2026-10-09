@@ -19,6 +19,14 @@ export interface TelegramSendResult {
   chatId: string;
 }
 
+/** `getWebhookInfo`, normalised — Telegram reports "none" as an empty string. */
+export interface TelegramWebhookInfo {
+  url: string | null;
+  pendingUpdateCount: number;
+  lastErrorAt: string | null;
+  lastErrorMessage: string | null;
+}
+
 /** What Telegram returns when it rejects a call. */
 interface TelegramErrorBody {
   ok: false;
@@ -31,12 +39,13 @@ interface TelegramErrorBody {
  * Thin HTTP client for the Telegram Bot API.
  *
  * Deliberately not a bot framework: RESTOR's bot is a notification and
- * interface layer, not where business logic lives (TZ §14). All this needs to
- * do is send a message to a chat — optionally into a forum topic — and report
- * failures in a way the retry logic can act on.
+ * interface layer, not where business logic lives (TZ §14). Send a message to a
+ * chat — optionally into a forum topic — point the bot at our webhook, and
+ * report failures in a way the retry logic can act on. Nothing else.
  *
  * Built on the platform `fetch`; a framework would add a dependency and a
- * long-polling loop we do not want in a web process.
+ * long-polling loop we do not want in a web process. Inbound updates arrive by
+ * webhook instead — see `modules/telegram/telegram-bot.service.ts`.
  */
 @Injectable()
 export class TelegramApiClient {
@@ -111,14 +120,63 @@ export class TelegramApiClient {
     await this.call(botToken, 'setWebhook', {
       url,
       secret_token: secretToken,
-      // The bot is a notification layer; it does not need message history.
-      allowed_updates: ['message', 'callback_query'],
+      // Only what the bot acts on. `my_chat_member` is here because being added
+      // to a staff group is how a restaurant learns its own chat id: once a
+      // webhook is set, `getUpdates` answers 409 and can no longer be used for
+      // that.
+      allowed_updates: ['message', 'callback_query', 'my_chat_member'],
+      // Updates queued while no webhook was set are stale by now — a customer
+      // who pressed /start yesterday does not want the answer today.
       drop_pending_updates: true,
     });
   }
 
   async deleteWebhook(botToken: string): Promise<void> {
     await this.call(botToken, 'deleteWebhook', { drop_pending_updates: true });
+  }
+
+  /**
+   * What Telegram believes about this bot's webhook.
+   *
+   * The one call that can tell an admin why a bot is silent: a URL pointing at
+   * someone else's deployment, a TLS error Telegram hit on its last attempt, or
+   * a pile of pending updates nobody is draining.
+   */
+  async getWebhookInfo(botToken: string): Promise<TelegramWebhookInfo> {
+    const info = await this.call<{
+      url: string;
+      pending_update_count?: number;
+      last_error_date?: number;
+      last_error_message?: string;
+    }>(botToken, 'getWebhookInfo', {});
+
+    return {
+      // Telegram reports "no webhook" as an empty string.
+      url: info.url || null,
+      pendingUpdateCount: info.pending_update_count ?? 0,
+      lastErrorAt: info.last_error_date
+        ? new Date(info.last_error_date * 1000).toISOString()
+        : null,
+      lastErrorMessage: info.last_error_message ?? null,
+    };
+  }
+
+  /**
+   * Acknowledges a button press.
+   *
+   * Without it the client shows a loading spinner on the button for a minute.
+   * Failure is swallowed: the callback id expires, and a retry would be
+   * answering a question nobody is still waiting on.
+   */
+  async answerCallbackQuery(botToken: string, callbackQueryId: string, text?: string): Promise<void> {
+    try {
+      await this.call(botToken, 'answerCallbackQuery', {
+        callback_query_id: callbackQueryId,
+        text,
+      });
+    } catch (error) {
+      this.logger.debug({ err: error }, 'answerCallbackQuery failed; the id has likely expired');
+    }
   }
 
   /**

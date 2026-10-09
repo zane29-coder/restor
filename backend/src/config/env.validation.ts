@@ -73,6 +73,14 @@ export const envSchema = z
     TELEGRAM_BOT_TOKEN: z.string().default(''),
     TELEGRAM_WEBHOOK_SECRET: z.string().default(''),
     TELEGRAM_INIT_DATA_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(86_400),
+    /**
+     * Where the Mini App is served, for the button `/start` answers with.
+     *
+     * Empty derives `{CUSTOMER_WEB_URL}/tg`, which is right for a deployment
+     * that serves every app under one host. A sub-domain deployment sets it
+     * explicitly (`https://tg.restor.uz`).
+     */
+    TELEGRAM_MINI_APP_URL: z.union([z.literal(''), z.string().url()]).default(''),
 
     CLICK_SERVICE_ID: z.string().default(''),
     CLICK_MERCHANT_ID: z.string().default(''),

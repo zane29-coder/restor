@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   AuditAction,
   TelegramEvent,
+  type TelegramBotStatus,
   type TelegramConfig,
   type TelegramRoute,
 } from '@restor/shared-types';
@@ -13,6 +14,9 @@ import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TelegramApiClient } from '../../integrations/telegram/telegram-api.client';
 import { buildTestMessage } from '../../integrations/telegram/message.builder';
+import { miniAppUrlFor } from '../../integrations/telegram/bot-reply.builder';
+import { AppConfig } from '../../config/configuration';
+import { TelegramWebhookService } from './telegram-webhook.service';
 
 const CONFIG_INCLUDE = { routes: { orderBy: { event: 'asc' } } } as const;
 
@@ -32,6 +36,8 @@ export class TelegramService {
     private readonly encryption: EncryptionService,
     private readonly audit: AuditService,
     private readonly api: TelegramApiClient,
+    private readonly config: AppConfig,
+    private readonly webhook: TelegramWebhookService,
   ) {}
 
   /* ------------------------------------------------------------------ */
@@ -111,7 +117,172 @@ export class TelegramService {
       },
     });
 
+    // Saving a token is how a bot is meant to start working, so pointing
+    // Telegram at us belongs here and not behind a second button nobody knows
+    // to press. Best-effort: Telegram being unreachable for a moment must not
+    // lose the token that was just typed — `getBotStatus` then says so.
+    await this.syncWebhook(row.id, input.botToken, row.botTokenEncrypted, row.isActive);
+
     return toConfig(row);
+  }
+
+  /**
+   * Keeps Telegram's idea of this bot's webhook in step with the config.
+   *
+   * An inactive config gets its webhook removed rather than left pointing here:
+   * a bot that still delivers to a deployment that will ignore it looks, from
+   * Telegram's side, exactly like a healthy one.
+   */
+  private async syncWebhook(
+    configId: string,
+    submittedToken: string | undefined,
+    storedToken: string | null,
+    isActive: boolean,
+  ): Promise<void> {
+    const token = submittedToken ?? this.encryption.tryDecrypt(storedToken);
+    if (!token) return;
+
+    if (!isActive) {
+      await this.webhook.unregister(token).catch((error: unknown) => {
+        this.logger.warn({ configId, err: error }, 'Could not remove the Telegram webhook');
+      });
+      return;
+    }
+
+    await this.webhook.tryRegister(configId, token);
+  }
+
+  /**
+   * Everything needed to answer "why is the bot silent?" in one call.
+   *
+   * Deliberately not folded into `getConfig`: it costs two Telegram round
+   * trips, and the settings screen reads the config on every branch switch.
+   *
+   * The comparison that matters is `webhookUrl` against `expectedWebhookUrl`.
+   * A token pasted into two deployments is the common case — Telegram allows
+   * exactly one webhook per bot, so the second registration silently steals the
+   * first's updates, and the bot looks broken on whichever side lost.
+   */
+  async getBotStatus(branchId?: string): Promise<TelegramBotStatus> {
+    const tenantId = this.requireTenant();
+
+    const row = await this.prisma.db.telegramConfig.findFirst({
+      where: { branchId: branchId ?? null },
+      select: { id: true, botUsername: true, botTokenEncrypted: true, isActive: true },
+    });
+
+    const tenant = await runUnscoped(() =>
+      this.prisma.db.tenant.findUnique({ where: { id: tenantId }, select: { slug: true } }),
+    );
+
+    const miniAppUrl = miniAppUrlFor(this.config.telegram.miniAppUrl, tenant?.slug ?? 'demo');
+
+    const base: TelegramBotStatus = {
+      hasToken: Boolean(row?.botTokenEncrypted),
+      isActive: row?.isActive ?? false,
+      botUsername: row?.botUsername ?? null,
+      botLink: row?.botUsername ? `https://t.me/${row.botUsername}` : null,
+      miniAppUrl,
+      expectedWebhookUrl: row ? this.webhook.urlFor(row.id) : '',
+      webhookUrl: null,
+      isConnected: false,
+      pendingUpdateCount: 0,
+      lastErrorAt: null,
+      lastErrorMessage: null,
+      message: 'Bot hali ulanmagan',
+    };
+
+    if (!row?.botTokenEncrypted) return base;
+
+    if (!row.isActive) {
+      return { ...base, message: 'Bot oʻchirilgan' };
+    }
+
+    const token = this.encryption.tryDecrypt(row.botTokenEncrypted);
+    if (!token) {
+      return {
+        ...base,
+        message: 'Saqlangan tokenni oʻqib boʻlmadi — tokenni qaytadan kiriting',
+      };
+    }
+
+    try {
+      const [me, info] = await Promise.all([
+        this.api.getMe(token),
+        this.webhook.describe(token),
+      ]);
+
+      const isConnected = info.url === base.expectedWebhookUrl;
+
+      return {
+        ...base,
+        botUsername: me.username,
+        botLink: `https://t.me/${me.username}`,
+        webhookUrl: info.url,
+        isConnected,
+        pendingUpdateCount: info.pendingUpdateCount,
+        lastErrorAt: info.lastErrorAt,
+        lastErrorMessage: info.lastErrorMessage,
+        message: describeConnection(isConnected, info.url, this.webhook.canReceiveUpdates),
+      };
+    } catch (error) {
+      return {
+        ...base,
+        message:
+          error instanceof Error
+            ? `Telegram javob bermadi: ${error.message}`
+            : 'Telegram javob bermadi',
+      };
+    }
+  }
+
+  /**
+   * Re-points the bot at this deployment.
+   *
+   * Unlike the save path this reports failure to the caller: an admin pressing
+   * "connect" is watching, and needs Telegram's own words — a revoked token, a
+   * certificate Telegram would not accept — not a silent no-op.
+   */
+  async connectBot(branchId?: string): Promise<TelegramBotStatus> {
+    // Explicit, and not only for the error message: platform staff carry
+    // `bypassTenantScope`, so without a tenant in context the query below
+    // would happily return the first config of ANY restaurant and connect
+    // someone else's bot.
+    this.requireTenant();
+
+    const row = await this.prisma.db.telegramConfig.findFirst({
+      where: { branchId: branchId ?? null },
+      select: { id: true, botTokenEncrypted: true, isActive: true },
+    });
+
+    if (!row?.botTokenEncrypted) {
+      throw AppException.badRequest('Avval bot tokenini kiriting');
+    }
+    if (!row.isActive) {
+      throw AppException.badRequest('Bot oʻchirilgan — avval uni yoqing');
+    }
+
+    const token = this.encryption.tryDecrypt(row.botTokenEncrypted);
+    if (!token) {
+      throw AppException.badRequest('Saqlangan tokenni oʻqib boʻlmadi — qaytadan kiriting');
+    }
+
+    try {
+      await this.webhook.register(row.id, token);
+    } catch (error) {
+      throw AppException.badRequest(
+        error instanceof Error ? error.message : 'Webhook ulanmadi',
+      );
+    }
+
+    await this.audit.record({
+      action: AuditAction.TELEGRAM_CONFIG_CHANGED,
+      entity: 'TelegramConfig',
+      entityId: row.id,
+      newValue: { webhookUrl: this.webhook.urlFor(row.id) },
+    });
+
+    return this.getBotStatus(branchId);
   }
 
   /* ------------------------------------------------------------------ */
@@ -271,6 +442,32 @@ export class TelegramService {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/**
+ * The status line the settings screen shows, in Uzbek.
+ *
+ * The three states are genuinely different problems: no webhook at all (nobody
+ * registered one), a webhook pointing somewhere else (the token is in use by a
+ * second deployment, which is what silently steals the updates), and a
+ * deployment Telegram cannot reach at all.
+ */
+function describeConnection(
+  isConnected: boolean,
+  currentUrl: string | null,
+  canReceiveUpdates: boolean,
+): string {
+  if (isConnected) return 'Bot ulangan va xabarlarni qabul qilmoqda';
+
+  if (!canReceiveUpdates) {
+    return 'Server HTTPS emas — Telegram faqat HTTPS manzilga xabar yuboradi';
+  }
+
+  if (currentUrl) {
+    return 'Bot boshqa serverga ulangan — "Qayta ulash" tugmasini bosing';
+  }
+
+  return 'Webhook sozlanmagan — bot javob bermaydi. "Qayta ulash" tugmasini bosing';
+}
 
 type ConfigRow = {
   id: string;

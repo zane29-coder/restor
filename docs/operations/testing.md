@@ -14,7 +14,7 @@ developed from.
 ## Unit tests
 
 ```bash
-cd backend && npm test                      # 173
+cd backend && npm test                      # 217
 cd packages/api-client && npx jest          # 4
 ```
 
@@ -31,6 +31,7 @@ cd packages/api-client && npx jest          # 4
 | `rbac.spec.ts` | Permission resolution |
 | `request-context.spec.ts` | `runUnscoped` and the ALS scope |
 | `telegram-message.spec.ts` | HTML escaping, field markers |
+| `telegram-bot.spec.ts` | Command parsing, reply escaping, webhook URL and secret |
 | `api-url.spec.ts` | Absolute URLs carry `/api/v1` |
 | `pagination.spec.ts` | The split envelope |
 
@@ -56,7 +57,12 @@ powershell -NoProfile -File backend\tests\payments-smoke.ps1
 | `multitenancy-smoke.ps1` | 21 |
 | `courier-profile-smoke.ps1` | 17 |
 | `delivery-pricing-smoke.ps1` | 13 |
+| `telegram-smoke.ps1` | 12 — the bot webhook exists, is public, refuses a forgery |
 | `smoke.ps1` | the Phase 1–3 surface |
+
+`telegram-smoke.ps1` cannot cover an actual `/start`: the webhook secret is an
+HMAC of a server-side key, so no client can forge a delivery. It asserts the
+route is there and guarded; pressing the button is a human step.
 
 ### Rules these follow
 

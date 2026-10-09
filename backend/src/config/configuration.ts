@@ -97,6 +97,11 @@ export class AppConfig {
       botToken: this.get('TELEGRAM_BOT_TOKEN'),
       webhookSecret: this.get('TELEGRAM_WEBHOOK_SECRET'),
       initDataMaxAgeSeconds: this.get('TELEGRAM_INIT_DATA_MAX_AGE_SECONDS'),
+      /**
+       * Derived when unset, so a one-host deployment needs no extra variable
+       * and a sub-domain one overrides it in a single place.
+       */
+      miniAppUrl: this.get('TELEGRAM_MINI_APP_URL') || `${this.customerWebUrl.replace(/\/+$/, '')}/tg`,
     } as const;
   }
 

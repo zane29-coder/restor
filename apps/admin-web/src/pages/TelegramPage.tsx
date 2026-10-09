@@ -1,17 +1,27 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Permission, type TelegramConfig, type TelegramRoute } from '@restor/shared-types';
+import {
+  Permission,
+  type TelegramBotStatus,
+  type TelegramConfig,
+  type TelegramRoute,
+} from '@restor/shared-types';
 import { IconAlert, IconClose, IconPlus } from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ErrorState, Loading, Notice } from '../components/States';
 
 /**
- * Telegram settings (TZ §15).
+ * Telegram settings (TZ §14, §15).
  *
  * Two things an admin configures here: the bot, and where each event goes.
  * Routing is per event AND per branch, which is what lets a chain send
  * Chilonzor's orders to Chilonzor's group.
+ *
+ * The status card above them exists because "the bot does not answer" has
+ * several causes that look identical from the settings alone — no webhook, a
+ * webhook pointing at another deployment, a token Telegram has revoked. The
+ * card names which one it is.
  */
 export function TelegramPage() {
   const queryClient = useQueryClient();
@@ -38,6 +48,17 @@ export function TelegramPage() {
   const events = useQuery({
     queryKey: ['telegram', 'events'],
     queryFn: () => api.http.get<Array<{ value: string; label: string }>>('telegram/events'),
+  });
+
+  /*
+   * Two round trips to Telegram, so this is not folded into the config query
+   * that reloads on every branch switch. A failure here is informative rather
+   * than fatal — the settings below still work when Telegram is unreachable.
+   */
+  const botStatus = useQuery({
+    queryKey: ['telegram', 'bot-status', branchId],
+    queryFn: () => api.telegram.getBotStatus(branchId || undefined),
+    retry: false,
   });
 
   /*
@@ -85,6 +106,15 @@ export function TelegramPage() {
 
       {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
+      <BotStatusCard
+        status={botStatus.data ?? null}
+        isLoading={botStatus.isLoading}
+        branchId={branchId || null}
+        canManage={canManageBot}
+        onNotice={setNotice}
+        onChanged={invalidate}
+      />
+
       <BotForm
         config={config.data ?? null}
         branchId={branchId || null}
@@ -105,6 +135,172 @@ export function TelegramPage() {
         onChanged={invalidate}
         onNotice={setNotice}
       />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Is the bot alive, and if not, which of the several reasons is it?
+ *
+ * A stored token proves nothing: Telegram allows exactly one webhook per bot,
+ * so pasting the same token into a second deployment silently redirects every
+ * update to it, and the first goes quiet with no error on either side. That is
+ * what `webhookUrl` vs `expectedWebhookUrl` catches, and what "Qayta ulash"
+ * reverses.
+ */
+function BotStatusCard({
+  status,
+  isLoading,
+  branchId,
+  canManage,
+  onNotice,
+  onChanged,
+}: {
+  status: TelegramBotStatus | null;
+  isLoading: boolean;
+  branchId: string | null;
+  canManage: boolean;
+  onNotice: (notice: { ok: boolean; text: string }) => void;
+  onChanged: () => void;
+}) {
+  const connect = useMutation({
+    mutationFn: () => api.telegram.connectBot(branchId || undefined),
+    onSuccess: (result) => {
+      onNotice({ ok: result.isConnected, text: result.message });
+      onChanged();
+    },
+    onError: (error) =>
+      onNotice({
+        ok: false,
+        text: error instanceof RestorApiError ? error.message : 'Ulanmadi',
+      }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="card">
+        <p className="muted" style={{ margin: 0 }}>
+          Bot holati tekshirilmoqda…
+        </p>
+      </div>
+    );
+  }
+
+  if (!status) return null;
+
+  const tone = status.isConnected
+    ? { background: '#DCFCE7', color: '#166534', label: 'Ulangan' }
+    : status.hasToken
+      ? { background: '#FEF3C7', color: '#92400E', label: 'Ulanmagan' }
+      : { background: '#F3F4F6', color: '#4B5563', label: 'Sozlanmagan' };
+
+  return (
+    <div className="card">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 15, margin: '0 0 2px' }}>Bot holati</h2>
+          <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+            {status.message}
+          </p>
+        </div>
+        <div className="spacer" />
+        <span className="badge" style={{ background: tone.background, color: tone.color }}>
+          {tone.label}
+        </span>
+        {canManage && status.hasToken && (
+          <button
+            type="button"
+            className="btn"
+            disabled={connect.isPending}
+            onClick={() => connect.mutate()}
+          >
+            {connect.isPending ? 'Ulanmoqda…' : 'Qayta ulash'}
+          </button>
+        )}
+      </div>
+
+      <dl
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+          gap: 12,
+          margin: 0,
+        }}
+      >
+        <StatusField label="Bot">
+          {status.botLink ? (
+            <a
+              href={status.botLink}
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: 'var(--primary)' }}
+            >
+              @{status.botUsername}
+            </a>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </StatusField>
+
+        <StatusField label="Mijoz havolasi (Mini App)">
+          <code style={{ wordBreak: 'break-all', fontSize: 12 }}>{status.miniAppUrl}</code>
+        </StatusField>
+
+        <StatusField label="Kutayotgan xabarlar">
+          {/* A number that keeps climbing means Telegram is retrying into a wall. */}
+          {status.pendingUpdateCount > 0 ? (
+            <strong style={{ color: '#92400E' }}>{status.pendingUpdateCount}</strong>
+          ) : (
+            '0'
+          )}
+        </StatusField>
+      </dl>
+
+      {/* Only worth the space when it disagrees with what we need. */}
+      {status.hasToken && !status.isConnected && (
+        <div className="alert alert--info" style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <IconAlert size={16} />
+          <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+            <div>
+              Kerakli manzil: <code style={{ wordBreak: 'break-all' }}>{status.expectedWebhookUrl}</code>
+            </div>
+            <div>
+              Hozirgi manzil:{' '}
+              {status.webhookUrl ? (
+                <code style={{ wordBreak: 'break-all' }}>{status.webhookUrl}</code>
+              ) : (
+                <span className="muted">yoʻq</span>
+              )}
+            </div>
+            {status.webhookUrl && status.webhookUrl !== status.expectedWebhookUrl && (
+              <div style={{ marginTop: 6 }}>
+                Bu token boshqa serverga ham ulangan. Telegram bitta botga faqat bitta manzil
+                beradi — "Qayta ulash" uni shu serverga qaytaradi.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status.lastErrorMessage && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+          Telegram oxirgi xatosi: {status.lastErrorMessage}
+          {status.lastErrorAt && ` (${new Date(status.lastErrorAt).toLocaleString('uz-UZ')})`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function StatusField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt className="muted" style={{ fontSize: 12, marginBottom: 2 }}>
+        {label}
+      </dt>
+      <dd style={{ margin: 0, fontSize: 13 }}>{children}</dd>
     </div>
   );
 }
@@ -458,18 +654,22 @@ function RoutesCard({
         <summary className="muted" style={{ cursor: 'pointer', fontSize: 13 }}>
           Chat ID va Topic ID ni qanday topish mumkin?
         </summary>
+        {/*
+          Not `getUpdates` any more: Telegram serves either a webhook or
+          getUpdates, never both, and the bot now holds a webhook — getUpdates
+          answers 409. The bot reports the ids itself instead.
+        */}
         <ol className="muted" style={{ fontSize: 13, lineHeight: 1.7, paddingLeft: 20 }}>
           <li>Botni guruhga qoʻshing va unga administrator huquqini bering.</li>
           <li>
-            Guruhda istalgan xabar yozing, soʻng{' '}
-            <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> ni oching.
+            Bot qoʻshilgan zahoti guruhga <strong>Chat ID</strong> ni oʻzi yozadi.
           </li>
           <li>
-            <code>chat.id</code> — guruh ID si (supergruppada manfiy, <code>-100…</code> bilan
-            boshlanadi).
+            Keyinroq kerak boʻlsa, guruhda <code>/id</code> yuboring — bot Chat ID va (topic
+            ichida yuborilgan boʻlsa) Topic ID ni qaytaradi.
           </li>
           <li>
-            <code>message_thread_id</code> — topic ID si. Topic'da yozilgan xabarda koʻrinadi.
+            Supergruppa ID si manfiy boʻladi va <code>-100…</code> bilan boshlanadi.
           </li>
         </ol>
       </details>

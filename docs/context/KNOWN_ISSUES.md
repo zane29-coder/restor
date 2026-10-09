@@ -50,6 +50,30 @@ and the callback URL is verified. See `docs/integrations/subo.md`.
 Each of these shipped once. They are fixed; they are listed so the same shape
 is recognised next time.
 
+### A write-only Telegram bot
+The bot posted order notifications perfectly and ignored everything anyone sent
+it, because only the outbound half was ever built. `setWebhook` existed in the
+API client with **zero call sites**, there was no route for Telegram to deliver
+to, and no `/start` handler anywhere — so pressing start did nothing, which
+looks exactly like a bad token. Two tokens were revoked chasing it.
+
+The shape to recognise: a client method that is never called is not a feature.
+Grep for call sites before believing an integration is finished.
+
+### One webhook per bot, and the newest wins
+Telegram allows a bot exactly one webhook. Registering a second one silently
+replaces the first — no error on either side, and the deployment that lost
+simply stops receiving. A token pasted into both staging and production is
+therefore a bot that works on whichever was configured last. `GET
+/telegram/bot/status` compares the registered URL against the expected one for
+this reason.
+
+### `getUpdates` and a webhook are mutually exclusive
+Telegram serves one or the other, 409 to whichever it is not currently doing.
+The admin screen used to tell people to open `getUpdates` in a browser to find
+a group's chat id; registering a webhook broke that instruction. The bot now
+reports the chat id itself, on join and on `/id`.
+
 ### `http.get<Paginated<T>>` returns a bare array
 The envelope splits a page across `data` and `meta.pagination`. The typed call
 lies, `.items` is `undefined`, and every list silently renders empty. **Use
