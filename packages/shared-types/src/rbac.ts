@@ -26,6 +26,15 @@ export const Permission = {
   SUBSCRIPTIONS_VIEW: 'subscriptions.view',
   SUBSCRIPTIONS_MANAGE: 'subscriptions.manage',
   PLATFORM_ANALYTICS_VIEW: 'platform.analytics.view',
+  /**
+   * Attaching a payment provider's credentials to a restaurant.
+   *
+   * Platform-level rather than tenant-level: the merchant account is opened by
+   * the platform on the restaurant's behalf, and a leaked key lets anyone
+   * charge against it. Separate from `settings.update` so the broad "edit
+   * company settings" right does not quietly carry it.
+   */
+  PAYMENT_PROVIDERS_MANAGE: 'payment_providers.manage',
 
   // --- Company / settings ---
   SETTINGS_VIEW: 'settings.view',
@@ -138,7 +147,20 @@ export const Permission = {
 
   // --- Telegram (TZ §15) ---
   TELEGRAM_VIEW: 'telegram.view',
+  /**
+   * Connecting the bot token itself. Grouped under Platform (below), because
+   * the platform registers each restaurant's bot for it; a restaurant still
+   * reads its own configuration and routing through `telegram.view`.
+   */
   TELEGRAM_MANAGE: 'telegram.manage',
+  /**
+   * Choosing which of the restaurant's own groups each event goes to.
+   *
+   * Tenant-level, unlike the token above: deciding that Chilonzor's orders
+   * land in Chilonzor's group is the restaurant's operational call, and
+   * nothing here can redirect the bot itself.
+   */
+  TELEGRAM_ROUTES_MANAGE: 'telegram.routes.manage',
 
   // --- Finance & reporting (TZ §27) ---
   FINANCE_VIEW: 'finance.view',
@@ -169,6 +191,11 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly Permission[]>> 
     Permission.SUBSCRIPTIONS_VIEW,
     Permission.SUBSCRIPTIONS_MANAGE,
     Permission.PLATFORM_ANALYTICS_VIEW,
+    // Integrations the platform wires up on a restaurant's behalf. Listing
+    // them here is what keeps them out of OWNER and COMPANY_ADMIN, both of
+    // which are defined as "everything except the Platform group".
+    Permission.TELEGRAM_MANAGE,
+    Permission.PAYMENT_PROVIDERS_MANAGE,
   ],
   Company: [
     Permission.SETTINGS_VIEW,
@@ -260,7 +287,7 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly Permission[]>> 
     Permission.WAITER_CALLS_HANDLE,
   ],
   Inventory: [Permission.INVENTORY_VIEW, Permission.INVENTORY_MANAGE],
-  Telegram: [Permission.TELEGRAM_VIEW, Permission.TELEGRAM_MANAGE],
+  Telegram: [Permission.TELEGRAM_VIEW, Permission.TELEGRAM_ROUTES_MANAGE],
   Finance: [
     Permission.FINANCE_VIEW,
     Permission.FINANCE_MANAGE,

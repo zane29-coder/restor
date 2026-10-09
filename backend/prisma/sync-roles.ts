@@ -96,6 +96,32 @@ async function main(): Promise<void> {
   }
 
   console.log(`  system roles       ${reconciled} reconciled across all tenants`);
+
+  /*
+   * 4. Strip platform permissions from custom tenant roles.
+   *
+   * Custom roles are otherwise left alone — their grants are a deliberate
+   * choice. This is the exception: a platform permission inside a tenant role
+   * is never a valid choice, and one could be there from before the role
+   * editor started refusing them, or because a permission was regrouped into
+   * Platform by a release (`telegram.manage` was). The guard in
+   * `RolesService` stops new ones; this clears what is already stored.
+   */
+  const platformIds = (PERMISSION_GROUPS.Platform ?? [])
+    .map((permission) => idByCode.get(permission))
+    .filter((id): id is string => Boolean(id));
+
+  const stripped = await prisma.rolePermission.deleteMany({
+    where: {
+      permissionId: { in: platformIds },
+      role: { isSystem: false, tenantId: { not: null } },
+    },
+  });
+
+  console.log(
+    `  custom roles       ${stripped.count} platform grant(s) removed`,
+  );
+
   console.log('\n✔ Sync complete');
   console.log('  Staff must sign in again: permissions are baked into the access token.\n');
 }

@@ -196,6 +196,27 @@ export class RolesService {
 
   private async resolvePermissionIds(codes: string[]): Promise<string[]> {
     const unique = [...new Set(codes)];
+
+    /*
+     * Defence in depth against self-elevation.
+     *
+     * A tenant admin holds `roles.create` and `permissions.assign`, so without
+     * this they could mint a custom role carrying `tenants.create` or
+     * `payment_providers.manage` and grant it to themselves. Today the
+     * platform routes are additionally gated by `@SuperAdminOnly()`, which
+     * refuses anyone whose token names a tenant — but that makes this a single
+     * point of failure, and the first platform endpoint guarded by permission
+     * alone would open a real hole.
+     */
+    const platformCodes = unique.filter((code) =>
+      (PERMISSION_GROUPS.Platform as readonly string[]).includes(code),
+    );
+    if (platformCodes.length > 0 && !this.isPlatformAdmin()) {
+      throw AppException.forbidden(
+        `Platform-level permissions cannot be granted from a restaurant: ${platformCodes.join(', ')}`,
+      );
+    }
+
     const rows = await this.prisma.db.permission.findMany({
       where: { code: { in: unique } },
       select: { id: true, code: true },
@@ -208,6 +229,11 @@ export class RolesService {
     }
 
     return rows.map((row) => row.id);
+  }
+
+  private isPlatformAdmin(): boolean {
+    const ctx = getContext();
+    return Boolean(ctx?.bypassTenantScope) && !ctx?.tenantId;
   }
 
   private requireTenant(): string {

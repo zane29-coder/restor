@@ -16,6 +16,10 @@ import { ReportsPage } from './pages/ReportsPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { TablesPage } from './pages/TablesPage';
 import { TelegramPage } from './pages/TelegramPage';
+import { PlatformLayout } from './components/PlatformLayout';
+import { PlatformDashboardPage } from './pages/platform/PlatformDashboardPage';
+import { TenantsPage } from './pages/platform/TenantsPage';
+import { PlansPage } from './pages/platform/PlansPage';
 
 export function App() {
   const { user, isLoading } = useAuth();
@@ -40,6 +44,28 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    );
+  }
+
+  /*
+   * Two entirely separate route trees (TZ §6).
+   *
+   * The super admin sells and suspends restaurants; they do not run one. Their
+   * token carries no tenant, so the company screens below could not work for
+   * them anyway — and because tenant scoping is bypassed for the platform role,
+   * a shared dashboard silently summed every restaurant into one figure.
+   */
+  if (user.isSuperAdmin) {
+    return (
+      <Routes>
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route element={<PlatformLayout />}>
+          <Route index element={<PlatformDashboardPage />} />
+          <Route path="tenants" element={<TenantsPage />} />
+          <Route path="plans" element={<PlansPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }

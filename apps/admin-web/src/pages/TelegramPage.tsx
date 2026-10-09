@@ -40,7 +40,14 @@ export function TelegramPage() {
     queryFn: () => api.http.get<Array<{ value: string; label: string }>>('telegram/events'),
   });
 
-  const canManage = can(Permission.TELEGRAM_MANAGE);
+  /*
+   * Two rights, not one (TZ §6): the bot token is attached by the platform,
+   * while routing each event to one of the restaurant's own groups is the
+   * restaurant's own call. A tenant admin therefore reads the bot's status but
+   * cannot change it.
+   */
+  const canManageBot = can(Permission.TELEGRAM_MANAGE);
+  const canManageRoutes = can(Permission.TELEGRAM_ROUTES_MANAGE);
 
   if (config.isLoading || branches.isLoading) return <Loading />;
   if (config.isError) {
@@ -81,7 +88,7 @@ export function TelegramPage() {
       <BotForm
         config={config.data ?? null}
         branchId={branchId || null}
-        canManage={canManage}
+        canManage={canManageBot}
         onSaved={(message) => {
           setNotice({ ok: true, text: message });
           invalidate();
@@ -93,7 +100,7 @@ export function TelegramPage() {
         routes={routes.data ?? []}
         events={events.data ?? []}
         branchId={branchId || null}
-        canManage={canManage}
+        canManage={canManageRoutes}
         hasBot={Boolean(config.data?.hasToken)}
         onChanged={invalidate}
         onNotice={setNotice}
@@ -146,13 +153,20 @@ function BotForm({
   return (
     <form className="card" onSubmit={submit}>
       <h2 style={{ fontSize: 15, margin: '0 0 4px' }}>Bot</h2>
-      <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
-        Tokenni{' '}
-        <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>
-          @BotFather
-        </a>{' '}
-        dan oling. Token shifrlangan holda saqlanadi va hech qachon qaytarilmaydi.
-      </p>
+      {canManage ? (
+        <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
+          Tokenni{' '}
+          <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)' }}>
+            @BotFather
+          </a>{' '}
+          dan oling. Token shifrlangan holda saqlanadi va hech qachon qaytarilmaydi.
+        </p>
+      ) : (
+        <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
+          Botni platforma administratori ulaydi. Oʻzgartirish kerak boʻlsa, qoʻllab-quvvatlashga
+          murojaat qiling — marshrutlarni esa pastda oʻzingiz boshqarasiz.
+        </p>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 }}>
         <div className="field">
@@ -301,7 +315,8 @@ function RoutesCard({
       {!hasBot && (
         <div className="alert alert--info" style={{ display: 'flex', gap: 8 }}>
           <IconAlert size={16} />
-          Marshrut qoʻshishdan oldin bot tokenini saqlang.
+          Bot hali ulanmagan — marshrutlar ishlashi uchun platforma administratori botni
+          biriktirishi kerak.
         </div>
       )}
 

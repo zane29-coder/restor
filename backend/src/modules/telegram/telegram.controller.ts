@@ -46,6 +46,12 @@ export class TelegramController {
     return this.telegram.getConfig(branchId);
   }
 
+  /**
+   * Platform-only (TZ §6): the bot is registered for the restaurant, not by
+   * it, so a tenant admin cannot repoint it at a bot they control. The super
+   * admin reaches this through `PUT platform/tenants/:id/telegram`; routing
+   * each event to the restaurant's own groups stays with the restaurant.
+   */
   @Put('config')
   @RequirePermissions(Permission.TELEGRAM_MANAGE)
   @ApiOperation({ summary: 'Save the bot token and default chat (token is verified)' })
@@ -87,7 +93,7 @@ export class TelegramController {
   }
 
   @Put('routes')
-  @RequirePermissions(Permission.TELEGRAM_MANAGE)
+  @RequirePermissions(Permission.TELEGRAM_ROUTES_MANAGE)
   upsertRoute(
     @Body(zodBody(telegramRouteSchema)) body: TelegramRouteInput,
   ): Promise<TelegramRoute> {
@@ -95,7 +101,7 @@ export class TelegramController {
   }
 
   @Delete('routes/:id')
-  @RequirePermissions(Permission.TELEGRAM_MANAGE)
+  @RequirePermissions(Permission.TELEGRAM_ROUTES_MANAGE)
   @HttpCode(HttpStatus.NO_CONTENT)
   deleteRoute(@Param('id') id: string): Promise<void> {
     return this.telegram.deleteRoute(id);
@@ -108,7 +114,7 @@ export class TelegramController {
    * and needs Telegram's actual error, not a queue id.
    */
   @Post('routes/test')
-  @RequirePermissions(Permission.TELEGRAM_MANAGE)
+  @RequirePermissions(Permission.TELEGRAM_ROUTES_MANAGE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Send a test message to verify a chat/topic' })
   testRoute(

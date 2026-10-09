@@ -138,6 +138,25 @@ input[type='radio'] {
   gap: 2px;
 }
 
+/* The platform shell, so a super admin can see at a glance they are not
+   inside a restaurant's panel. */
+.sidebar--platform {
+  background: #0f172a;
+}
+
+.sidebar__badge {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  color: rgb(255 255 255 / 80%);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
 .sidebar__brand {
   font-size: 19px;
   font-weight: 700;
@@ -334,6 +353,13 @@ input[type='radio'] {
   background: var(--danger-dark);
 }
 
+/* The compact button used inside table rows and toolbars. */
+.btn--sm {
+  padding: 5px 10px;
+  min-height: 30px;
+  font-size: 12px;
+}
+
 .icon-btn {
   display: inline-grid;
   place-items: center;
@@ -501,6 +527,23 @@ tbody tr:hover {
 
 .muted {
   color: var(--text-muted);
+}
+
+/* Section heading inside a card or drawer. */
+.section-title {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Form fields that reflow from two columns to one on a narrow screen. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
 }
 
 .row {

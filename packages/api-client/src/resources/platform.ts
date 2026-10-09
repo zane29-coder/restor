@@ -5,6 +5,7 @@ import type {
   PlatformStats,
   Subscription,
   SubscriptionUsage,
+  TelegramConfig,
   Tenant,
   TenantStatus,
 } from '@restor/shared-types';
@@ -67,4 +68,39 @@ export class PlatformResource {
   subscriptionUsage(tenantId: string): Promise<SubscriptionUsage> {
     return this.http.get<SubscriptionUsage>(`platform/tenants/${tenantId}/usage`);
   }
+
+  /*
+   * Integrations the platform wires up for a restaurant (TZ §6, §15). The
+   * restaurant's own admin cannot set these — a bot token or a payment key
+   * swapped by a tenant would redirect its orders or its money.
+   */
+
+  /** Attaches the restaurant's bot. The token is verified, then encrypted. */
+  saveTenantTelegram(tenantId: string, payload: unknown): Promise<TelegramConfig> {
+    return this.http.put<TelegramConfig>(`platform/tenants/${tenantId}/telegram`, payload);
+  }
+
+  /** Whether a payment key is on file — the key itself is never returned. */
+  tenantPaymentProvider(tenantId: string): Promise<PaymentProviderView> {
+    return this.http.get<PaymentProviderView>(`platform/tenants/${tenantId}/payment-provider`);
+  }
+
+  saveTenantPaymentProvider(
+    tenantId: string,
+    payload: unknown,
+  ): Promise<PaymentProviderView> {
+    return this.http.put<PaymentProviderView>(
+      `platform/tenants/${tenantId}/payment-provider`,
+      payload,
+    );
+  }
+}
+
+/** Mirrors the backend's `SuboConfigView`; deliberately holds no key. */
+export interface PaymentProviderView {
+  provider: string;
+  hasKey: boolean;
+  isSandbox: boolean;
+  isActive: boolean;
+  callbackUrl: string;
 }

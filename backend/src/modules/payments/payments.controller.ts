@@ -63,8 +63,16 @@ export class PaymentsController {
     return this.subo.getConfig();
   }
 
+  /**
+   * Platform-only (TZ §6): the super admin opens the merchant account and
+   * attaches the key, so a restaurant's own admin cannot swap it for one that
+   * points payments elsewhere. They reach this through
+   * `PUT platform/tenants/:id/payment-provider`, which runs it in the
+   * restaurant's scope; this route stays for a platform admin acting with a
+   * tenant already in context.
+   */
   @Post('subo/config')
-  @RequirePermissions(Permission.SETTINGS_UPDATE)
+  @RequirePermissions(Permission.PAYMENT_PROVIDERS_MANAGE)
   @ApiOperation({ summary: 'Store this restaurant’s Subo API key (encrypted)' })
   saveSuboConfig(
     @Body(zodBody(suboConfigSchema)) body: SuboConfigInput,
