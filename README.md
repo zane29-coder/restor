@@ -5,6 +5,10 @@ chains, cafés and restaurants. Telegram ordering, a web storefront, a POS
 terminal, a kitchen display, a courier app and an admin panel, all served by a
 single backend.
 
+> **Working on this codebase?** Start at [AGENTS.md](AGENTS.md) — it routes to
+> the one doc your task needs instead of making you read the code to find out
+> how something behaves.
+
 ---
 
 ## Status

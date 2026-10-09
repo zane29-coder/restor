@@ -94,7 +94,7 @@ Access tokens last 15 minutes. `@restor/api-client` refreshes them
 automatically — including collapsing concurrent 401s into a single refresh, so
 a rotation cannot invalidate the token the other requests are still using.
 
-See [authentication.md](authentication.md).
+See [authentication.md](auth.md).
 
 ---
 

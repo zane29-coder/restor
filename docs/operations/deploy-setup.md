@@ -7,9 +7,16 @@ to it.
 Written for: whoever operates the server. Assumes comfort with SSH, DNS and
 `systemctl`, not with this codebase.
 
-For a server dedicated to RESTOR, use [deployment.md](deployment.md) instead —
+For a server dedicated to RESTOR, use [deploy-standalone.md](deploy-standalone.md) instead —
 that stack runs its own nginx container and claims both ports. Pick one; running
 both means two processes fighting over port 443.
+
+> **This is FIRST-TIME setup.** To ship a change to a server that is already
+> running, read [deploy.md](deploy.md) instead.
+>
+> The live install at `restore-1.duckdns.org` routes by **path** (`/admin`,
+> `/pos`, `/kds`, `/tg`) on one domain rather than by the sub-domains below.
+> Both layouts work; sub-domains are cleaner once you own the DNS.
 
 ---
 

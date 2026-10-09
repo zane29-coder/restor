@@ -7,7 +7,7 @@ with this codebase.
 
 > **On a server that already runs other sites**, this is the wrong document —
 > the stack here claims ports 80 and 443. Use
-> [deployment-shared-host.md](deployment-shared-host.md) instead, which adds
+> [deployment-shared-host.md](deploy-setup.md) instead, which adds
 > RESTOR to the host's existing nginx. Both serve the same sub-domains, so the
 > URLs below apply either way.
 
