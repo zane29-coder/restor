@@ -7,16 +7,26 @@ real and what is not, and a stale entry here costs more than no entry.
 
 ## Live
 
-`https://restore-1.duckdns.org` — test domain. `restor.uz` is planned and not
-yet pointed anywhere.
+`restor.uz` **is** pointed at production now — every name below resolves to
+`169.58.84.241`. One sub-domain per app, not the sub-paths this used to serve.
 
-| Path | App |
+| Host | App |
 | --- | --- |
-| `/` | Customer storefront |
-| `/admin` | Admin panel, and the super-admin surface under the same origin |
-| `/pos` | Till |
-| `/kds` | Kitchen display |
-| `/tg` | Telegram Mini App |
+| `restor.uz` | Customer storefront |
+| `app.restor.uz` | Admin panel, and the super-admin surface under the same origin |
+| `pos.restor.uz` | Till |
+| `kds.restor.uz` | Kitchen display |
+| `tg.restor.uz` | Telegram Mini App |
+| `api.restor.uz` | Backend — `/api/v1`, `/realtime`, `/uploads`, `/health` |
+
+`restore-1.duckdns.org` still answers and 301s each old sub-path to its new
+host (`/admin` → `app.restor.uz`). Its `/api/` is still proxied, which is what
+keeps the released courier APK working — that APK has the duckdns host baked
+in and cannot be repointed without a rebuild.
+
+Health is `/health`, **not** `/api/v1/health`: probes deliberately bypass the
+version prefix, so `/api/v1/health` is a 404 on every host and is not a sign of
+anything wrong.
 
 The courier app is **not** deployed — it is an APK at
 `release/restor-courier-0.2.0.apk`, installed on phones by hand.
@@ -47,22 +57,34 @@ Also working, verified earlier by hand rather than by a smoke suite: the
 Telegram bot (order notifications with emoji field markers), the kitchen
 display, the storefront and the Mini App.
 
-## Just built, not yet exercised against Telegram
+## The Telegram bot's inbound half — deployed 2026-10-09
 
-**The bot now answers.** It was write-only until 2026-10-09: `setWebhook` sat
-in the API client with no call site, no route existed for Telegram to POST to,
-and nothing handled a command — so `/start` produced nothing and the token
-looked like the culprit. Added: `POST /api/v1/webhooks/telegram/:configId`,
-`/start` `/help` `/menu` `/id` handling, a Mini App button, chat-id reporting
-when the bot joins a group, automatic webhook registration on save and at
-boot, and `GET /telegram/bot/status` behind a **Bot holati** card on the admin
-screen.
+**The bot now answers.** It was write-only until then: `setWebhook` sat in the
+API client with no call site, no route existed for Telegram to POST to, and
+nothing handled a command — so `/start` produced nothing and the token looked
+like the culprit. Added: `POST /api/v1/webhooks/telegram/:configId`, `/start`
+`/help` `/menu` `/id` handling, a Mini App button, chat-id reporting when the
+bot joins a group, automatic webhook registration on save and at boot, and
+`GET /telegram/bot/status` behind a **Bot holati** card on the admin screen.
 
-Unit-tested (34 assertions) and typechecked. **Not yet run against the real
-Telegram API** — that needs a deploy, because Telegram only delivers to HTTPS
-and so the flow cannot be exercised from a dev machine at all. First test
-after deploying: open the restaurant's bot, press `/start`, expect a greeting
-and a menu button.
+Deployed and confirmed against the real Telegram API:
+
+- the API log says `Telegram webhooks: 1/1 bots registered`;
+- `GET /telegram/bot/status` reports `isConnected: true`, 0 pending, no error;
+- `telegram-smoke.ps1` — 16/16 against production.
+
+The `demo` tenant's bot is `@njdnsbdabot`, registered at
+`api.restor.uz/api/v1/webhooks/telegram/{configId}`.
+
+**Still owed:** nobody has pressed `/start` as a real customer. Everything
+asserted above is the plumbing — that the route exists, is guarded, and that
+Telegram agrees it should deliver here. The reply itself has not been seen by
+a human.
+
+`TELEGRAM_MINI_APP_URL=https://tg.restor.uz` is now set on the server and has
+to stay. Left unset it derives `{CUSTOMER_WEB_URL}/tg` = `restor.uz/tg`, which
+the storefront's SPA fallback answers with the **storefront** — so `/start`
+would hand the customer the wrong app with no error anywhere.
 
 Note for anyone who remembers the old instructions: `getUpdates` in a browser
 no longer works for finding a chat id. Telegram serves a webhook or
