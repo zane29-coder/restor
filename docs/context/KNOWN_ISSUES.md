@@ -50,6 +50,22 @@ and the callback URL is verified. See `docs/integrations/subo.md`.
 Each of these shipped once. They are fixed; they are listed so the same shape
 is recognised next time.
 
+### A session table that only staff could belong to
+Telegram Mini App sign-in failed on **every single attempt** from the day it
+was written. `loginWithTelegram` upserts a `Customer` and then issues tokens
+with `userId = customer.id`, but `refresh_tokens.userId` is a foreign key to
+`users`. Postgres refused the insert, the filter turned `P2003` into a flat
+*"A referenced record does not exist"*, and that English sentence was the
+entire Mini App.
+
+Two things made it survive so long. It was recorded as *verified by hand*,
+which it cannot have been — the error is unmissable. And the message named no
+constraint, so it read like bad data rather than a missing model: customers
+were simply never given a place in the session table.
+
+`refresh_tokens` now points at a user **or** a customer, with a CHECK that
+exactly one is set.
+
 ### A write-only Telegram bot
 The bot posted order notifications perfectly and ignored everything anyone sent
 it, because only the outbound half was ever built. `setWebhook` existed in the

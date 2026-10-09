@@ -64,9 +64,12 @@ What the bot answers:
 
 | Where | Message | Reply |
 | --- | --- | --- |
-| Private | `/start`, `/menu` | greeting + a Mini App button |
+| Private | `/start`, `/menu` | greeting + the persistent keyboard |
+| Private | `🧾 Buyurtmalarim` | that customer's last five orders |
+| Private | `📍 Filiallar` | branch names, addresses, phones |
+| Private | `📞 Aloqa` | the restaurant's number |
 | Private | `/help` | what the bot does |
-| Private | anything else | a nudge back to the button |
+| Private | anything else | a nudge back to the keyboard |
 | Group | `/id` | the chat and topic id |
 | Group | being added | the chat id, unprompted |
 | Group | anything else | **silence** |
@@ -74,9 +77,41 @@ What the bot answers:
 Silence in a group is deliberate: a staff group is a work feed, and a bot that
 answers chatter there makes it unreadable.
 
+### The keyboard
+
+A **reply** keyboard, not an inline one. An inline keyboard scrolls away with
+the message that carried it, so a customer who has sent anything since
+`/start` has nothing left to press; this one stays under the message box.
+
+The consequence to remember: a reply-keyboard tap is **not** a callback.
+Telegram sends the button's own label as an ordinary message, so the labels in
+`BOT_BUTTONS` are the only thing identifying a tap. Change a label in one
+place and the button silently stops working — the handler matches on those
+constants, and both sides must come from them.
+
+`Menyu` carries the Mini App. On a deployment without TLS that one button is
+dropped rather than sent: Telegram rejects the entire `sendMessage` over one
+non-HTTPS `web_app` URL, which would cost the customer every other button too.
+
 The bot takes no orders itself. Ordering is the Mini App's job — it already
 prices server-side, applies promotions and collects an address; a chat-based
 order flow would be a second implementation of all of it.
+
+### Setup is the token, and nothing else
+
+Saving a token does four more things besides registering the webhook:
+
+| Call | Replaces |
+| --- | --- |
+| `setMyCommands` | `/setcommands` in @BotFather |
+| `setChatMenuButton` | `/newapp`, then Bot Settings → Menu Button |
+| `setMyShortDescription` | `/setabouttext` |
+| `setMyDescription` | `/setdescription` |
+
+`setChatMenuButton` is the one that matters: it is why a restaurant never has
+to open @BotFather at all. These are applied with `allSettled` — they are four
+independent cosmetic settings and one rejection must not cost the other three
+— and each failure is logged on its own.
 
 **`getUpdates` no longer works.** Telegram serves a bot either a webhook or
 `getUpdates`, never both, so the browser trick for finding a chat id now
@@ -151,23 +186,19 @@ and give `message.builder.ts` a case. Nothing in the emitting module changes.
 
 ## Setup for a restaurant
 
-1. @BotFather → new bot → token.
+1. @BotFather → new bot → token. **That is the only BotFather step.**
 2. Paste the token in Admin → Telegram (the platform admin does this; a tenant
-   admin cannot). Saving it registers the webhook, and **Bot holati** then says
-   *Bot ulangan*.
-3. Press `/start` in a private chat with the bot. A greeting and a menu button
-   is the whole smoke test.
+   admin cannot). Saving it registers the webhook and pushes the command list,
+   the menu button and the descriptions. **Bot holati** then says *Bot ulangan*.
+3. Press `/start` in a private chat with the bot. A greeting and a keyboard
+   with `🍽 Menyu` on it is the whole smoke test.
 4. Add the bot to the staff group **as an administrator** — it cannot post
    otherwise. It replies with the group's chat id.
 5. Paste that id as the default chat, and add per-event routes if the default
    is not enough.
 
-Optional, in @BotFather: `/setcommands` so `start` and `help` appear in the
-client's menu, and `/newapp` (or Bot Settings → Menu Button) pointed at
-`TELEGRAM_MINI_APP_URL` so the bot's own button opens the Mini App.
-
 A token that has been pasted into a chat log should be revoked with `/revoke`
-and replaced. Re-entering it in Admin → Telegram re-registers the webhook.
+and replaced. Re-entering it in Admin → Telegram redoes all of step 2.
 
 ### When the bot does not answer
 

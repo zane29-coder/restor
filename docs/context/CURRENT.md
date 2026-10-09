@@ -76,10 +76,33 @@ Deployed and confirmed against the real Telegram API:
 The `demo` tenant's bot is `@njdnsbdabot`, registered at
 `api.restor.uz/api/v1/webhooks/telegram/{configId}`.
 
-**Still owed:** nobody has pressed `/start` as a real customer. Everything
-asserted above is the plumbing — that the route exists, is guarded, and that
-Telegram agrees it should deliver here. The reply itself has not been seen by
-a human.
+`/start` has been pressed by a human: the greeting and the button arrived, and
+the Mini App opened.
+
+### Then the Mini App turned out to be broken, and now is not
+
+Opening it showed one line — *"A referenced record does not exist"*. Mini App
+sign-in had **never** worked: `loginWithTelegram` writes a session row with
+`userId = customer.id`, and `refresh_tokens.userId` is a foreign key to
+`users`. Every attempt since the feature was written died on that constraint.
+It was listed above as verified by hand, which it cannot have been.
+
+`refresh_tokens` now belongs to a user **or** a customer (migration
+`20261010090000_customer_sessions`, a CHECK enforces exactly one). Verified
+against production: the insert that used to fail is accepted, a staff session
+still is, and a row owned by nobody or by both is refused.
+
+### The bot no longer needs BotFather
+
+A persistent reply keyboard — `🍽 Menyu` (Mini App), `🧾 Buyurtmalarim`,
+`📍 Filiallar`, `📞 Aloqa` — and saving a token now also pushes the command
+list, the menu button and the descriptions. Pasting the token into Admin →
+Telegram is the entire setup; @BotFather is only used to create the bot.
+
+**Still owed:** nobody has completed an order through the Mini App. Sign-in is
+fixed and proven at the database level, and the bot answers — but the menu,
+cart and checkout inside the Mini App have still never been driven by a human,
+because until today nobody could get past the login screen.
 
 `TELEGRAM_MINI_APP_URL=https://tg.restor.uz` is now set on the server and has
 to stay. Left unset it derives `{CUSTOMER_WEB_URL}/tg` = `restor.uz/tg`, which
