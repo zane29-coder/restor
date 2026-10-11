@@ -257,6 +257,8 @@ export class MarketingService {
         endsAt: input.endsAt ? new Date(input.endsAt) : null,
         branchIds: input.branchIds,
         isActive: input.isActive,
+        isPublic: input.isPublic,
+        description: input.description?.trim() || null,
       },
     });
 
@@ -298,6 +300,10 @@ export class MarketingService {
           : {}),
         ...(input.branchIds !== undefined ? { branchIds: input.branchIds } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description?.trim() || null }
+          : {}),
       },
     });
 
@@ -484,6 +490,8 @@ function toPromoCode(row: {
   endsAt: Date | null;
   branchIds: string[];
   isActive: boolean;
+  isPublic: boolean;
+  description: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): PromoCode {
@@ -502,6 +510,8 @@ function toPromoCode(row: {
     endsAt: row.endsAt?.toISOString() ?? null,
     branchIds: row.branchIds,
     isActive: row.isActive,
+    isPublic: row.isPublic,
+    description: row.description,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

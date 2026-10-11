@@ -147,6 +147,16 @@ export class SuboService {
     return this.getConfig();
   }
 
+  /**
+   * Whether online payment can be offered at all: a key is stored and the
+   * platform has switched it on. The storefront hides every online option
+   * while this is false, whatever the restaurant's checkout settings say.
+   */
+  async isAvailable(): Promise<boolean> {
+    const config = await this.getConfig();
+    return config.hasKey && config.isActive;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Checkout                                                           */
   /* ------------------------------------------------------------------ */
@@ -338,6 +348,23 @@ export class SuboService {
         { paymentId, status: remote.status, reason: remote.failureReason },
         'Subo payment did not succeed',
       );
+
+      // The customer is told through their inbox and bot that the payment
+      // did not go through, so they can retry from the order — the order
+      // itself stays as it was, unpaid.
+      this.events.emit(DomainEvent.PAYMENT_FAILED, {
+        tenantId: payment.order.tenantId,
+        branchId: payment.order.branchId,
+        requestId: getContext()?.requestId ?? null,
+        actorUserId: null,
+        occurredAt: new Date().toISOString(),
+        orderId: payment.order.id,
+        displayNumber: payment.order.displayNumber,
+        paymentId,
+        method: PaymentMethod.SUBO,
+        amount: payment.amount,
+        isFullyPaid: false,
+      });
       return;
     }
 

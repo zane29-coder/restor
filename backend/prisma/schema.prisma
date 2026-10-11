@@ -273,6 +273,60 @@ enum StorageProvider {
   MINIO
 }
 
+/// What one portion of a product is measured in, for the "450 g" line on a
+/// menu card. Deliberately not `StockUnit`: a recipe is measured in what the
+/// kitchen buys, a portion in what the customer is told they get.
+enum PortionUnit {
+  G
+  ML
+  PCS
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+/// Where a recommendation is shown in the storefront.
+enum RecommendationPlacement {
+  /// "Sizga yoqishi mumkin" inside a product's sheet.
+  PRODUCT_DETAIL
+  /// "Yana nimadir kerakmi?" on the cart page.
+  CART
+}
+
+/// What a customer-facing notification is about. One row per event, rendered
+/// once, then both stored in the in-app inbox and sent through the bot.
+enum CustomerNotificationType {
+  ORDER_RECEIVED
+  ORDER_ACCEPTED
+  ORDER_PREPARING
+  ORDER_READY
+  ORDER_ON_DELIVERY
+  ORDER_DELIVERED
+  ORDER_CANCELLED
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  NEW_PRODUCT
+  PROMOTION
+  PROMO_CODE
+  SERVICE
+}
+
+/// Kept apart so marketing consent can never switch off an order update.
+enum NotificationCategory {
+  TRANSACTIONAL
+  MARKETING
+  SERVICE
+}
+
+enum CampaignKind {
+  NEW_PRODUCT
+  PROMOTION
+  PROMO_CODE
+  ANNOUNCEMENT
+}
+
 // =============================================================================
 // TENANTS & BILLING (TZ §4, §6)
 // =============================================================================
@@ -338,6 +392,12 @@ model Tenant {
   auditLogs       AuditLog[]
   notifications   Notification[]
   files           FileAsset[]
+
+  customerFavorites     CustomerFavorite[]
+  customerNotifications CustomerNotification[]
+  recommendations       ProductRecommendation[]
+  storefrontSettings    StorefrontSettings?
+  marketingCampaigns    MarketingCampaign[]
 
   @@index([status])
   @@index([deletedAt])
@@ -445,6 +505,7 @@ model User {
   waiterCallsHandled  WaiterCall[]
   auditLogs           AuditLog[]
   filesUploaded       FileAsset[]
+  campaignsCreated    MarketingCampaign[]
 
   /// Phone is the login key and must be unique WITHIN a tenant — the same
   /// person may legitimately work for two different restaurants.
@@ -678,9 +739,156 @@ model Employee {
 // CUSTOMERS / CRM (TZ §31)
 // =============================================================================
 
+/// The person behind every restaurant's customer record — RESTOR-wide, not
+/// per tenant.
+///
+/// A customer who orders from three restaurants enters their name, phone and
+/// addresses once. Each restaurant still has its own `Customer` row (its CRM,
+/// its loyalty, its order history), linked here by `accountId`, and learns
+/// the person's details only through the orders they place with it. No
+/// restaurant-facing endpoint reads this table.
+///
+/// NOT tenant-scoped, so the Prisma extension cannot protect it: every query
+/// must filter on the account id taken from the verified session. Only the
+/// storefront module touches it.
+model CustomerAccount {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Telegram user ids are global across bots, which is what makes one
+  /// account span every restaurant's Mini App.
+  telegramId String? @unique @db.VarChar(32)
+
+  /// The official details an order is placed under. Never copied from
+  /// Telegram automatically — a Telegram display name is not a delivery name.
+  firstName String?   @db.VarChar(60)
+  lastName  String?   @db.VarChar(60)
+  /// E.164. NOT unique and NOT trusted as identity: there is no SMS check yet,
+  /// so two people can type the same number.
+  phone     String?   @db.VarChar(20)
+  /// Set only by a real verification step, which does not exist yet.
+  phoneVerifiedAt DateTime?
+  email     String?   @db.VarChar(255)
+  birthDate DateTime? @db.Date
+  gender    Gender?
+  language  String    @default("uz") @db.VarChar(10)
+
+  /// What Telegram reports, for display only (avatar, greeting).
+  telegramUsername  String? @db.VarChar(64)
+  telegramFirstName String? @db.VarChar(64)
+  telegramLastName  String? @db.VarChar(64)
+  telegramPhotoUrl  String? @db.VarChar(2048)
+
+  /// Order updates through the bot. Separate from marketing on purpose.
+  notifyTelegram   Boolean   @default(true)
+  /// Explicit opt-in; off until the customer turns it on.
+  marketingOptIn   Boolean   @default(false)
+  marketingOptInAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  customers     Customer[]
+  addresses     CustomerAccountAddress[]
+  favorites     CustomerFavorite[]
+  notifications CustomerNotification[]
+
+  @@index([phone])
+  @@map("customer_accounts")
+}
+
+/// A saved address, shared by every restaurant the customer orders from.
+/// Orders copy it into their own columns, so editing it never rewrites history.
+model CustomerAccountAddress {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @db.Uuid
+
+  /// "Uy", "Ish", "Universitet"…
+  label     String? @db.VarChar(60)
+  /// Street line, usually filled from the map pin.
+  address   String  @db.VarChar(500)
+  house     String? @db.VarChar(20)
+  latitude  Float?
+  longitude Float?
+  apartment String? @db.VarChar(20)
+  entrance  String? @db.VarChar(20)
+  floor     String? @db.VarChar(20)
+  intercom  String? @db.VarChar(20)
+  /// Standing note for couriers ("darvoza kodi 1234"). A one-off note goes on
+  /// the order instead.
+  comment   String? @db.VarChar(500)
+  isDefault Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  account CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("customer_account_addresses")
+}
+
+/// A product the customer hearted. Carries the tenant so a favourite from one
+/// restaurant can never be added to another restaurant's cart.
+model CustomerFavorite {
+  id        String @id @default(uuid()) @db.Uuid
+  accountId String @db.Uuid
+  tenantId  String @db.Uuid
+  productId String @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  account CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tenant  Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, productId])
+  @@index([tenantId, accountId])
+  @@map("customer_favorites")
+}
+
+/// The customer's inbox. Every customer-facing message — the bot's included —
+/// is a row here first; the Telegram delivery is a side effect that points
+/// back at it, so the two can never say different things.
+model CustomerNotification {
+  id        String  @id @default(uuid()) @db.Uuid
+  accountId String  @db.Uuid
+  /// `null` for a RESTOR-wide service message.
+  tenantId  String? @db.Uuid
+
+  type     CustomerNotificationType
+  category NotificationCategory
+  title    String @db.VarChar(120)
+  body     String @db.VarChar(1000)
+
+  orderId    String? @db.Uuid
+  productId  String? @db.Uuid
+  campaignId String? @db.Uuid
+
+  readAt DateTime?
+  /// Row in `notifications` that carried it to Telegram, when one was sent.
+  deliveryId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  account  CustomerAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  tenant   Tenant?            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order    Order?             @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  product  Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  campaign MarketingCampaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, createdAt])
+  @@index([accountId, readAt])
+  @@map("customer_notifications")
+}
+
 model Customer {
   id       String @id @default(uuid()) @db.Uuid
   tenantId String @db.Uuid
+  /// The RESTOR-wide person this restaurant's record belongs to, when they
+  /// came through the Mini App. `null` for phone and till customers.
+  accountId String? @db.Uuid
 
   phone            String  @db.VarChar(20)
   fullName         String? @db.VarChar(120)
@@ -702,7 +910,8 @@ model Customer {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account CustomerAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
   addresses      CustomerAddress[]
   orders         Order[]
@@ -712,6 +921,7 @@ model Customer {
 
   @@unique([tenantId, phone])
   @@unique([tenantId, telegramId])
+  @@unique([tenantId, accountId])
   @@index([tenantId, lastOrderAt])
   @@index([tenantId, totalSpent])
   @@map("customers")
@@ -767,6 +977,7 @@ model Category {
   children Category[] @relation("CategoryTree")
   products Product[]
   kitchenStations KitchenStationCategory[]
+  recommendedIn   ProductRecommendation[] @relation("RecommendationTargetCategory")
 
   @@unique([tenantId, slug])
   @@index([tenantId, isActive, sortOrder])
@@ -789,6 +1000,11 @@ model Product {
   /// Minutes the kitchen needs — feeds the KDS timer and the customer ETA.
   preparationTime Int  @default(10)
 
+  /// One portion, as printed on the menu card: 450 g, 300 ml, 6 pcs.
+  /// Both or neither — the service refuses half of the pair.
+  portionSize Int?
+  portionUnit PortionUnit?
+
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
@@ -805,6 +1021,12 @@ model Product {
   orderItems     OrderItem[]
   /// What one unit consumes. Empty means the product is not stock-tracked.
   ingredients    ProductIngredient[]
+
+  favoritedBy           CustomerFavorite[]
+  customerNotifications CustomerNotification[]
+  recommendationRules   ProductRecommendation[] @relation("RecommendationSource")
+  recommendedIn         ProductRecommendation[] @relation("RecommendationTargetProduct")
+  campaigns             MarketingCampaign[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, categoryId, isActive])
@@ -864,6 +1086,9 @@ model Modifier {
   name      String  @db.VarChar(80)
   price     Int     @default(0)
   sortOrder Int     @default(0)
+  /// Pre-selected when the product sheet opens. The customer can still change
+  /// it; the server validates the final choice like any other.
+  isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 
   createdAt DateTime @default(now())
@@ -907,6 +1132,94 @@ model ProductBranch {
   @@id([productId, branchId])
   @@index([branchId, isAvailable, isStopListed])
   @@map("product_branches")
+}
+
+/// One line of a recommendation list the restaurant curates.
+///
+/// A list is identified by (placement, sourceProductId): the product sheet of
+/// one product, the default for every product without its own list
+/// (`sourceProductId = null`), or the cart (always `null`). Each line points
+/// at exactly one product OR one category — a category expands to whatever of
+/// it is on sale at the branch when the menu is built, so a rule never has to
+/// be edited because a dish ran out. CHECK constraints in the migration
+/// enforce both shapes.
+model ProductRecommendation {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  placement       RecommendationPlacement
+  sourceProductId String? @db.Uuid
+
+  targetProductId  String? @db.Uuid
+  targetCategoryId String? @db.Uuid
+  sortOrder        Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  tenant         Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sourceProduct  Product?  @relation("RecommendationSource", fields: [sourceProductId], references: [id], onDelete: Cascade)
+  targetProduct  Product?  @relation("RecommendationTargetProduct", fields: [targetProductId], references: [id], onDelete: Cascade)
+  targetCategory Category? @relation("RecommendationTargetCategory", fields: [targetCategoryId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, placement, sourceProductId])
+  @@map("product_recommendations")
+}
+
+/// How a restaurant's own storefront checkout behaves — one row per tenant,
+/// absent until first saved (the defaults below then apply).
+model StorefrontSettings {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @unique @db.Uuid
+
+  /// Pay the courier or the till in cash.
+  cashEnabled        Boolean  @default(true)
+  /// Online options offered through Subo: `ATMOS` (bank card, saved by
+  /// Atmos for next time), `CLICK`, `PAYME`. Only shown while the tenant's
+  /// Subo key is active — an option nobody can complete is not offered.
+  onlineProviders    String[] @default([])
+  /// The "how many sets of cutlery" stepper in the cart.
+  cutleryEnabled     Boolean  @default(true)
+  /// "Leave at the door" at checkout. Off by default: it changes what a
+  /// courier is allowed to do, so the restaurant opts in.
+  leaveAtDoorEnabled Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("storefront_settings")
+}
+
+/// A marketing message a restaurant sent to its opted-in customers. Kept as a
+/// row both for the history screen and for the rate limit, which counts these.
+model MarketingCampaign {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+
+  kind  CampaignKind
+  title String @db.VarChar(120)
+  body  String @db.VarChar(1000)
+
+  productId   String? @db.Uuid
+  promoCodeId String? @db.Uuid
+
+  /// Inbox rows written.
+  recipientCount Int @default(0)
+  /// Of those, how many were also queued to Telegram.
+  telegramQueued Int @default(0)
+
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  tenant        Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product       Product?               @relation(fields: [productId], references: [id], onDelete: SetNull)
+  promoCode     PromoCode?             @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  createdBy     User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  notifications CustomerNotification[]
+
+  @@index([tenantId, createdAt])
+  @@map("marketing_campaigns")
 }
 
 // =============================================================================
@@ -968,6 +1281,7 @@ model Order {
   addressApartment String? @db.VarChar(20)
   addressLandmark  String? @db.VarChar(200)
   addressComment   String? @db.VarChar(500)
+  addressIntercom  String? @db.VarChar(20)
 
   tableId     String? @db.Uuid
   tableNumber String? @db.VarChar(20)
@@ -975,7 +1289,22 @@ model Order {
   courierId   String? @db.Uuid
   promoCodeId String? @db.Uuid
 
+  /// How the customer SAID they will pay, chosen at checkout. Not a payment:
+  /// money is recorded in `payments`, and `paymentStatus` is derived from
+  /// those rows alone. A cash order is UNPAID until the courier collects.
+  paymentMethod   PaymentMethod?
+  /// For an online order, which provider the customer picked (ATMOS, CLICK,
+  /// PAYME) — what Subo is asked to open.
+  paymentProvider String?        @db.VarChar(32)
+
+  /// Note to the restaurant ("piyoz qo'shmang").
   comment      String? @db.VarChar(1000)
+  /// One-off note to the courier for this order only. Standing notes live on
+  /// the saved address and are copied into `addressComment`.
+  courierComment String? @db.VarChar(500)
+  /// Sets of cutlery requested; `null` when the restaurant does not ask.
+  cutleryCount Int?
+  leaveAtDoor  Boolean @default(false)
   cancelReason String? @db.VarChar(500)
 
   estimatedReadyAt DateTime?
@@ -1014,6 +1343,7 @@ model Order {
   appliedPromotions OrderPromotion[]
   loyaltyTransactions LoyaltyTransaction[]
   kitchenTickets  KitchenTicket[]
+  customerNotifications CustomerNotification[]
 
   @@unique([branchId, number])
   @@unique([tenantId, clientUuid])
@@ -1564,14 +1894,20 @@ model PromoCode {
   endsAt    DateTime?
   branchIds String[]  @default([]) @db.Uuid
   isActive  Boolean   @default(true)
+  /// Listed on the customer's "Promo-kodlar" screen. Off by default: a code
+  /// printed for one influencer must not be handed to everyone.
+  isPublic    Boolean @default(false)
+  /// Terms shown with a public code.
+  description String? @db.VarChar(500)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  usages PromoCodeUsage[]
-  orders Order[]
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  usages    PromoCodeUsage[]
+  orders    Order[]
+  campaigns MarketingCampaign[]
 
   @@unique([tenantId, code])
   @@index([tenantId, isActive])

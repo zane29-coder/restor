@@ -89,6 +89,21 @@ export const ErrorCode = {
   PROMO_CODE_LIMIT_REACHED: 'PROMO_CODE_LIMIT_REACHED',
   PROMO_CODE_NOT_APPLICABLE: 'PROMO_CODE_NOT_APPLICABLE',
 
+  // --- Storefront customers ---
+  /**
+   * Checkout needs a name, surname and phone the customer has not given yet.
+   * `details.missing` lists which; the Mini App asks for exactly those and
+   * then resubmits the same checkout.
+   */
+  PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
+  /** The chosen payment option is not enabled for this restaurant right now. */
+  PAYMENT_METHOD_UNAVAILABLE: 'PAYMENT_METHOD_UNAVAILABLE',
+  ADDRESS_NOT_FOUND: 'ADDRESS_NOT_FOUND',
+  /** A customer-only endpoint was called without a customer session. */
+  CUSTOMER_SESSION_REQUIRED: 'CUSTOMER_SESSION_REQUIRED',
+  /** A marketing send inside the restaurant's cooling-off window. */
+  CAMPAIGN_RATE_LIMITED: 'CAMPAIGN_RATE_LIMITED',
+
   // --- Storage / integrations ---
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   UNSUPPORTED_FILE_TYPE: 'UNSUPPORTED_FILE_TYPE',

@@ -65,6 +65,21 @@ export class JwtAuthGuard implements CanActivate {
       throw AppException.unauthorized('Wrong token type', ErrorCode.TOKEN_INVALID);
     }
 
+    // A storefront customer. Their id goes into its own field and NOT into
+    // `userId`: staff-only columns are foreign keys to `users`, and the
+    // permission guard keeps customers off every staff route.
+    if (payload.kind === 'CUSTOMER' || payload.roles?.includes('CUSTOMER')) {
+      patchContext({
+        customerId: payload.sub,
+        customerAccountId: payload.accountId,
+        tenantId: payload.tenantId ?? undefined,
+        bypassTenantScope: false,
+        branchIds: [],
+        permissions: [],
+      });
+      return true;
+    }
+
     const isSuperAdmin = payload.roles.includes(SystemRole.SUPER_ADMIN);
 
     patchContext({

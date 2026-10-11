@@ -1,5 +1,22 @@
 import { z } from 'zod';
+import { PortionUnit } from '@restor/shared-types';
 import { moneySchema, shortTextSchema, longTextSchema, uuidSchema } from './primitives';
+
+/** One portion: 450 g, 300 ml. `null` clears it. */
+const portionSizeSchema = z
+  .number()
+  .int('Butun son kiriting')
+  .positive('Noldan katta boʻlsin')
+  .max(100_000)
+  .nullish();
+const portionUnitSchema = z.nativeEnum(PortionUnit).nullish();
+
+/** Both halves or neither — "450" of nothing, or "g" of nothing, is no portion. */
+function portionPaired(value: { portionSize?: number | null; portionUnit?: string | null }) {
+  // Absent means "not changing it" on a patch, so only a contradiction fails.
+  if (value.portionSize === undefined && value.portionUnit === undefined) return true;
+  return (value.portionSize == null) === (value.portionUnit == null);
+}
 
 export const createCategorySchema = z.object({
   name: shortTextSchema,
@@ -31,11 +48,17 @@ export const createProductSchema = z
     price: moneySchema,
     discountPrice: moneySchema.nullish(),
     preparationTime: z.number().int().min(0).max(240).default(10),
+    portionSize: portionSizeSchema,
+    portionUnit: portionUnitSchema,
     sortOrder: z.number().int().min(0).max(9999).default(0),
     variants: z.array(productVariantSchema).max(20).optional(),
     modifierGroupIds: z.array(uuidSchema).max(20).optional(),
     /** Branches the product is offered at; empty means every branch. */
     branchIds: z.array(uuidSchema).optional(),
+  })
+  .refine(portionPaired, {
+    message: 'Porsiya miqdori va birligini birga kiriting',
+    path: ['portionUnit'],
   })
   .refine((v) => v.discountPrice == null || v.discountPrice < v.price, {
     message: 'Discount price must be lower than the regular price',
@@ -46,23 +69,32 @@ export const createProductSchema = z
     { message: 'Only one variant may be the default', path: ['variants'] },
   );
 
-export const updateProductSchema = z.object({
-  categoryId: uuidSchema.optional(),
-  name: shortTextSchema.optional(),
-  description: longTextSchema.nullish(),
-  imageUrl: z.string().url().max(2048).nullish(),
-  price: moneySchema.optional(),
-  discountPrice: moneySchema.nullish(),
-  preparationTime: z.number().int().min(0).max(240).optional(),
-  sortOrder: z.number().int().min(0).max(9999).optional(),
-  isActive: z.boolean().optional(),
-  modifierGroupIds: z.array(uuidSchema).max(20).optional(),
-});
+export const updateProductSchema = z
+  .object({
+    categoryId: uuidSchema.optional(),
+    name: shortTextSchema.optional(),
+    description: longTextSchema.nullish(),
+    imageUrl: z.string().url().max(2048).nullish(),
+    price: moneySchema.optional(),
+    discountPrice: moneySchema.nullish(),
+    preparationTime: z.number().int().min(0).max(240).optional(),
+    portionSize: portionSizeSchema,
+    portionUnit: portionUnitSchema,
+    sortOrder: z.number().int().min(0).max(9999).optional(),
+    isActive: z.boolean().optional(),
+    modifierGroupIds: z.array(uuidSchema).max(20).optional(),
+  })
+  .refine(portionPaired, {
+    message: 'Porsiya miqdori va birligini birga kiriting',
+    path: ['portionUnit'],
+  });
 
 export const modifierSchema = z.object({
   name: z.string().trim().min(1).max(80),
   price: moneySchema,
   sortOrder: z.number().int().min(0).max(999).default(0),
+  /** Pre-selected when the product sheet opens. */
+  isDefault: z.boolean().default(false),
 });
 
 /**
@@ -85,6 +117,12 @@ export const createModifierGroupSchema = modifierGroupBase
   .refine((v) => v.maxSelect <= v.modifiers.length, {
     message: 'maxSelect cannot exceed the number of modifiers',
     path: ['maxSelect'],
+  })
+  // More defaults than may be chosen would open every sheet in a state the
+  // server refuses.
+  .refine((v) => v.modifiers.filter((m) => m.isDefault).length <= v.maxSelect, {
+    message: 'Standart tanlovlar soni eng koʻp tanlov sonidan oshmasin',
+    path: ['modifiers'],
   });
 
 /** Partial edit of a modifier group; cross-field rules re-check on save. */

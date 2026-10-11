@@ -25,6 +25,16 @@ import { OrderNumberService } from './order-number.service';
 import { OrderPricingService, type PricingResult } from './order-pricing.service';
 import { toOrder, ORDER_INCLUDE, type OrderRow } from './order.mapper';
 
+/** What a trusted caller inside the API may add to a client's payload. */
+export interface CreateOrderOptions {
+  /**
+   * The storefront customer session placing the order. The order belongs to
+   * this customer whatever the body says — the id comes from the verified
+   * token via the checkout service, never from the request.
+   */
+  customerId?: string;
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -162,7 +172,7 @@ export class OrdersService {
    * on `(tenantId, clientUuid)` to close the race between two concurrent
    * replays.
    */
-  async create(input: CreateOrderInput): Promise<Order> {
+  async create(input: CreateOrderInput, options: CreateOrderOptions = {}): Promise<Order> {
     if (input.clientUuid) {
       const existing = await this.prisma.db.order.findFirst({
         where: { clientUuid: input.clientUuid },
@@ -182,7 +192,7 @@ export class OrdersService {
     if (!branch) throw AppException.notFound('Branch', ErrorCode.BRANCH_NOT_FOUND);
 
     const address = await this.resolveAddress(input);
-    const customer = await this.resolveCustomer(input);
+    const customer = await this.resolveCustomer(input, options);
 
     const priced = await this.pricing.price({
       branchId: input.branchId,
@@ -243,13 +253,19 @@ export class OrdersService {
                   addressApartment: address.apartment,
                   addressLandmark: address.landmark,
                   addressComment: address.comment,
+                  addressIntercom: address.intercom,
                 }
               : {}),
 
             tableId: table?.id ?? null,
             tableNumber: table?.number ?? null,
             promoCodeId: priced.promoCodeId,
+            paymentMethod: input.paymentMethod ?? null,
+            paymentProvider: input.paymentProvider ?? null,
             comment: input.comment ?? null,
+            courierComment: input.courierComment ?? null,
+            cutleryCount: input.cutleryCount ?? null,
+            leaveAtDoor: input.leaveAtDoor ?? false,
             scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
             estimatedReadyAt: new Date(Date.now() + priced.estimatedPrepMinutes * 60_000),
             createdByUserId: ctx?.userId ?? null,
@@ -487,6 +503,7 @@ export class OrdersService {
         entrance: saved.entrance,
         floor: saved.floor,
         apartment: saved.apartment,
+        intercom: null,
         landmark: saved.landmark,
         comment: saved.comment,
       };
@@ -503,6 +520,7 @@ export class OrdersService {
       entrance: inline.entrance ?? null,
       floor: inline.floor ?? null,
       apartment: inline.apartment ?? null,
+      intercom: inline.intercom ?? null,
       landmark: inline.landmark ?? null,
       comment: inline.comment ?? null,
     };
@@ -514,8 +532,16 @@ export class OrdersService {
    * Phone is the natural key, so a repeat caller is recognised and their CRM
    * history keeps accumulating rather than fragmenting across records.
    */
-  private async resolveCustomer(input: CreateOrderInput) {
-    if (input.customer?.id) {
+  private async resolveCustomer(input: CreateOrderInput, options: CreateOrderOptions) {
+    if (options.customerId) {
+      return this.prisma.db.customer.findFirst({ where: { id: options.customerId } });
+    }
+
+    // Attaching an order to an existing customer BY ID is a staff action (the
+    // till picking a regular from the list). From an anonymous public request
+    // the id is ignored: honouring it let anyone attach an order to — and
+    // read back the name and phone of — any customer whose id they had.
+    if (input.customer?.id && getContext()?.userId) {
       return this.prisma.db.customer.findFirst({ where: { id: input.customer.id } });
     }
 

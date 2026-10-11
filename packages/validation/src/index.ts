@@ -26,3 +26,4 @@ export * from './table';
 export * from './inventory';
 export * from './courier';
 export * from './telegram';
+export * from './storefront';

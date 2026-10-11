@@ -389,6 +389,94 @@ export const StockUnit = {
 } as const;
 export type StockUnit = (typeof StockUnit)[keyof typeof StockUnit];
 
+/* -------------------------------------------------------------------------- */
+/* Storefront (TZ 48)                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** One portion as printed on a menu card: 450 g, 300 ml, 6 pcs. */
+export const PortionUnit = {
+  G: 'G',
+  ML: 'ML',
+  PCS: 'PCS',
+} as const;
+export type PortionUnit = (typeof PortionUnit)[keyof typeof PortionUnit];
+
+export const Gender = {
+  MALE: 'MALE',
+  FEMALE: 'FEMALE',
+} as const;
+export type Gender = (typeof Gender)[keyof typeof Gender];
+
+export const RecommendationPlacement = {
+  /** "Sizga yoqishi mumkin" inside a product's sheet. */
+  PRODUCT_DETAIL: 'PRODUCT_DETAIL',
+  /** "Yana nimadir kerakmi?" on the cart page. */
+  CART: 'CART',
+} as const;
+export type RecommendationPlacement =
+  (typeof RecommendationPlacement)[keyof typeof RecommendationPlacement];
+
+export const CustomerNotificationType = {
+  ORDER_RECEIVED: 'ORDER_RECEIVED',
+  ORDER_ACCEPTED: 'ORDER_ACCEPTED',
+  ORDER_PREPARING: 'ORDER_PREPARING',
+  ORDER_READY: 'ORDER_READY',
+  ORDER_ON_DELIVERY: 'ORDER_ON_DELIVERY',
+  ORDER_DELIVERED: 'ORDER_DELIVERED',
+  ORDER_CANCELLED: 'ORDER_CANCELLED',
+  PAYMENT_RECEIVED: 'PAYMENT_RECEIVED',
+  PAYMENT_FAILED: 'PAYMENT_FAILED',
+  NEW_PRODUCT: 'NEW_PRODUCT',
+  PROMOTION: 'PROMOTION',
+  PROMO_CODE: 'PROMO_CODE',
+  SERVICE: 'SERVICE',
+} as const;
+export type CustomerNotificationType =
+  (typeof CustomerNotificationType)[keyof typeof CustomerNotificationType];
+
+/**
+ * Kept apart so that withdrawing marketing consent can never switch off an
+ * order update, and so a marketing send can never reach someone who did not
+ * opt in.
+ */
+export const NotificationCategory = {
+  TRANSACTIONAL: 'TRANSACTIONAL',
+  MARKETING: 'MARKETING',
+  SERVICE: 'SERVICE',
+} as const;
+export type NotificationCategory =
+  (typeof NotificationCategory)[keyof typeof NotificationCategory];
+
+export const CampaignKind = {
+  NEW_PRODUCT: 'NEW_PRODUCT',
+  PROMOTION: 'PROMOTION',
+  PROMO_CODE: 'PROMO_CODE',
+  ANNOUNCEMENT: 'ANNOUNCEMENT',
+} as const;
+export type CampaignKind = (typeof CampaignKind)[keyof typeof CampaignKind];
+
+/**
+ * The providers Subo can be asked to open (docs.subo.uz, `POST /orders`
+ * `provider`). Not a database enum: it is a string column in a settings table
+ * and on the order, guarded by a CHECK.
+ */
+export const OnlinePaymentProvider = {
+  /** Bank card through Atmos — the one path that saves a card for next time. */
+  ATMOS: 'ATMOS',
+  CLICK: 'CLICK',
+  PAYME: 'PAYME',
+} as const;
+export type OnlinePaymentProvider =
+  (typeof OnlinePaymentProvider)[keyof typeof OnlinePaymentProvider];
+
+/** What the customer picks at checkout: cash, or one online provider. */
+export const CheckoutPaymentOption = {
+  CASH: 'CASH',
+  ...OnlinePaymentProvider,
+} as const;
+export type CheckoutPaymentOption =
+  (typeof CheckoutPaymentOption)[keyof typeof CheckoutPaymentOption];
+
 export const StockMovementType = {
   /** Delivery from a supplier. Raises the level. */
   RECEIPT: 'RECEIPT',

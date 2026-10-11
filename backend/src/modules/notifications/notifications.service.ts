@@ -42,8 +42,11 @@ export class NotificationsService implements OnModuleDestroy {
    *
    * Never throws: a notification failure must not fail the business operation
    * that triggered it. Problems are logged and recorded on the row.
+   *
+   * Returns the delivery record's id, so a customer's inbox entry can point
+   * at the Telegram message that carried it.
    */
-  async dispatch(job: Omit<NotificationJob, 'notificationId'>): Promise<void> {
+  async dispatch(job: Omit<NotificationJob, 'notificationId'>): Promise<string | undefined> {
     let notificationId: string | undefined;
 
     try {
@@ -77,7 +80,7 @@ export class NotificationsService implements OnModuleDestroy {
       // No Redis configured (some development setups). Deliver inline rather
       // than silently dropping, so behaviour is the same, just slower.
       this.logger.debug('No queue available; notification will not be delivered');
-      return;
+      return notificationId;
     }
 
     try {
@@ -88,6 +91,8 @@ export class NotificationsService implements OnModuleDestroy {
         await this.markFailed(notificationId, 'Queue unavailable');
       }
     }
+
+    return notificationId;
   }
 
   /** Called by the worker once a job succeeds. */

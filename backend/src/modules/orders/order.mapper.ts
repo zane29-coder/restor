@@ -82,7 +82,13 @@ export function toOrder(row: OrderRow): Order {
       amount: promotion.amount,
     })),
 
+    paymentMethod: row.paymentMethod,
+    paymentProvider: row.paymentProvider,
+
     comment: row.comment,
+    courierComment: row.courierComment,
+    cutleryCount: row.cutleryCount,
+    leaveAtDoor: row.leaveAtDoor,
     cancelReason: row.cancelReason,
     estimatedReadyAt: row.estimatedReadyAt?.toISOString() ?? null,
     acceptedAt: row.acceptedAt?.toISOString() ?? null,
@@ -110,6 +116,7 @@ function toAddress(row: OrderRow): OrderDeliveryAddress | null {
     entrance: row.addressEntrance,
     floor: row.addressFloor,
     apartment: row.addressApartment,
+    intercom: row.addressIntercom,
     landmark: row.addressLandmark,
     comment: row.addressComment,
   };

@@ -65,6 +65,18 @@ const STRICT_TENANT_MODELS = new Set<string>([
   'Supplier',
   'StockItem',
   'StockMovement',
+  // Storefront (TZ 48). A favourite carries the restaurant it belongs to, so
+  // scoping it is what keeps one restaurant's dish out of another's cart; the
+  // cross-restaurant "Tanlanganlar" list reads it with an explicit
+  // `runUnscoped` filtered by the session's account.
+  'CustomerFavorite',
+  'ProductRecommendation',
+  'StorefrontSettings',
+  'MarketingCampaign',
+  // `CustomerAccount`, `CustomerAccountAddress` and `CustomerNotification`
+  // are deliberately absent: they belong to a person, not a restaurant, and
+  // no restaurant-facing route reads them. Every query on them filters on the
+  // account id from the verified session — see modules/storefront.
   // `ProductIngredient` is deliberately absent: it has no `tenantId` of its
   // own and is reachable only through a scoped Product or StockItem. See the
   // child-table boundary noted above.

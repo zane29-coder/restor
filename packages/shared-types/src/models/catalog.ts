@@ -1,4 +1,5 @@
 import type { BaseEntity } from '../api';
+import type { PortionUnit } from '../enums';
 
 /** Menu category (TZ §9). Categories may nest one level for sub-menus. */
 export interface Category extends BaseEntity {
@@ -28,6 +29,9 @@ export interface Product extends BaseEntity {
   discountPrice: number | null;
   /** Minutes the kitchen needs — feeds the KDS timer and the customer ETA. */
   preparationTime: number;
+  /** One portion, e.g. 450 g. Both set or both `null`. */
+  portionSize: number | null;
+  portionUnit: PortionUnit | null;
   sortOrder: number;
   isActive: boolean;
   variants: ProductVariant[];
@@ -71,6 +75,8 @@ export interface Modifier extends BaseEntity {
   name: string;
   price: number;
   sortOrder: number;
+  /** Pre-selected when the product sheet opens. */
+  isDefault: boolean;
   isActive: boolean;
 }
 
@@ -97,7 +103,23 @@ export interface ProductBranchSetting {
 export interface BranchMenu {
   branchId: string;
   categories: MenuCategory[];
+  /**
+   * The restaurant's curated recommendations, already resolved against this
+   * branch: every id is a product present in `categories`, categories are
+   * expanded, duplicates removed. A client never filters availability.
+   */
+  recommendations: MenuRecommendations;
   generatedAt: string;
+}
+
+/** Product ids in display order. */
+export interface MenuRecommendations {
+  /** "Yana nimadir kerakmi?" on the cart page. */
+  cart: string[];
+  /** The product sheet's list for products with no list of their own. */
+  productDefault: string[];
+  /** Per-product lists, keyed by the product being viewed. */
+  byProduct: Record<string, string[]>;
 }
 
 export interface MenuCategory {
@@ -118,15 +140,24 @@ export interface MenuProduct {
   /** Original price when a discount applies, so the UI can strike it through. */
   oldPrice: number | null;
   preparationTime: number;
+  portionSize: number | null;
+  portionUnit: PortionUnit | null;
   isAvailable: boolean;
   variants: Array<Pick<ProductVariant, 'id' | 'name' | 'priceDelta' | 'isDefault'>>;
-  modifierGroups: Array<{
-    id: string;
-    name: string;
-    minSelect: number;
-    maxSelect: number;
-    modifiers: Array<Pick<Modifier, 'id' | 'name' | 'price'>>;
-  }>;
+  modifierGroups: MenuModifierGroup[];
+}
+
+/**
+ * A modifier group as the customer sees it. `maxSelect === 1` renders as a
+ * radio group, anything else as checkboxes; `minSelect >= 1` makes it
+ * required. The server re-validates the final choice regardless.
+ */
+export interface MenuModifierGroup {
+  id: string;
+  name: string;
+  minSelect: number;
+  maxSelect: number;
+  modifiers: Array<Pick<Modifier, 'id' | 'name' | 'price' | 'isDefault'>>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -154,6 +185,9 @@ export interface CreateProductRequest {
   price: number;
   discountPrice?: number | null;
   preparationTime?: number;
+  /** Both or neither; `null` clears. */
+  portionSize?: number | null;
+  portionUnit?: PortionUnit | null;
   sortOrder?: number;
   variants?: Array<Omit<CreateProductVariantRequest, 'productId'>>;
   modifierGroupIds?: string[];
@@ -178,5 +212,5 @@ export interface CreateModifierGroupRequest {
   minSelect: number;
   maxSelect: number;
   sortOrder?: number;
-  modifiers: Array<{ name: string; price: number; sortOrder?: number }>;
+  modifiers: Array<{ name: string; price: number; sortOrder?: number; isDefault?: boolean }>;
 }

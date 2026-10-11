@@ -45,6 +45,7 @@ export class ModifiersService {
             name: modifier.name,
             price: modifier.price,
             sortOrder: modifier.sortOrder,
+            isDefault: modifier.isDefault ?? false,
           })),
         },
       },
@@ -62,7 +63,35 @@ export class ModifiersService {
   }
 
   async update(id: string, input: Partial<CreateModifierGroupInput>): Promise<ModifierGroup> {
-    await this.assertExists(id);
+    const before = await this.prisma.db.modifierGroup.findFirst({
+      where: { id, deletedAt: null },
+      include: GROUP_INCLUDE,
+    });
+    if (!before) throw AppException.notFound('Modifier group', ErrorCode.MODIFIER_NOT_FOUND);
+
+    // The create schema's cross-field rules, re-run against what will
+    // actually be stored: a patch that lowers only `maxSelect` must not leave
+    // a group whose own defaults the server would then refuse.
+    const minSelect = input.minSelect ?? before.minSelect;
+    const maxSelect = input.maxSelect ?? before.maxSelect;
+    const modifiers = input.modifiers ?? before.modifiers;
+    const defaults = modifiers.filter((modifier) => modifier.isDefault).length;
+
+    if (minSelect > maxSelect) {
+      throw AppException.validation('Eng kami eng koʻpidan katta boʻlmasligi kerak', {
+        minSelect: ['minSelect cannot exceed maxSelect'],
+      });
+    }
+    if (maxSelect > modifiers.length) {
+      throw AppException.validation(`Eng koʻpi ${modifiers.length} dan oshmasligi kerak`, {
+        maxSelect: ['maxSelect cannot exceed the number of modifiers'],
+      });
+    }
+    if (defaults > maxSelect) {
+      throw AppException.validation('Standart tanlovlar soni eng koʻp tanlov sonidan oshmasin', {
+        modifiers: ['Too many defaults'],
+      });
+    }
 
     const row = await this.prisma.transaction(async (tx) => {
       if (input.modifiers) {
@@ -75,6 +104,7 @@ export class ModifiersService {
             name: modifier.name,
             price: modifier.price,
             sortOrder: modifier.sortOrder ?? 0,
+            isDefault: modifier.isDefault ?? false,
           })),
         });
       }
@@ -150,6 +180,7 @@ type GroupRow = {
     name: string;
     price: number;
     sortOrder: number;
+    isDefault: boolean;
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -171,6 +202,7 @@ function toModifierGroup(row: GroupRow): ModifierGroup {
       name: modifier.name,
       price: modifier.price,
       sortOrder: modifier.sortOrder,
+      isDefault: modifier.isDefault,
       isActive: modifier.isActive,
       createdAt: modifier.createdAt.toISOString(),
       updatedAt: modifier.updatedAt.toISOString(),

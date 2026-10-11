@@ -111,6 +111,10 @@ export interface PromoCode extends BaseEntity {
   endsAt: string | null;
   branchIds: string[];
   isActive: boolean;
+  /** Listed on the customer's "Promo-kodlar" screen. */
+  isPublic: boolean;
+  /** Terms shown with a public code. */
+  description: string | null;
 }
 
 export interface PromoCodeUsage {

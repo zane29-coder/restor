@@ -39,6 +39,8 @@ import { StorageModule } from './modules/storage/storage.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
+import { CustomerNotificationsModule } from './modules/customer-notifications/customer-notifications.module';
+import { StorefrontModule } from './modules/storefront/storefront.module';
 
 @Module({
   imports: [
@@ -79,13 +81,23 @@ import { TelegramModule } from './modules/telegram/telegram.module';
             ],
             censor: '[redacted]',
           },
+          serializers: {
+            // A geocoding lookup's query string IS a customer's location —
+            // where they live. The path is enough to debug with.
+            req: (req: { url?: string; query?: unknown }) =>
+              typeof req.url === 'string' && req.url.includes('/me/geo/')
+                ? { ...req, url: req.url.split('?')[0], query: undefined }
+                : req,
+          },
           transport: config.logging.pretty
             ? { target: 'pino-pretty', options: { singleLine: true, colorize: true } }
             : undefined,
           /** Stamps tenant and user onto every log line (TZ §59). */
           customProps: () => {
             const ctx = getContext();
-            return ctx ? { tenantId: ctx.tenantId, userId: ctx.userId } : {};
+            return ctx
+              ? { tenantId: ctx.tenantId, userId: ctx.userId, customerId: ctx.customerId }
+              : {};
           },
         },
       }),
@@ -153,6 +165,10 @@ import { TelegramModule } from './modules/telegram/telegram.module';
 
     // --- Phase 13: inventory ---
     InventoryModule,
+
+    // --- Storefront customers (TZ 48) ---
+    CustomerNotificationsModule,
+    StorefrontModule,
   ],
   providers: [
     /**

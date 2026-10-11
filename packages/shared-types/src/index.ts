@@ -21,3 +21,4 @@ export * from './models/operations';
 export * from './models/crm';
 export * from './models/inventory';
 export * from './models/platform';
+export * from './models/storefront';

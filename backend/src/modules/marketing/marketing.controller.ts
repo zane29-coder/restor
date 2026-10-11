@@ -2,14 +2,20 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
+  type CampaignAudience,
+  type MarketingCampaign,
   type Paginated,
   type PromoCode,
   type PromoCodeUsage,
   type Promotion,
 } from '@restor/shared-types';
 import {
+  createCampaignSchema,
   createPromoCodeSchema,
   createPromotionSchema,
+  paginationSchema,
+  type CreateCampaignInput,
+  type PaginationOutput,
   promoCodeListQuerySchema,
   promotionListQuerySchema,
   updatePromoCodeSchema,
@@ -23,13 +29,44 @@ import {
 } from '@restor/validation';
 import { RequirePermissions } from '../../common/decorators';
 import { zodBody } from '../../common/pipes/zod-validation.pipe';
+import { CampaignsService } from './campaigns.service';
 import { MarketingService } from './marketing.service';
 
-/** Promotions and promo codes (TZ §10). */
+/** Promotions, promo codes and marketing messages (TZ §10, TZ 48 §16.2). */
 @ApiTags('marketing')
 @Controller()
 export class MarketingController {
-  constructor(private readonly marketing: MarketingService) {}
+  constructor(
+    private readonly marketing: MarketingService,
+    private readonly campaigns: CampaignsService,
+  ) {}
+
+  /* ------------------------------ Campaigns ------------------------- */
+
+  @Get('marketing/campaigns')
+  @RequirePermissions(Permission.PROMOTIONS_VIEW)
+  listCampaigns(
+    @Query(zodBody(paginationSchema)) query: PaginationOutput,
+  ): Promise<Paginated<MarketingCampaign>> {
+    return this.campaigns.list(query);
+  }
+
+  /** How many would receive it, and when the next send is allowed. */
+  @Get('marketing/campaigns/audience')
+  @RequirePermissions(Permission.MARKETING_BROADCAST)
+  campaignAudience(): Promise<CampaignAudience> {
+    return this.campaigns.audience();
+  }
+
+  /** Sends to opted-in customers only, at most once per cooldown window. */
+  @Post('marketing/campaigns')
+  @RequirePermissions(Permission.MARKETING_BROADCAST)
+  @ApiOperation({ summary: 'Send a marketing message to opted-in customers' })
+  sendCampaign(
+    @Body(zodBody(createCampaignSchema)) body: CreateCampaignInput,
+  ): Promise<MarketingCampaign> {
+    return this.campaigns.send(body);
+  }
 
   /* ----------------------------- Promotions ------------------------- */
 

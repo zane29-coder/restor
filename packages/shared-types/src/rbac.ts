@@ -127,6 +127,13 @@ export const Permission = {
   PROMO_CODES_MANAGE: 'promo_codes.manage',
   LOYALTY_VIEW: 'loyalty.view',
   LOYALTY_MANAGE: 'loyalty.manage',
+  /**
+   * Sending a marketing message to the restaurant's opted-in customers through
+   * its bot. Its own permission, not part of `promotions.manage`: a message
+   * lands in people's Telegram, so it is a different kind of mistake from a
+   * misconfigured discount.
+   */
+  MARKETING_BROADCAST: 'marketing.broadcast',
 
   // --- Tables (TZ §29, §30) ---
   TABLES_VIEW: 'tables.view',
@@ -280,6 +287,7 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly Permission[]>> 
     Permission.PROMO_CODES_MANAGE,
     Permission.LOYALTY_VIEW,
     Permission.LOYALTY_MANAGE,
+    Permission.MARKETING_BROADCAST,
   ],
   Tables: [
     Permission.TABLES_VIEW,
@@ -503,6 +511,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<
     Permission.PROMO_CODES_MANAGE,
     Permission.LOYALTY_VIEW,
     Permission.LOYALTY_MANAGE,
+    Permission.MARKETING_BROADCAST,
     Permission.CUSTOMERS_VIEW,
     Permission.CUSTOMERS_EXPORT,
     Permission.PRODUCTS_VIEW,

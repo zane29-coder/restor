@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ErrorCode, type BranchMenu, type MenuCategory, type MenuProduct } from '@restor/shared-types';
 import { AppException } from '../../common/errors/app-exception';
 import { PrismaService } from '../../database/prisma.service';
+import { resolveMenuRecommendations } from './recommendation.math';
 
 /**
  * The customer-facing menu for one branch (TZ §9, §11).
@@ -67,6 +68,8 @@ export class MenuService {
         price: effectivePrice,
         oldPrice: effectivePrice < basePrice ? basePrice : null,
         preparationTime: product.preparationTime,
+        portionSize: product.portionSize,
+        portionUnit: product.portionUnit,
         isAvailable: true,
         variants: product.variants.map((variant) => ({
           id: variant.id,
@@ -83,6 +86,7 @@ export class MenuService {
             id: modifier.id,
             name: modifier.name,
             price: modifier.price,
+            isDefault: modifier.isDefault,
           })),
         })),
       };
@@ -103,9 +107,29 @@ export class MenuService {
       // An empty category is noise in a customer menu.
       .filter((category) => category.products.length > 0);
 
+    // Resolved here, against exactly the products above, so a recommendation
+    // can never point at something this branch is not selling.
+    const rules = await this.prisma.db.productRecommendation.findMany({
+      select: {
+        placement: true,
+        sourceProductId: true,
+        targetProductId: true,
+        targetCategoryId: true,
+        sortOrder: true,
+      },
+    });
+
+    const recommendations = resolveMenuRecommendations(rules, {
+      productsByCategory: new Map(
+        menuCategories.map((category) => [category.id, category.products.map((p) => p.id)]),
+      ),
+      available: new Set(menuCategories.flatMap((category) => category.products.map((p) => p.id))),
+    });
+
     return {
       branchId,
       categories: menuCategories,
+      recommendations,
       generatedAt: new Date().toISOString(),
     };
   }

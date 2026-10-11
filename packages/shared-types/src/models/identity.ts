@@ -119,6 +119,14 @@ export interface JwtAccessPayload {
   branchIds: string[];
   /** Set for courier tokens so the mobile app can query its own jobs. */
   courierId?: string;
+  /**
+   * Which table `sub` names. `CUSTOMER` tokens come from Mini App sign-in and
+   * never reach a staff route. Absent on tokens issued before this existed,
+   * which are treated as staff unless their roles say `CUSTOMER`.
+   */
+  kind?: 'USER' | 'CUSTOMER';
+  /** The RESTOR-wide customer account, on customer tokens only. */
+  accountId?: string;
   /** Token type discriminator; refresh tokens carry `refresh`. */
   typ: 'access';
   iat: number;

@@ -112,6 +112,8 @@ export class ProductsService {
         price: input.price,
         discountPrice: input.discountPrice ?? null,
         preparationTime: input.preparationTime,
+        portionSize: input.portionSize ?? null,
+        portionUnit: input.portionUnit ?? null,
         sortOrder: input.sortOrder,
         variants: input.variants?.length
           ? {
@@ -165,6 +167,17 @@ export class ProductsService {
       });
     }
 
+    // The portion pair is checked against the merged row too: a patch that
+    // clears only the unit would otherwise leave "450" of nothing, which the
+    // database CHECK would then refuse with a far less helpful message.
+    const nextPortionSize = input.portionSize !== undefined ? input.portionSize : before.portionSize;
+    const nextPortionUnit = input.portionUnit !== undefined ? input.portionUnit : before.portionUnit;
+    if ((nextPortionSize == null) !== (nextPortionUnit == null)) {
+      throw AppException.validation('Porsiya miqdori va birligini birga kiriting', {
+        portionUnit: ['Miqdor va birlik birga kiritiladi'],
+      });
+    }
+
     const row = await this.prisma.transaction(async (tx) => {
       if (input.modifierGroupIds) {
         await tx.productModifierGroup.deleteMany({ where: { productId: id } });
@@ -189,6 +202,8 @@ export class ProductsService {
           ...(input.preparationTime !== undefined
             ? { preparationTime: input.preparationTime }
             : {}),
+          ...(input.portionSize !== undefined ? { portionSize: input.portionSize } : {}),
+          ...(input.portionUnit !== undefined ? { portionUnit: input.portionUnit } : {}),
           ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
           ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         },
@@ -328,6 +343,8 @@ export function toProduct(row: ProductRow): Product {
     price: row.price,
     discountPrice: row.discountPrice,
     preparationTime: row.preparationTime,
+    portionSize: row.portionSize,
+    portionUnit: row.portionUnit,
     sortOrder: row.sortOrder,
     isActive: row.isActive,
     variants: row.variants.map((variant) => ({
@@ -356,6 +373,7 @@ export function toProduct(row: ProductRow): Product {
         name: modifier.name,
         price: modifier.price,
         sortOrder: modifier.sortOrder,
+        isDefault: modifier.isDefault,
         isActive: modifier.isActive,
         createdAt: modifier.createdAt.toISOString(),
         updatedAt: modifier.updatedAt.toISOString(),

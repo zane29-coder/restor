@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { CustomerNotificationsModule } from '../customer-notifications/customer-notifications.module';
+import { CampaignsService } from './campaigns.service';
 import { MarketingController } from './marketing.controller';
 import { MarketingService } from './marketing.service';
 
@@ -10,8 +12,9 @@ import { MarketingService } from './marketing.service';
  * Nothing here is on the hot path of taking an order.
  */
 @Module({
+  imports: [CustomerNotificationsModule],
   controllers: [MarketingController],
-  providers: [MarketingService],
+  providers: [MarketingService, CampaignsService],
   exports: [MarketingService],
 })
 export class MarketingModule {}

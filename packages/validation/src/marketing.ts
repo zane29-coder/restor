@@ -159,6 +159,9 @@ export const createPromoCodeSchema = z
     endsAt: z.string().datetime({ offset: true }).nullish(),
     branchIds: z.array(uuidSchema).max(100).default([]),
     isActive: z.boolean().default(true),
+    /** Listed on the customer's "Promo-kodlar" screen. */
+    isPublic: z.boolean().default(false),
+    description: z.string().trim().max(500).nullish(),
   })
   .refine(
     (v) => v.type !== PromoCodeType.PERCENTAGE || (v.discount >= 1 && v.discount <= 100),
@@ -186,6 +189,8 @@ export const updatePromoCodeSchema = z.object({
   endsAt: z.string().datetime({ offset: true }).nullish(),
   branchIds: z.array(uuidSchema).max(100).optional(),
   isActive: z.boolean().optional(),
+  isPublic: z.boolean().optional(),
+  description: z.string().trim().max(500).nullish(),
 });
 
 export const promoCodeListQuerySchema = z.object({

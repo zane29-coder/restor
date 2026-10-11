@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { OrderType } from '@restor/shared-types';
+import { OnlinePaymentProvider, OrderType } from '@restor/shared-types';
 import { orderSourceSchema, orderStatusSchema, orderTypeSchema, paymentMethodSchema } from './enums';
 import {
   latitudeSchema,
@@ -18,6 +18,7 @@ export const deliveryAddressSchema = z.object({
   entrance: z.string().trim().max(20).nullish(),
   floor: z.string().trim().max(20).nullish(),
   apartment: z.string().trim().max(20).nullish(),
+  intercom: z.string().trim().max(20).nullish(),
   landmark: z.string().trim().max(200).nullish(),
   comment: z.string().trim().max(500).nullish(),
 });
@@ -57,7 +58,13 @@ export const createOrderSchema = z
     // same thing here.
     promoCode: z.string().trim().max(40).nullish(),
     comment: z.string().trim().max(1000).nullish(),
+    /** One-off note to the courier; standing notes ride on the address. */
+    courierComment: z.string().trim().max(500).nullish(),
+    cutleryCount: z.number().int().min(0).max(50).nullish(),
+    leaveAtDoor: z.boolean().optional(),
+    /** Intent only — stored on the order, never treated as a payment. */
     paymentMethod: paymentMethodSchema.optional(),
+    paymentProvider: z.nativeEnum(OnlinePaymentProvider).optional(),
     /** Idempotency key; the POS always sends one so a retry cannot duplicate. */
     clientUuid: z.string().uuid().optional(),
     scheduledFor: z.string().datetime({ offset: true }).optional(),

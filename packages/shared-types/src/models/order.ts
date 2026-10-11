@@ -51,7 +51,21 @@ export interface Order extends BaseEntity {
   promoCodeId: string | null;
   appliedPromotions: AppliedPromotion[];
 
+  /**
+   * How the customer said they would pay, chosen at checkout. An intent, not
+   * a payment — `paymentStatus` comes from recorded payments alone.
+   */
+  paymentMethod: PaymentMethod | null;
+  /** Online orders: ATMOS, CLICK or PAYME — what Subo was asked to open. */
+  paymentProvider: string | null;
+
+  /** Note to the restaurant. */
   comment: string | null;
+  /** One-off note to the courier for this order. */
+  courierComment: string | null;
+  /** Sets of cutlery; `null` when the restaurant does not ask. */
+  cutleryCount: number | null;
+  leaveAtDoor: boolean;
   cancelReason: string | null;
   /** When the kitchen expects to finish, computed at ACCEPTED. */
   estimatedReadyAt: string | null;
@@ -77,6 +91,7 @@ export interface OrderDeliveryAddress {
   entrance: string | null;
   floor: string | null;
   apartment: string | null;
+  intercom: string | null;
   landmark: string | null;
   comment: string | null;
 }
@@ -97,6 +112,7 @@ export interface OrderDeliveryAddressInput {
   entrance?: string | null;
   floor?: string | null;
   apartment?: string | null;
+  intercom?: string | null;
   landmark?: string | null;
   comment?: string | null;
 }
@@ -168,8 +184,13 @@ export interface CreateOrderRequest {
   tableId?: string;
   promoCode?: string;
   comment?: string;
+  courierComment?: string | null;
+  cutleryCount?: number | null;
+  leaveAtDoor?: boolean;
   /** Intended method; the payment itself is recorded separately. */
   paymentMethod?: PaymentMethod;
+  /** ATMOS, CLICK or PAYME for an online order. */
+  paymentProvider?: string;
   /** Idempotency key — required from the POS, optional elsewhere. */
   clientUuid?: string;
   /** Schedule the order for later; must be inside the branch's working hours. */

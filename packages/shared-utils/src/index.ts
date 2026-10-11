@@ -12,3 +12,4 @@ export * from './geo';
 export * from './datetime';
 export * from './strings';
 export * from './pagination';
+export * from './storefront';

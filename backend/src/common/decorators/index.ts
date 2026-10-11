@@ -36,6 +36,17 @@ export const SUPER_ADMIN_KEY = 'restor:superAdminOnly';
 /** Restricts a route to platform staff (TZ §6). */
 export const SuperAdminOnly = () => SetMetadata(SUPER_ADMIN_KEY, true);
 
+export const CUSTOMER_ONLY_KEY = 'restor:customerOnly';
+
+/**
+ * A route for the signed-in storefront customer (`/me/...`).
+ *
+ * Needs a customer session: anonymous callers get 401 and staff tokens 403.
+ * The reverse also holds — a customer token reaches only these routes and
+ * `@Public()` ones, never a staff route, whatever permissions it lists.
+ */
+export const CustomerOnly = () => SetMetadata(CUSTOMER_ONLY_KEY, true);
+
 /* -------------------------------------------------------------------------- */
 /* Param decorators                                                           */
 /* -------------------------------------------------------------------------- */

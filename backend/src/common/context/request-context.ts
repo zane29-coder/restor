@@ -15,8 +15,22 @@ export interface RequestContext {
   /** Correlates logs, audit rows and the response's `meta.requestId`. */
   requestId: string;
 
-  /** Authenticated user, or `undefined` on a public route. */
+  /**
+   * Authenticated STAFF user, or `undefined` on a public route.
+   *
+   * Never set for a customer session: every column this id is written to
+   * (`createdByUserId`, status history, audit) is a foreign key to `users`,
+   * and a customer id there is the bug that once broke Mini App sign-in.
+   */
   userId?: string;
+
+  /**
+   * A storefront customer session (Mini App). `customerId` is this
+   * restaurant's `Customer` row; `customerAccountId` is the RESTOR-wide
+   * account behind it. Both come from the verified token.
+   */
+  customerId?: string;
+  customerAccountId?: string;
 
   /**
    * Tenant every query is scoped to.

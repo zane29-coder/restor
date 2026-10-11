@@ -49,6 +49,12 @@ export interface NotificationJob {
    * group at 2am.
    */
   silent?: boolean;
+
+  /**
+   * Telegram `reply_markup` — e.g. a button opening the order in the Mini
+   * App. Plain JSON, so a queued job survives a restart.
+   */
+  replyMarkup?: unknown;
 }
 
 /** Queue retry policy — see the comment in NotificationsModule. */

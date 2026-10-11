@@ -16,6 +16,7 @@ import {
   buildNewOrderMessage,
   buildPaymentMessage,
   buildStatusMessage,
+  formatAddressLine,
   type OrderMessageContext,
 } from '../../integrations/telegram/message.builder';
 import { TelegramService } from './telegram.service';
@@ -225,9 +226,18 @@ export class TelegramNotifierService {
           discountTotal: true,
           addressText: true,
           addressApartment: true,
+          addressEntrance: true,
+          addressFloor: true,
+          addressIntercom: true,
+          addressComment: true,
           comment: true,
+          courierComment: true,
+          cutleryCount: true,
+          leaveAtDoor: true,
           tableNumber: true,
           paymentStatus: true,
+          paymentMethod: true,
+          paymentProvider: true,
           estimatedReadyAt: true,
           branch: { select: { name: true } },
           payments: { select: { method: true }, take: 1 },
@@ -236,21 +246,30 @@ export class TelegramNotifierService {
 
       if (!order) return {};
 
-      const address = order.addressText
-        ? order.addressApartment
-          ? `${order.addressText}, ${order.addressApartment}-xonadon`
-          : order.addressText
-        : null;
-
       return {
         branchName: order.branch?.name ?? null,
-        address,
+        address: order.addressText
+          ? formatAddressLine({
+              text: order.addressText,
+              apartment: order.addressApartment,
+              entrance: order.addressEntrance,
+              floor: order.addressFloor,
+              intercom: order.addressIntercom,
+            })
+          : null,
+        addressComment: order.addressComment,
         comment: order.comment,
+        courierComment: order.courierComment,
+        cutleryCount: order.cutleryCount,
+        leaveAtDoor: order.leaveAtDoor,
         tableNumber: order.tableNumber,
         subtotal: order.subtotal,
         deliveryFee: order.deliveryFee,
         discountTotal: order.discountTotal,
-        paymentLabel: order.payments[0]?.method ?? null,
+        // What was actually paid wins; before any payment, what the customer
+        // said they would pay with — the courier needs to know to bring change.
+        paymentLabel: order.payments[0]?.method ?? order.paymentMethod ?? null,
+        paymentProvider: order.paymentProvider,
         paymentStatus: order.paymentStatus,
         estimatedReadyAt: order.estimatedReadyAt?.toISOString() ?? null,
       };

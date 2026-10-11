@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -18,11 +19,14 @@ import {
   type ModifierGroup,
   type Paginated,
   type Product,
+  type RecommendationList,
 } from '@restor/shared-types';
 import {
   createCategorySchema,
   createModifierGroupSchema,
   createProductSchema,
+  recommendationListQuerySchema,
+  saveRecommendationListSchema,
   updateCategorySchema,
   updateModifierGroupSchema,
   updateProductAvailabilitySchema,
@@ -30,6 +34,7 @@ import {
   type CreateCategoryInput,
   type CreateModifierGroupInput,
   type CreateProductInput,
+  type SaveRecommendationListInput,
   type UpdateModifierGroupInput,
   type UpdateProductInput,
 } from '@restor/validation';
@@ -40,6 +45,7 @@ import { CategoriesService } from './categories.service';
 import { MenuService } from './menu.service';
 import { ModifiersService } from './modifiers.service';
 import { ProductsService } from './products.service';
+import { RecommendationsService } from './recommendations.service';
 
 const reorderSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) });
 
@@ -51,6 +57,7 @@ export class CatalogController {
     private readonly products: ProductsService,
     private readonly modifiers: ModifiersService,
     private readonly menu: MenuService,
+    private readonly recommendations: RecommendationsService,
   ) {}
 
   /* ---------------------------- Categories ---------------------------- */
@@ -184,6 +191,27 @@ export class CatalogController {
   @HttpCode(HttpStatus.NO_CONTENT)
   deleteModifierGroup(@Param('id') id: string): Promise<void> {
     return this.modifiers.remove(id);
+  }
+
+  /* -------------------------- Recommendations ------------------------- */
+
+  @Get('recommendations')
+  @RequirePermissions(Permission.PRODUCTS_VIEW)
+  @ApiOperation({ summary: 'Curated recommendation lists, grouped by placement and product' })
+  listRecommendations(
+    @Query(zodBody(recommendationListQuerySchema)) query: { placement?: 'PRODUCT_DETAIL' | 'CART' },
+  ): Promise<RecommendationList[]> {
+    return this.recommendations.list(query.placement);
+  }
+
+  /** Replaces one list in full — its order is the content being edited. */
+  @Put('recommendations')
+  @RequirePermissions(Permission.PRODUCTS_UPDATE)
+  @ApiOperation({ summary: 'Replace one recommendation list' })
+  saveRecommendations(
+    @Body(zodBody(saveRecommendationListSchema)) body: SaveRecommendationListInput,
+  ): Promise<RecommendationList> {
+    return this.recommendations.save(body);
   }
 
   /* ------------------------- Customer-facing -------------------------- */

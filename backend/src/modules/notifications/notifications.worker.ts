@@ -111,6 +111,7 @@ export class NotificationsWorker implements OnModuleInit, OnModuleDestroy {
         text: data.text,
         parseMode: 'HTML',
         disableNotification: data.silent ?? false,
+        ...(data.replyMarkup ? { replyMarkup: data.replyMarkup } : {}),
       });
 
       if (data.notificationId) await this.notifications.markSent(data.notificationId);

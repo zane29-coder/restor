@@ -37,6 +37,8 @@ export interface AccessTokenClaims {
   permissions: Permission[];
   branchIds: string[];
   courierId?: string;
+  /** Customer sessions only: the RESTOR-wide account behind the customer. */
+  accountId?: string;
 }
 
 export interface IssueContext {
@@ -75,6 +77,8 @@ export class TokenService {
       permissions: claims.permissions,
       branchIds: claims.branchIds,
       courierId: claims.courierId,
+      kind: claims.subjectKind,
+      ...(claims.accountId ? { accountId: claims.accountId } : {}),
       typ: 'access',
     };
 

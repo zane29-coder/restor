@@ -85,6 +85,14 @@ const PAYMENTS: Record<string, { emoji: string; label: string }> = {
   [PaymentMethod.PAYME]: { emoji: '📲', label: 'Payme' },
   [PaymentMethod.QR]: { emoji: '📱', label: 'QR' },
   [PaymentMethod.BONUS]: { emoji: '🎁', label: 'Bonus' },
+  [PaymentMethod.SUBO]: { emoji: '📲', label: 'Onlayn' },
+};
+
+/** Which provider an online order was sent to. */
+const PROVIDERS: Record<string, string> = {
+  ATMOS: 'karta',
+  CLICK: 'Click',
+  PAYME: 'Payme',
 };
 
 const PAYMENT_STATUSES: Record<string, string> = {
@@ -99,8 +107,17 @@ const PAYMENT_STATUSES: Record<string, string> = {
 export interface OrderMessageContext {
   branchName?: string | null;
   address?: string | null;
+  /** Standing note from the customer's saved address. */
+  addressComment?: string | null;
   comment?: string | null;
+  /** One-off note to the courier for this order. */
+  courierComment?: string | null;
+  /** Sets of cutlery; `null` when the restaurant does not ask. */
+  cutleryCount?: number | null;
+  leaveAtDoor?: boolean;
   paymentLabel?: string | null;
+  /** ATMOS / CLICK / PAYME for an online order. */
+  paymentProvider?: string | null;
   paymentStatus?: string | null;
   subtotal?: number;
   deliveryFee?: number;
@@ -145,6 +162,10 @@ export function buildNewOrderMessage(
   }
 
   if (context.address) lines.push(`📍 <b>Manzil:</b> ${escapeHtml(context.address)}`);
+  if (context.addressComment) {
+    lines.push(`📌 <b>Manzil izohi:</b> ${escapeHtml(context.addressComment)}`);
+  }
+  if (context.leaveAtDoor) lines.push('🚪 <b>Eshik oldida qoldirish</b>');
 
   lines.push('');
   lines.push('🧾 <b>Tarkibi:</b>');
@@ -173,13 +194,24 @@ export function buildNewOrderMessage(
     const status = context.paymentStatus
       ? ` · ${PAYMENT_STATUSES[context.paymentStatus] ?? escapeHtml(context.paymentStatus)}`
       : '';
+    const provider = context.paymentProvider
+      ? ` (${escapeHtml(PROVIDERS[context.paymentProvider] ?? context.paymentProvider)})`
+      : '';
     lines.push('');
-    lines.push(`${payment.emoji} <b>Toʻlov:</b> ${escapeHtml(payment.label)}${status}`);
+    lines.push(`${payment.emoji} <b>Toʻlov:</b> ${escapeHtml(payment.label)}${provider}${status}`);
   }
 
   if (context.comment) {
     lines.push('');
     lines.push(`📝 <b>Izoh:</b> ${escapeHtml(context.comment)}`);
+  }
+  if (context.courierComment) {
+    lines.push(`🛵 <b>Kuryerga:</b> ${escapeHtml(context.courierComment)}`);
+  }
+  if (context.cutleryCount != null) {
+    lines.push(
+      `🍴 <b>Anjomlar:</b> ${context.cutleryCount === 0 ? 'kerak emas' : `${context.cutleryCount} ta`}`,
+    );
   }
 
   if (context.estimatedReadyAt) {
@@ -266,6 +298,30 @@ export function buildTestMessage(event: TelegramEvent, branchName?: string | nul
  */
 export function orderStatusLabel(status: string): string {
   return STATUSES[status]?.label ?? status;
+}
+
+/**
+ * `Uzum Bogʻi 2-tor, 280A, 12-xonadon, 2-podyezd, 3-qavat, domofon 12`.
+ *
+ * Everything a courier needs at the building, on one line, in the order they
+ * need it.
+ */
+export function formatAddressLine(parts: {
+  text: string;
+  apartment?: string | null;
+  entrance?: string | null;
+  floor?: string | null;
+  intercom?: string | null;
+}): string {
+  return [
+    parts.text,
+    parts.apartment ? `${parts.apartment}-xonadon` : null,
+    parts.entrance ? `${parts.entrance}-podyezd` : null,
+    parts.floor ? `${parts.floor}-qavat` : null,
+    parts.intercom ? `domofon ${parts.intercom}` : null,
+  ]
+    .filter(Boolean)
+    .join(', ');
 }
 
 /** Maps a domain event to the template that renders it. */

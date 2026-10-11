@@ -150,34 +150,61 @@ export class AuthService {
     const verified = this.telegram.verify(input.initData, botToken);
 
     const telegramId = String(verified.user.id);
-    const fullName = [verified.user.first_name, verified.user.last_name]
-      .filter(Boolean)
-      .join(' ')
-      .trim();
+    const telegramProfile = {
+      telegramUsername: clip(verified.user.username, 64),
+      telegramFirstName: clip(verified.user.first_name, 64),
+      telegramLastName: clip(verified.user.last_name, 64),
+      telegramPhotoUrl: clip(verified.user.photo_url, 2048),
+    };
 
-    // Mini App users are CUSTOMERS, not staff: they get a customer record and
-    // a token with no staff permissions at all.
+    // The RESTOR-wide person. A Telegram user id is the same in every bot, so
+    // the account found here is the one this person used at any restaurant.
+    //
+    // Only the Telegram display fields are refreshed. The official name and
+    // phone an order is placed under are the customer's to type — a Telegram
+    // display name like "Elbek 🍕" must never silently become the name a
+    // courier asks for at the door.
+    const account = await runUnscoped(() =>
+      this.prisma.db.customerAccount.upsert({
+        where: { telegramId },
+        create: {
+          telegramId,
+          language: verified.user.language_code?.slice(0, 10) ?? 'uz',
+          ...telegramProfile,
+        },
+        update: telegramProfile,
+      }),
+    );
+
+    if (account.deletedAt) {
+      throw AppException.forbidden('Bu akkaunt oʻchirilgan');
+    }
+
+    // This restaurant's own record of the person — its CRM row, loyalty and
+    // history. It learns the name and phone only when an order is placed with
+    // it (see the checkout), never just because the Mini App was opened.
     const customer = await runUnscoped(() =>
       this.prisma.db.customer.upsert({
         where: { tenantId_telegramId: { tenantId: tenant.id, telegramId } },
         create: {
           tenantId: tenant.id,
+          accountId: account.id,
           telegramId,
-          telegramUsername: verified.user.username ?? null,
-          fullName: fullName || null,
-          language: verified.user.language_code?.slice(0, 10) ?? 'uz',
-          // Telegram does not give us a phone; it is collected at checkout.
+          telegramUsername: telegramProfile.telegramUsername,
+          language: account.language,
+          // `phone` is the restaurant's natural key and NOT NULL. A real number
+          // replaces this placeholder at the first order, when there is one.
           phone: `tg:${telegramId}`,
         },
         update: {
-          telegramUsername: verified.user.username ?? null,
-          ...(fullName ? { fullName } : {}),
+          accountId: account.id,
+          telegramUsername: telegramProfile.telegramUsername,
         },
       }),
     );
 
     if (customer.isBlocked) {
-      throw AppException.forbidden('This account has been blocked');
+      throw AppException.forbidden('Ushbu restoranda buyurtma berish cheklangan');
     }
 
     const tokens = await this.tokens.issuePair(
@@ -191,9 +218,15 @@ export class AuthService {
         roles: ['CUSTOMER'],
         permissions: [],
         branchIds: [],
+        accountId: account.id,
       },
       context,
     );
+
+    const officialName = [account.firstName, account.lastName].filter(Boolean).join(' ');
+    const telegramName = [account.telegramFirstName, account.telegramLastName]
+      .filter(Boolean)
+      .join(' ');
 
     return {
       tokens,
@@ -201,10 +234,10 @@ export class AuthService {
         id: customer.id,
         tenantId: tenant.id,
         tenantSlug: tenant.slug,
-        phone: customer.phone,
-        email: customer.email,
-        fullName: customer.fullName ?? 'Guest',
-        avatarUrl: verified.user.photo_url ?? null,
+        phone: account.phone ?? '',
+        email: account.email,
+        fullName: officialName || telegramName || 'Mehmon',
+        avatarUrl: account.telegramPhotoUrl,
         roles: ['CUSTOMER'],
         permissions: [],
         branchIds: [],
@@ -268,14 +301,22 @@ export class AuthService {
         select: {
           id: true,
           tenantId: true,
+          accountId: true,
           isBlocked: true,
           deletedAt: true,
           tenant: { select: { status: true, deletedAt: true } },
+          account: { select: { deletedAt: true } },
         },
       }),
     );
 
-    if (!customer || customer.isBlocked || customer.deletedAt || customer.tenant.deletedAt) {
+    if (
+      !customer ||
+      customer.isBlocked ||
+      customer.deletedAt ||
+      customer.tenant.deletedAt ||
+      customer.account?.deletedAt
+    ) {
       await this.tokens.revokeAllFor({ kind: 'CUSTOMER', id: customerId });
       throw AppException.unauthorized('This account is no longer active', ErrorCode.USER_INACTIVE);
     }
@@ -289,6 +330,7 @@ export class AuthService {
       roles: ['CUSTOMER'],
       permissions: [],
       branchIds: [],
+      ...(customer.accountId ? { accountId: customer.accountId } : {}),
     };
   }
 
@@ -503,6 +545,12 @@ export class AuthService {
       401,
     );
   }
+}
+
+/** Trims a Telegram-supplied string to the column it lands in. */
+function clip(value: string | undefined, max: number): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, max) : null;
 }
 
 /** Masks a login for the audit log — the attempt matters, the number does not. */
