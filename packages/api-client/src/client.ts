@@ -24,6 +24,7 @@ import {
 import { InventoryResource } from './resources/inventory';
 import { PlatformResource } from './resources/platform';
 import { CashResource, PosResource } from './resources/pos';
+import { MeResource, StorefrontResource } from './resources/storefront';
 
 /**
  * The full RESTOR API surface, grouped by resource.
@@ -56,6 +57,9 @@ export class RestorClient {
   readonly audit: AuditResource;
   readonly reports: ReportsResource;
   readonly inventory: InventoryResource;
+  readonly storefront: StorefrontResource;
+  /** The signed-in storefront customer (Mini App). */
+  readonly me: MeResource;
 
   constructor(options: HttpClientOptions) {
     this.http = new HttpClient(options);
@@ -81,6 +85,8 @@ export class RestorClient {
     this.audit = new AuditResource(this.http);
     this.reports = new ReportsResource(this.http);
     this.inventory = new InventoryResource(this.http);
+    this.storefront = new StorefrontResource(this.http);
+    this.me = new MeResource(this.http);
   }
 }
 

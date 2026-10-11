@@ -122,9 +122,9 @@ export class PaymentsResource {
    * Resuming is the point: a customer who closed the tab is sent back to the
    * same session rather than given a second live charge for one order.
    *
-   * Omitting `provider` lets the customer choose on Subo's page. Naming
-   * `ATMOS` forces the card path, which is the only one that saves a card for
-   * next time.
+   * Omitting `provider` makes Subo use the first provider configured in the
+   * merchant's Subo panel (docs.subo.uz). Naming `ATMOS` forces the card
+   * path, which is the only one that saves a card for next time.
    */
   startCheckout(payload: {
     orderId: string;

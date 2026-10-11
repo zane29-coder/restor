@@ -1,7 +1,6 @@
 import type {
   AuditLog,
   Customer,
-  CustomerAddress,
   LoyaltyAccount,
   LoyaltyProgram,
   LoyaltyTransaction,
@@ -105,23 +104,7 @@ export class CustomersResource {
     return this.http.get(`customers/${customerId}/loyalty/quote`, { query: { total } });
   }
 
-  /* --- The signed-in customer's own profile (mini app / customer web) --- */
-
-  myProfile(): Promise<Customer> {
-    return this.http.get<Customer>('me/profile');
-  }
-
-  myAddresses(): Promise<CustomerAddress[]> {
-    return this.http.get<CustomerAddress[]>('me/addresses');
-  }
-
-  addAddress(payload: Omit<CustomerAddress, 'id' | 'customerId' | 'createdAt' | 'updatedAt'>): Promise<CustomerAddress> {
-    return this.http.post<CustomerAddress>('me/addresses', payload);
-  }
-
-  deleteAddress(id: string): Promise<void> {
-    return this.http.delete<void>(`me/addresses/${id}`);
-  }
+  // The signed-in customer's own profile and addresses live on `client.me`.
 }
 
 /** Promotions and promo codes (TZ §10, §34). */

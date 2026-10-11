@@ -46,3 +46,4 @@ export {
   TablesResource,
   TelegramResource,
 } from './resources/misc';
+export { MeResource, StorefrontResource } from './resources/storefront';

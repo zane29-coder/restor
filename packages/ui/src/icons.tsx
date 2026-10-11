@@ -254,6 +254,161 @@ export const IconInbox = (props: IconProps) => (
   </Icon>
 );
 
+/* -------------------------------------------------------------------------- */
+/* Storefront (Mini App)                                                      */
+/* -------------------------------------------------------------------------- */
+
+export const IconArrowLeft = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M19 12H5" />
+    <path d="m11 6-6 6 6 6" />
+  </Icon>
+);
+
+export const IconChevronRight = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m9 5.5 6.5 6.5L9 18.5" />
+  </Icon>
+);
+
+export const IconChevronDown = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="m5.5 9 6.5 6.5L18.5 9" />
+  </Icon>
+);
+
+export const IconHeart = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20Z" />
+  </Icon>
+);
+
+/** The same heart, filled — the "favourited" state. */
+export const IconHeartFilled = (props: IconProps) => (
+  <Icon {...props} fill="currentColor">
+    <path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.4C19.5 15.4 12 20 12 20Z" />
+  </Icon>
+);
+
+export const IconUser = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="8" r="3.75" />
+    <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+  </Icon>
+);
+
+export const IconBell = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M6 10a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4S6 15 6 10Z" />
+    <path d="M10 19.5a2.2 2.2 0 0 0 4 0" />
+  </Icon>
+);
+
+/** A shopping basket: the cart. */
+export const IconBasket = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3.5 9.5h17l-1.6 9a1.8 1.8 0 0 1-1.8 1.5H6.9a1.8 1.8 0 0 1-1.8-1.5Z" />
+    <path d="m8 9.5 3-5.5M16 9.5 13 4" />
+    <path d="M9.5 13.5v3M14.5 13.5v3" />
+  </Icon>
+);
+
+/** Fork and knife: cutlery sets. */
+export const IconCutlery = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M7 3.5V10a2 2 0 0 0 2 2v8.5" />
+    <path d="M11 3.5V10a2 2 0 0 1-2 2" />
+    <path d="M9 3.5V8" />
+    <path d="M16.5 20.5V3.5c-2 1.2-3 3.6-3 6.4 0 1.7.9 2.6 3 2.6" />
+  </Icon>
+);
+
+export const IconMessage = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4.5 5.5h15a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5h-1A1.5 1.5 0 0 1 3 16V7a1.5 1.5 0 0 1 1.5-1.5Z" />
+  </Icon>
+);
+
+export const IconHelp = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.7" />
+    <path d="M12 17h.01" />
+  </Icon>
+);
+
+export const IconClock = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5V12l3 2" />
+  </Icon>
+);
+
+export const IconTrash = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M4.5 7h15" />
+    <path d="M9.5 7V4.5h5V7" />
+    <path d="M6.5 7l.9 12a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4l.9-12" />
+    <path d="M10 11v5.5M14 11v5.5" />
+  </Icon>
+);
+
+/** "Where am I": centre the map on the device's location. */
+export const IconLocate = (props: IconProps) => (
+  <Icon {...props}>
+    <circle cx="12" cy="12" r="6.5" />
+    <circle cx="12" cy="12" r="2" />
+    <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
+  </Icon>
+);
+
+export const IconHome = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3.5 11 12 4l8.5 7" />
+    <path d="M5.5 9.5V20h13V9.5" />
+    <path d="M10 20v-5.5h4V20" />
+  </Icon>
+);
+
+export const IconBriefcase = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="3" y="7.5" width="18" height="12" rx="2" />
+    <path d="M9 7.5V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5v2" />
+    <path d="M3 12.5h18" />
+  </Icon>
+);
+
+export const IconCard = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="2.5" y="5.5" width="19" height="13" rx="2" />
+    <path d="M2.5 10h19" />
+    <path d="M6.5 14.5h3" />
+  </Icon>
+);
+
+export const IconCash = (props: IconProps) => (
+  <Icon {...props}>
+    <rect x="2.5" y="6.5" width="19" height="11" rx="1.5" />
+    <circle cx="12" cy="12" r="2.5" />
+    <path d="M5.5 9.5v.01M18.5 14.5v.01" />
+  </Icon>
+);
+
+export const IconMore = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 5.5h.01M12 12h.01M12 18.5h.01" strokeWidth={3} />
+  </Icon>
+);
+
+/** A door: "leave at the door". */
+export const IconDoor = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M6 20.5V4.5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v16" />
+    <path d="M4 20.5h16" />
+    <path d="M14.5 12.5h.01" strokeWidth={2.5} />
+  </Icon>
+);
+
 /** Telegram's paper plane, for Mini App screens. */
 export const IconTelegram = (props: IconProps) => (
   <Icon {...props}>

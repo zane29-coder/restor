@@ -109,6 +109,17 @@ export class BranchesService {
         isOpenNow: isBranchOpen(row),
         deliveryPrice: row.deliveryPrice,
         minOrderAmount: row.minOrderAmount,
+        freeDeliveryFrom: row.freeDeliveryFrom,
+        averagePrepMinutes: row.averagePrepMinutes,
+        acceptsDelivery: row.acceptsDelivery,
+        acceptsPickup: row.acceptsPickup,
+        phone: row.phone,
+        workingHours: row.workingHours.map((hours) => ({
+          dayOfWeek: hours.dayOfWeek as Weekday,
+          opensAt: hours.opensAt,
+          closesAt: hours.closesAt,
+          isClosed: hours.isClosed,
+        })),
         ...(distanceM !== undefined ? { distanceM } : {}),
       } satisfies BranchSummary;
     });

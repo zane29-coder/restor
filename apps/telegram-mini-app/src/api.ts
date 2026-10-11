@@ -5,7 +5,8 @@ import { getWebApp } from './telegram';
  * Which restaurant this Mini App belongs to.
  *
  * `start_param` is how a deep link carries it (`t.me/bot/app?startapp=demo`);
- * `VITE_TENANT_SLUG` pins it for a tenant that runs its own bot.
+ * `?tenant=` is what the bot's own buttons send; `VITE_TENANT_SLUG` pins it
+ * for a deployment that serves one restaurant.
  */
 export function resolveTenantSlug(): string {
   const fromStartParam = getWebApp()?.initDataUnsafe.start_param;
@@ -19,6 +20,12 @@ export function resolveTenantSlug(): string {
 
 export const tenantSlug = resolveTenantSlug();
 
+/** Signs in again from `initData` when the session cannot be refreshed. */
+let reauthenticate: (() => void) | null = null;
+export function onSessionLost(handler: () => void): void {
+  reauthenticate = handler;
+}
+
 /**
  * In-memory token store on purpose.
  *
@@ -30,4 +37,5 @@ export const api = createRestorClient({
   baseUrl: import.meta.env.VITE_API_URL ?? '/api/v1',
   tokenStore: new MemoryTokenStore(),
   defaultHeaders: { 'X-Tenant-Slug': tenantSlug },
+  onUnauthorized: () => reauthenticate?.(),
 });

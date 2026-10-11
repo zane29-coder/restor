@@ -3,8 +3,12 @@
  *
  * The only thing that matters for security here is `initData`: it is forwarded
  * to the backend VERBATIM and verified there against the bot token. Nothing in
- * `initDataUnsafe` is ever trusted for identity — as its name says — and is
- * used only to theme the UI before the server has answered.
+ * `initDataUnsafe` is ever trusted for identity — as its name says. It is used
+ * only to namespace local storage and to theme the UI before the server has
+ * answered.
+ *
+ * Every method beyond the oldest API is optional-chained: a customer on an
+ * old Telegram build gets a slightly plainer app, never a crash.
  */
 
 export interface TelegramThemeParams {
@@ -16,34 +20,50 @@ export interface TelegramThemeParams {
   secondary_bg_color?: string;
 }
 
+interface BackButton {
+  isVisible: boolean;
+  show: () => void;
+  hide: () => void;
+  onClick: (handler: () => void) => void;
+  offClick: (handler: () => void) => void;
+}
+
 export interface TelegramWebApp {
   initData: string;
   initDataUnsafe: {
-    user?: { id: number; first_name?: string; last_name?: string; username?: string };
+    user?: {
+      id: number;
+      first_name?: string;
+      last_name?: string;
+      username?: string;
+      photo_url?: string;
+    };
     start_param?: string;
   };
+  version: string;
+  platform: string;
   themeParams: TelegramThemeParams;
   colorScheme: 'light' | 'dark';
   viewportStableHeight: number;
   ready: () => void;
   expand: () => void;
   close: () => void;
+  isVersionAtLeast?: (version: string) => boolean;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  setBottomBarColor?: (color: string) => void;
+  disableVerticalSwipes?: () => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
+  openLink?: (url: string, options?: { try_instant_view?: boolean }) => void;
+  openTelegramLink?: (url: string) => void;
+  onEvent?: (event: string, handler: () => void) => void;
+  offEvent?: (event: string, handler: () => void) => void;
+  BackButton?: BackButton;
   HapticFeedback?: {
-    impactOccurred: (style: 'light' | 'medium' | 'heavy') => void;
+    impactOccurred: (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => void;
     notificationOccurred: (type: 'error' | 'success' | 'warning') => void;
-  };
-  MainButton: {
-    text: string;
-    isVisible: boolean;
-    show: () => void;
-    hide: () => void;
-    setText: (text: string) => void;
-    onClick: (handler: () => void) => void;
-    offClick: (handler: () => void) => void;
-    showProgress: (leaveActive?: boolean) => void;
-    hideProgress: () => void;
-    enable: () => void;
-    disable: () => void;
+    selectionChanged?: () => void;
   };
 }
 
@@ -59,43 +79,62 @@ export function getWebApp(): TelegramWebApp | null {
 
 /** True when running inside Telegram rather than a plain browser tab. */
 export function isInsideTelegram(): boolean {
-  const webApp = getWebApp();
-  return Boolean(webApp?.initData);
+  return Boolean(getWebApp()?.initData);
 }
 
-/**
- * Applies Telegram's theme to our CSS variables so the Mini App matches the
- * user's Telegram appearance instead of fighting it.
- */
-export function applyTelegramTheme(): void {
+/** Version gate for methods that throw on old clients instead of no-oping. */
+function supports(version: string): boolean {
   const webApp = getWebApp();
-  if (!webApp) return;
-
-  const root = document.documentElement;
-  const theme = webApp.themeParams;
-
-  const map: Array<[string, string | undefined]> = [
-    ['--bg', theme.bg_color],
-    ['--surface', theme.bg_color],
-    ['--surface-alt', theme.secondary_bg_color],
-    ['--text', theme.text_color],
-    ['--text-muted', theme.hint_color],
-    ['--primary', theme.button_color],
-  ];
-
-  for (const [variable, value] of map) {
-    if (value) root.style.setProperty(variable, value);
+  try {
+    return Boolean(webApp?.isVersionAtLeast?.(version));
+  } catch {
+    return false;
   }
 }
 
-/** Boots the bridge: tells Telegram we are ready and expands to full height. */
+/**
+ * Light or dark, following the customer's Telegram. The palette itself is
+ * RESTOR's (styles.css); Telegram only decides which of its two variants.
+ */
+export function colorScheme(): 'light' | 'dark' {
+  return getWebApp()?.colorScheme === 'dark' ? 'dark' : 'light';
+}
+
+/** Boots the bridge before React paints, so the first frame is already right. */
 export function initTelegram(): void {
   const webApp = getWebApp();
+  document.documentElement.dataset.theme = colorScheme();
   if (!webApp) return;
 
   webApp.ready();
   webApp.expand();
-  applyTelegramTheme();
+
+  // A vertical swipe inside a menu, a bottom sheet or a map would otherwise
+  // minimise the whole app halfway through a gesture.
+  if (supports('7.7')) webApp.disableVerticalSwipes?.();
+
+  webApp.onEvent?.('themeChanged', () => {
+    document.documentElement.dataset.theme = colorScheme();
+    paintChrome();
+  });
+
+  paintChrome();
+}
+
+/** Matches Telegram's own header and background to the app's surface. */
+export function paintChrome(): void {
+  const webApp = getWebApp();
+  if (!webApp || !supports('6.1')) return;
+  const styles = getComputedStyle(document.documentElement);
+  const surface = styles.getPropertyValue('--surface').trim() || '#ffffff';
+  const background = styles.getPropertyValue('--bg').trim() || '#ffffff';
+  try {
+    webApp.setHeaderColor?.(surface);
+    webApp.setBackgroundColor?.(background);
+    if (supports('7.10')) webApp.setBottomBarColor?.(background);
+  } catch {
+    // Cosmetic; an older client rejecting a colour is not worth a crash.
+  }
 }
 
 /** Short haptic tap — used on add-to-cart, where it reads as confirmation. */
@@ -103,36 +142,76 @@ export function haptic(style: 'light' | 'medium' | 'heavy' = 'light'): void {
   getWebApp()?.HapticFeedback?.impactOccurred(style);
 }
 
+export function hapticResult(type: 'error' | 'success' | 'warning'): void {
+  getWebApp()?.HapticFeedback?.notificationOccurred(type);
+}
+
 /**
- * Drives Telegram's native bottom button.
+ * Telegram's native back button, driven by the app's navigator.
  *
- * Using it instead of an in-page button is what makes a Mini App feel native:
- * it sits outside the scroll area and matches every other Telegram app.
+ * On Android it is also what the system back gesture presses, so as long as
+ * it is visible the gesture walks back through the app instead of closing it.
  */
-export function useMainButton(
-  text: string,
-  onClick: () => void,
-  options: { visible: boolean; enabled?: boolean; loading?: boolean } = { visible: true },
-): void {
+export function setBackButton(visible: boolean, handler: () => void): () => void {
+  const button = getWebApp()?.BackButton;
+  if (!button || !supports('6.1')) return () => undefined;
+
+  button.onClick(handler);
+  if (visible) button.show();
+  else button.hide();
+
+  return () => button.offClick(handler);
+}
+
+/**
+ * Asks Telegram to confirm before the sheet is swiped away — on while a
+ * checkout is in flight, so a half-placed order is not abandoned by accident.
+ */
+export function setClosingConfirmation(enabled: boolean): void {
   const webApp = getWebApp();
-  if (!webApp) return;
+  if (!webApp || !supports('6.2')) return;
+  if (enabled) webApp.enableClosingConfirmation?.();
+  else webApp.disableClosingConfirmation?.();
+}
 
-  const button = webApp.MainButton;
-
-  if (!options.visible) {
-    button.hide();
-    return;
+/**
+ * Opens an external page (a payment form) on top of the app. Inside Telegram
+ * it is the in-app browser, so the customer returns to the Mini App
+ * unchanged when they close it.
+ */
+export function openExternal(url: string): void {
+  const webApp = getWebApp();
+  if (webApp?.openLink) {
+    webApp.openLink(url, { try_instant_view: false });
+  } else {
+    window.open(url, '_blank', 'noopener');
   }
+}
 
-  button.setText(text);
-  if (options.enabled === false) button.disable();
-  else button.enable();
+/** Opens a t.me link (the bot chat) inside Telegram itself. */
+export function openTelegram(url: string): void {
+  const webApp = getWebApp();
+  if (webApp?.openTelegramLink && supports('6.1')) webApp.openTelegramLink(url);
+  else window.open(url, '_blank', 'noopener');
+}
 
-  if (options.loading) button.showProgress(true);
-  else button.hideProgress();
+/** Runs `handler` when the app comes back to the foreground. */
+export function onActivated(handler: () => void): () => void {
+  const webApp = getWebApp();
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') handler();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  webApp?.onEvent?.('activated', handler);
 
-  button.show();
+  return () => {
+    document.removeEventListener('visibilitychange', onVisible);
+    webApp?.offEvent?.('activated', handler);
+  };
+}
 
-  // The caller is responsible for removing the handler; see App.tsx.
-  button.onClick(onClick);
+/** Namespaces local data per Telegram user, for a device several people share. */
+export function deviceUserKey(): string {
+  const id = getWebApp()?.initDataUnsafe.user?.id;
+  return id ? String(id) : 'anon';
 }

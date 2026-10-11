@@ -82,6 +82,14 @@ export interface BranchSummary {
   isOpenNow: boolean;
   deliveryPrice: number;
   minOrderAmount: number;
+  /** Delivery is free from this goods total; `null` means never by amount. */
+  freeDeliveryFrom: number | null;
+  /** Typical minutes from accepted to ready — the storefront's time estimate. */
+  averagePrepMinutes: number;
+  acceptsDelivery: boolean;
+  acceptsPickup: boolean;
+  phone: string | null;
+  workingHours: Array<Omit<BranchWorkingHours, 'id' | 'branchId'>>;
   /** Straight-line metres from the coordinates supplied by the client. */
   distanceM?: number;
 }
