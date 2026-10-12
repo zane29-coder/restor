@@ -128,6 +128,69 @@ p {
   padding: 0 var(--gutter);
 }
 
+/* The restaurant requires a map pin and the chosen address has none. */
+.pin-required {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--warn-bg);
+  color: var(--warn);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pin-required svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+/* The restaurant's promo banner, under the menu hero. */
+.promo-banner {
+  position: relative;
+  margin: 0 var(--gutter) 14px;
+  min-height: 112px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--primary);
+  color: #fff;
+}
+
+.promo-banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.promo-banner__text {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  min-height: 112px;
+  align-content: end;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0%) 20%, rgb(0 0 0 / 55%) 100%);
+}
+
+.promo-banner__title {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.promo-banner__sub {
+  font-size: 13px;
+  opacity: 0.92;
+}
+
 .lead {
   line-height: 1.5;
   margin-bottom: 8px;

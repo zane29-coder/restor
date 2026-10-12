@@ -130,6 +130,18 @@ export function MenuScreen({ active }: { active: boolean }) {
         )}
       </div>
 
+      {session.info.banner && (
+        <div className="promo-banner">
+          {session.info.banner.imageUrl && <img src={session.info.banner.imageUrl} alt="" />}
+          {(session.info.banner.title || session.info.banner.text) && (
+            <div className="promo-banner__text">
+              {session.info.banner.title && <span className="promo-banner__title">{session.info.banner.title}</span>}
+              {session.info.banner.text && <span className="promo-banner__sub">{session.info.banner.text}</span>}
+            </div>
+          )}
+        </div>
+      )}
+
       {session.menuError ? (
         <ErrorState message={session.menuError} onRetry={session.reloadMenu} />
       ) : !session.menu ? (

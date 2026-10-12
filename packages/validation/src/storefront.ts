@@ -188,6 +188,15 @@ export const updateStorefrontSettingsSchema = z
       .optional(),
     cutleryEnabled: z.boolean().optional(),
     leaveAtDoorEnabled: z.boolean().optional(),
+    accentColor: z
+      .string()
+      .regex(/^#[0-9A-Fa-f]{6}$/, 'Rang #RRGGBB koʻrinishida boʻlsin')
+      .nullish(),
+    /** An image uploaded through `files/images`; https only. */
+    bannerUrl: z.string().trim().url('Rasm havolasi notoʻgʻri').startsWith('http').max(2048).nullish(),
+    bannerTitle: z.string().trim().max(80).nullish(),
+    bannerText: z.string().trim().max(160).nullish(),
+    requireMapPin: z.boolean().optional(),
   })
   .refine((value) => Object.values(value).some((entry) => entry !== undefined), {
     message: 'Oʻzgartirish uchun kamida bitta maydon kiriting',

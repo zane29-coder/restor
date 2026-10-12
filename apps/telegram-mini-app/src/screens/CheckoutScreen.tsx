@@ -299,11 +299,15 @@ export function CheckoutScreen({ active }: { active: boolean }) {
 
   const total = preview?.total ?? null;
   const belowMinimum = isDelivery && preview !== null && preview.subtotal < branch.minOrderAmount;
+  // The restaurant asked for a map pin; the server refuses without one too.
+  const needsPin =
+    isDelivery && options.requireMapPin && selected !== null && (selected.latitude === null || selected.longitude === null);
   const canSubmit =
     !submitting &&
     paymentOption !== null &&
     cart.items.length > 0 &&
     (!isDelivery || selected !== null) &&
+    !needsPin &&
     !belowMinimum &&
     preview !== null &&
     !previewing;
@@ -351,6 +355,17 @@ export function CheckoutScreen({ active }: { active: boolean }) {
                 </span>
                 <IconChevronRight size={18} />
               </button>
+
+              {needsPin && (
+                <button
+                  type="button"
+                  className="pin-required"
+                  onClick={() => nav.push({ name: 'address-edit', id: selected.id, fromCheckout: true })}
+                >
+                  <IconMapPin size={18} />
+                  <span>Bu restoran manzilni xaritada aniq belgilashni soʻraydi. Xaritada belgilash uchun bosing.</span>
+                </button>
+              )}
 
               <div className="field-grid">
                 <label className="field">

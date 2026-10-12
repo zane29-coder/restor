@@ -1257,6 +1257,18 @@ model StorefrontSettings {
   /// courier is allowed to do, so the restaurant opts in.
   leaveAtDoorEnabled Boolean  @default(false)
 
+  /// The storefront's own accent (buttons, prices). Null falls back to the
+  /// tenant's white-label colour, which only the platform's branding role
+  /// may change.
+  accentColor String? @db.VarChar(9)
+  /// A promo banner across the top of the menu.
+  bannerUrl   String? @db.VarChar(2048)
+  bannerTitle String? @db.VarChar(80)
+  bannerText  String? @db.VarChar(160)
+  /// Refuse delivery to an address without a map pin. A typed address alone
+  /// sends couriers hunting, and zone pricing needs the coordinates.
+  requireMapPin Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

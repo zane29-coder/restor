@@ -138,6 +138,17 @@ export class CheckoutService {
         ? await this.resolveAddress(session, input.address, input.address.saveDetails)
         : null;
 
+    // A restaurant that asks for a map pin gets one: a typed address alone
+    // sends couriers hunting, and zone pricing needs the coordinates.
+    if (address && options.requireMapPin && (address.latitude === null || address.longitude === null)) {
+      throw new AppException(
+        ErrorCode.VALIDATION_ERROR,
+        'Manzilni xaritada belgilang — bu restoran aniq nuqtani talab qiladi',
+        422,
+        { address: ['Xaritada belgilanmagan'] },
+      );
+    }
+
     // This restaurant learns who the customer is now, because it has an
     // order to fulfil — not when the Mini App was merely opened.
     await this.shareContactWithRestaurant(session.customerId, fullName, phone);

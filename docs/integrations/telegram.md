@@ -175,6 +175,22 @@ the only thing that proves it.
 
 See `../architecture/auth.md` for the exchange.
 
+### Appearance and checkout settings
+
+`storefront_settings` (one row per tenant), edited on the admin Telegram page
+under `settings.update`, read publicly through `GET /storefront`:
+
+| Setting | Effect |
+| --- | --- |
+| `accentColor` | The storefront's accent. Null falls back to the tenant's white-label `primaryColor`, which stays with the platform's branding permission. `GET /storefront` returns whichever applies as `restaurant.primaryColor`, so the Mini App needs no change to honour it |
+| `bannerUrl`, `bannerTitle`, `bannerText` | A promo banner under the menu hero; `banner` is null when none is set. The image is uploaded through `files/images` |
+| `requireMapPin` | Delivery to a saved address without coordinates is refused at checkout (422). The Mini App says so before submit and sends the customer to pin it |
+| `cashEnabled`, `onlineProviders`, `cutleryEnabled`, `leaveAtDoorEnabled` | Unchanged; now editable from the admin as well |
+
+The Mini App stays Uzbek-only: a language switch would mean translating
+every screen and the menu itself, which has no translated fields, against
+the project rule that the UI is Uzbek.
+
 ## Notifications module
 
 `notifications` owns the queue and the delivery record; `telegram` owns the

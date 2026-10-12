@@ -39,6 +39,8 @@ export interface StorefrontInfo {
     /** The restaurant's own bot, for "Yordam xizmati". */
     botUsername: string | null;
   };
+  /** A promo banner across the top of the menu; null when none is set. */
+  banner: { imageUrl: string | null; title: string | null; text: string | null } | null;
   checkout: StorefrontCheckoutOptions;
 }
 
@@ -51,6 +53,8 @@ export interface StorefrontCheckoutOptions {
   paymentOptions: CheckoutPaymentOption[];
   cutleryEnabled: boolean;
   leaveAtDoorEnabled: boolean;
+  /** Delivery addresses must carry map coordinates; checked by the server too. */
+  requireMapPin: boolean;
 }
 
 /** The admin view of the same settings. */
@@ -59,6 +63,14 @@ export interface StorefrontSettings {
   onlineProviders: OnlinePaymentProvider[];
   cutleryEnabled: boolean;
   leaveAtDoorEnabled: boolean;
+  /** `#RRGGBB`, or null to use the tenant's white-label colour. */
+  accentColor: string | null;
+  /** The tenant's white-label colour, shown as the fallback. */
+  brandColor: string;
+  bannerUrl: string | null;
+  bannerTitle: string | null;
+  bannerText: string | null;
+  requireMapPin: boolean;
   /**
    * Whether the restaurant's Subo key is stored and active. While false the
    * online providers are saved but not offered to customers.
@@ -67,7 +79,7 @@ export interface StorefrontSettings {
 }
 
 export type UpdateStorefrontSettingsRequest = Partial<
-  Omit<StorefrontSettings, 'onlineAvailable'>
+  Omit<StorefrontSettings, 'onlineAvailable' | 'brandColor'>
 >;
 
 /* -------------------------------------------------------------------------- */
