@@ -1,7 +1,8 @@
 # Admin web
 
-The restaurant's control panel (TZ §46): dashboard, orders, menu, branches and
-staff. React 18 + Vite + TanStack Query.
+The restaurant's control panel (TZ §46): every screen a restaurant runs on,
+plus the separate super-admin surface under the same origin. React 18 + Vite +
+TanStack Query, Leaflet for maps, charts drawn as plain SVG.
 
 ## Requirements
 
@@ -35,6 +36,7 @@ cp .env.example .env
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `VITE_API_URL` | `/api/v1` | Relative on purpose: nginx serves the app and proxies `/api` to the backend in production |
+| `VITE_POS_URL` | derived | Where "Yangi buyurtma" and "POSda ochish" go. Unset: `app.x` → `pos.x`, `localhost` → `:5175` |
 
 ## Build
 
@@ -56,11 +58,21 @@ relative and every request same-origin.
 | Route | Contents | Permission |
 | --- | --- | --- |
 | `/login` | Sign-in | — |
-| `/` | Today's revenue, orders, average check, source split, active orders | — |
-| `/orders` | List, filters, status actions, detail with timeline | `orders.view` |
-| `/menu` | Products, create, per-branch stop-list | `products.view` |
-| `/branches` | Branch cards with hours and delivery settings | `branches.view` |
-| `/employees` | Staff, roles, branch scope | `employees.view` |
+| `/` | KPIs against the previous period, sales chart, sources, branch targets, active orders, low stock | — |
+| `/orders` | Table and kanban, counts per status, filters, side panel with timeline, print | `orders.view` |
+| `/menu` | Catalogue, per-branch availability and stop-list, import/export, duplicate | `products.view` |
+| `/branches` | Branches, hours, daily target, auto-dispatch, polygon delivery zones on a map | `branches.view` |
+| `/employees` | Staff, roles and a permission matrix | `employees.view` |
+| `/couriers` | Live map, dispatch board, auto-dispatch, wallets | `couriers.view` |
+| `/customers` | CRM segments, notes, loyalty | `customers.view` |
+| `/marketing` | Promotions, promo codes, happy hours, results per offer | `promotions.view` |
+| `/tables` | Live floor plan and editor, QR codes, waiter calls, reservations | `tables.view` |
+| `/inventory` | Stock, batches and use-by dates, supplier orders via Telegram, stock-takes | `inventory.view` |
+| `/reports` | Sales, product margins and ABC, cash and Z-reports, branch comparison | `reports.view` |
+| `/telegram` | Bot status, groups and events, Mini App appearance and checkout rules | `telegram.view` |
+
+The shell: grouped sidebar with live badges, branch switcher (a filter, never
+an authorisation), Ctrl+K command palette, notifications, light/dark theme.
 
 ## Notes
 
@@ -76,6 +88,5 @@ relative and every request same-origin.
 
 ## Not yet built
 
-Variant and modifier editors, promotions, promo codes, customers, finance,
-Telegram settings and reports. The API supports them; these screens are the
-remaining work for phases 9–10.
+The product variant editor (the API supports it) and stock transfers between
+branches (movement types exist, no pairing UI).

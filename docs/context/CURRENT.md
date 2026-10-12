@@ -1,6 +1,6 @@
 # Where the project stands
 
-Last updated: 2026-10-09.
+Last updated: 2026-10-13.
 
 Keep this file current. It is the first thing an agent reads to know what is
 real and what is not, and a stale entry here costs more than no entry.
@@ -113,13 +113,54 @@ Note for anyone who remembers the old instructions: `getUpdates` in a browser
 no longer works for finding a chat id. Telegram serves a webhook or
 `getUpdates`, never both. Send `/id` in the group instead.
 
+## Admin panel redesign — 2026-10-12/13
+
+The restaurant admin (not the super-admin surface) was rebuilt page by page to
+the Stitch designs in `google_stitch/`, with the project logo in place of the
+"RESTOR" text and icon. One commit per page, from `162a608` (dashboard) to
+`1142dde` (Telegram). Decorative parts of the designs ("ERP v4.2", "1C",
+"QQS 12%", fake latency, AI tips) were dropped, not imitated.
+
+New behaviour that came with it, each with its own migration:
+
+| Area | What | Migration |
+| --- | --- | --- |
+| Branches | Daily revenue target; polygon delivery zones priced by zone | `20261012090000`, `20261012100000` |
+| Couriers | Auto-dispatch per branch | `20261012110000` |
+| Customers | Staff notes, segments | `20261012120000` |
+| Tables | Floor-plan positions and shapes; reservations with a clash check; `reservations.manage` | `20261012130000` |
+| Inventory | Batches with use-by dates (FIFO estimate), supplier orders posted to Telegram, stock-take acts | `20261013090000` |
+| Mini App | Accent colour, menu banner, map-pin rule | `20261013100000` |
+
+Reports gained recipe-based margins and a Z-report ledger, and — a real fix —
+reports, tables, inventory and calls now filter by the caller's branches when
+no branch is asked for, instead of returning the whole tenant.
+
+**After deploying past `117cf1f`, run `npm run db:sync-roles` on the server**
+(`docs/operations/deploy-standalone.md`): `reservations.manage` is a new
+permission and no existing role row has it until then — even owners get 403 on
+bookings. Staff must sign in again afterwards.
+
+Verified: 366 backend unit tests; every page clicked through in a browser
+against local seeded data; each new endpoint exercised against the local API
+(zone pricing, auto-dispatch end to end, reservation clashes, supplier order
+receive/cancel, stock-take under row locks, recipe costing, storefront
+settings). **Not** verified against production, and the Mini App banner and
+map-pin prompt were typechecked but not seen inside Telegram.
+
+Deliberately not built: a multi-language Mini App (the design shows uz/ru/en).
+It would mean translating every screen and the menu, which has no translated
+fields, against the "Uzbek in the UI" rule. SMS and staff shifts/leave/PIN
+were left out by choice.
+
 ## What has NOT been verified
 
-**The UIs have not been driven in a browser.** The APIs behind every screen are
-covered; the screens themselves were typechecked, built and deployed, but
-nobody has clicked through them. The most valuable thing a human can do next is
-one real sale at the till: open a shift, sell, take payment, print, close
-against a count.
+**The till, KDS, storefront and courier app have not been driven in a
+browser.** The APIs behind every screen are covered and the admin panel has
+been clicked through (above); the rest were typechecked, built and deployed,
+but nobody has clicked through them. The most valuable thing a human can do
+next is one real sale at the till: open a shift, sell, take payment, print,
+close against a count.
 
 ## Blocked on someone else
 
@@ -136,6 +177,7 @@ connected to the restaurant's Subo account. Nothing to change on our side; see
 | Reviews / ratings | No model, no endpoints, nothing |
 | Product variants editor | API works; no form in the admin UI |
 | Stock transfer between branches | Movement types exist; no UI to pair them |
+| Multi-language Mini App | Uzbek only, by the project rule — see the redesign section |
 
 ## Housekeeping owed
 
