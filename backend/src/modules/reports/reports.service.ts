@@ -7,6 +7,7 @@ import {
   OrderType,
   PaymentMethod,
   PaymentTransactionStatus,
+  type BranchReportRow,
   type DashboardStats,
   type FinanceReport,
   type PaymentBreakdownRow,
@@ -17,6 +18,7 @@ import {
 import { startOfDayInZone } from '@restor/shared-utils';
 import { AppException } from '../../common/errors/app-exception';
 import { getContext } from '../../common/context/request-context';
+import { BranchScope } from '../../common/guards/branch-scope.guard';
 import { PrismaService } from '../../database/prisma.service';
 
 export type Granularity = 'hour' | 'day' | 'week' | 'month';
@@ -46,7 +48,10 @@ export interface ReportRange {
  */
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly branchScope: BranchScope,
+  ) {}
 
   /* ------------------------------------------------------------------ */
   /* Dashboard                                                          */
@@ -275,6 +280,63 @@ export class ReportsService {
           total > 0 ? Math.round((row.revenue / total) * 1000) / 10 : 0,
       } satisfies TopProductRow;
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Branches                                                           */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Every branch's trading side by side, best first.
+   *
+   * Two grouped queries rather than one dashboard call per branch, so the
+   * ranking costs the same with two branches as with twenty. A branch-scoped
+   * user sees only their own branches; a branch with no trade still appears,
+   * with zeros, because "nothing sold" is itself the finding.
+   */
+  async branches(range: ReportRange): Promise<BranchReportRow[]> {
+    const { from, to } = await this.resolveRange({ ...range, branchId: undefined });
+    const allowed = this.branchScope.filterFor();
+    const branchFilter = allowed ? { branchId: allowed } : {};
+    const window = { ...branchFilter, createdAt: { gte: from, lte: to } };
+
+    const [branches, delivered, cancelled] = await Promise.all([
+      this.prisma.db.branch.findMany({
+        where: { deletedAt: null, ...(allowed ? { id: allowed } : {}) },
+        select: { id: true, name: true, isActive: true, dailyRevenueTarget: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.db.order.groupBy({
+        by: ['branchId'],
+        where: { ...window, status: OrderStatus.DELIVERED },
+        _sum: { total: true, refundedTotal: true, discountTotal: true },
+        _count: { _all: true },
+      }),
+      this.prisma.db.order.groupBy({
+        by: ['branchId'],
+        where: { ...window, status: OrderStatus.CANCELLED },
+        _count: { _all: true },
+      }),
+    ]);
+
+    return branches
+      .map((branch): BranchReportRow => {
+        const sold = delivered.find((row) => row.branchId === branch.id);
+        const revenue = net(sold?._sum.total ?? null, sold?._sum.refundedTotal ?? null);
+        const ordersCount = sold?._count._all ?? 0;
+        return {
+          branchId: branch.id,
+          branchName: branch.name,
+          isActive: branch.isActive,
+          revenue,
+          ordersCount,
+          averageCheck: ordersCount > 0 ? Math.round(revenue / ordersCount) : 0,
+          cancelledOrders: cancelled.find((row) => row.branchId === branch.id)?._count._all ?? 0,
+          discountTotal: sold?._sum.discountTotal ?? 0,
+          dailyRevenueTarget: branch.dailyRevenueTarget,
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue);
   }
 
   /* ------------------------------------------------------------------ */

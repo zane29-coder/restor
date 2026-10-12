@@ -1,5 +1,6 @@
 import type {
   AssignCourierRequest,
+  BranchReportRow,
   CreateOrderRequest,
   CreatePaymentRequest,
   DashboardStats,
@@ -197,6 +198,11 @@ export class ReportsResource {
   /** Ranked by revenue, with an ABC split for kitchen planning. */
   products(query?: ReportQuery & { limit?: number }): Promise<TopProductRow[]> {
     return this.http.get<TopProductRow[]>('reports/products', { query });
+  }
+
+  /** Every branch side by side, best first, with its daily target. */
+  branches(query?: Omit<ReportQuery, 'branchId'>): Promise<BranchReportRow[]> {
+    return this.http.get<BranchReportRow[]>('reports/branches', { query });
   }
 
   /** Shift totals and every closing discrepancy. Needs `finance.view`. */

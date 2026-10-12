@@ -63,6 +63,18 @@
   --shadow-md: 0 6px 24px rgb(11 28 48 / 10%);
   --shadow-lg: 0 16px 48px rgb(11 28 48 / 18%);
 
+  /*
+   * Chart series, in fixed order (never cycled). Validated as a set for
+   * colour-vision deficiency against this surface; the dark block has its own
+   * validated steps. Slots 1 and 3 are under 3:1 on white, so every chart
+   * using them carries a legend with values.
+   */
+  --series-1: #ff6b00;
+  --series-2: #2a78d6;
+  --series-3: #1baf7a;
+  --chart-grid: #e6ebf5;
+  --chart-axis: #c3cbdb;
+
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 
   --sidebar-width: 272px;
@@ -107,6 +119,12 @@
   --sidebar-bg: #0e1626;
   --sidebar-text: #e6edf9;
   --sidebar-muted: #8695b3;
+
+  --series-1: #d95926;
+  --series-2: #3987e5;
+  --series-3: #199e70;
+  --chart-grid: #222d44;
+  --chart-axis: #34425f;
 
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
   --shadow-md: 0 8px 28px rgb(0 0 0 / 40%);
@@ -1545,6 +1563,112 @@ kbd {
 
 .timeline__time {
   font-weight: 600;
+}
+
+/* ---------------- Charts ---------------- */
+
+.chart {
+  position: relative;
+  width: 100%;
+}
+
+.chart__svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.chart__axis-x {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__axis-y {
+  position: absolute;
+  left: 0;
+  font-size: 11px;
+  color: var(--text-subtle);
+  transform: translateY(-50%);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.chart__tip {
+  position: absolute;
+  top: 0;
+  z-index: 5;
+  min-width: 150px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.chart__tip-title {
+  margin-bottom: 4px;
+  font-weight: 700;
+}
+
+.chart__tip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.swatch--line {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+.bar-row {
+  display: grid;
+  gap: 5px;
+}
+
+.bar-row__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.bar-row__value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ================================================================== */

@@ -2,6 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
+  type BranchReportRow,
   type DashboardStats,
   type FinanceReport,
   type SalesReport,
@@ -47,6 +48,15 @@ export class ReportsController {
     @Query(zodBody(reportQuerySchema)) query: ReportQueryInput,
   ): Promise<TopProductRow[]> {
     return this.reports.products(query, query.limit);
+  }
+
+  @Get('branches')
+  @RequirePermissions(Permission.REPORTS_VIEW)
+  @ApiOperation({ summary: 'Every branch side by side, with its daily target' })
+  branches(
+    @Query(zodBody(reportQuerySchema)) query: ReportQueryInput,
+  ): Promise<BranchReportRow[]> {
+    return this.reports.branches(query);
   }
 
   /**

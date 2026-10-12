@@ -653,6 +653,10 @@ model Branch {
   averagePrepMinutes Int     @default(20)
   timezone           String  @default("Asia/Tashkent") @db.VarChar(64)
 
+  /// The owner's daily revenue goal for this branch, in minor units. Shown
+  /// against the day's takings on the dashboard; `null` means no goal set.
+  dailyRevenueTarget Int?
+
   /// Short code for human-readable order numbers, e.g. `CH` → `CH-1054`.
   orderPrefix String? @db.VarChar(8)
 

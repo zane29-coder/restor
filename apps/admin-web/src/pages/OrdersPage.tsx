@@ -11,7 +11,8 @@ import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { Drawer } from '../components/Drawer';
 import { ErrorState, Empty, Loading } from '../components/States';
-import { ORDER_TYPE_LABELS, STATUS_LABELS, StatusBadge } from './DashboardPage';
+import { ORDER_TYPE_LABELS, STATUS_LABELS } from '../lib/labels';
+import { StatusBadge } from '../components/StatusBadge';
 
 /**
  * Order management (TZ §46).

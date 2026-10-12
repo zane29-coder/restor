@@ -25,6 +25,8 @@ export interface Branch extends BaseEntity {
   deliveryPricePerKm: number | null;
   /** Default minutes from ACCEPTED to READY, used for customer-facing ETAs. */
   averagePrepMinutes: number;
+  /** Daily revenue goal in minor units; `null` when the owner set none. */
+  dailyRevenueTarget: number | null;
   timezone: string;
   isActive: boolean;
   acceptsDelivery: boolean;
@@ -60,6 +62,7 @@ export interface CreateBranchRequest {
   freeDeliveryFrom?: number | null;
   deliveryPricePerKm?: number | null;
   averagePrepMinutes?: number;
+  dailyRevenueTarget?: number | null;
   timezone?: string;
   acceptsDelivery?: boolean;
   acceptsPickup?: boolean;

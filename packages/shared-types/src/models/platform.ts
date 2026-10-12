@@ -274,6 +274,22 @@ export interface DashboardStats {
   ordersChangePercent: number | null;
 }
 
+/** One branch's trading in a period, for rankings and comparisons. */
+export interface BranchReportRow {
+  branchId: string;
+  branchName: string;
+  isActive: boolean;
+  /** Net of refunds, DELIVERED orders only — same rule as every report. */
+  revenue: number;
+  ordersCount: number;
+  averageCheck: number;
+  cancelledOrders: number;
+  /** What promotions and promo codes cost this branch. */
+  discountTotal: number;
+  /** The branch's DAILY goal; multiply by the days in the period to compare. */
+  dailyRevenueTarget: number | null;
+}
+
 export interface RevenuePoint {
   /** Bucket start, ISO date or datetime depending on the granularity. */
   at: string;
