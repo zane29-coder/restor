@@ -1,28 +1,43 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
   type RestaurantTable,
+  type TableFloor,
+  type TableReservation,
   type WaiterCall,
   type WaiterCallStatus,
 } from '@restor/shared-types';
 import {
+  createReservationSchema,
   createTableSchema,
+  reservationListQuerySchema,
+  tableLayoutSchema,
+  updateReservationSchema,
   updateTableSchema,
+  uuidSchema,
   waiterCallSchema,
+  type CreateReservationInput,
   type CreateTableInput,
+  type ReservationListQueryInput,
+  type TableLayoutInput,
+  type UpdateReservationInput,
   type UpdateTableInput,
   type WaiterCallInput,
 } from '@restor/validation';
-import { Public, RequirePermissions } from '../../common/decorators';
+import { Public, RequireAnyPermission, RequirePermissions } from '../../common/decorators';
 import { zodBody } from '../../common/pipes/zod-validation.pipe';
+import { ReservationsService } from './reservations.service';
 import { TablesService, type TableSession } from './tables.service';
 
 /** Tables and the waiter-call queue (TZ §20). */
 @ApiTags('tables')
 @Controller()
 export class TablesController {
-  constructor(private readonly tables: TablesService) {}
+  constructor(
+    private readonly tables: TablesService,
+    private readonly reservations: ReservationsService,
+  ) {}
 
   /* ------------------------------- Tables --------------------------- */
 
@@ -30,6 +45,21 @@ export class TablesController {
   @RequirePermissions(Permission.TABLES_VIEW)
   list(@Query('branchId') branchId?: string): Promise<RestaurantTable[]> {
     return this.tables.list(branchId);
+  }
+
+  /** Declared before `tables/:id` routes so "floor" is never read as an id. */
+  @Get('tables/floor')
+  @RequirePermissions(Permission.TABLES_VIEW)
+  @ApiOperation({ summary: 'Live floor: tables with open orders, calls and bookings' })
+  floor(@Query('branchId', zodBody(uuidSchema)) branchId: string): Promise<TableFloor> {
+    return this.tables.floor(branchId);
+  }
+
+  @Put('tables/layout')
+  @RequirePermissions(Permission.TABLES_MANAGE)
+  @ApiOperation({ summary: 'Save floor-plan positions, all or nothing' })
+  saveLayout(@Body(zodBody(tableLayoutSchema)) body: TableLayoutInput): Promise<RestaurantTable[]> {
+    return this.tables.saveLayout(body);
   }
 
   @Post('tables')
@@ -90,6 +120,35 @@ export class TablesController {
   @RequirePermissions(Permission.WAITER_CALLS_HANDLE)
   resolve(@Param('id') id: string): Promise<WaiterCall> {
     return this.tables.resolve(id);
+  }
+
+  /* --------------------------- Reservations ------------------------- */
+
+  @Get('reservations')
+  @RequireAnyPermission(Permission.TABLES_VIEW, Permission.RESERVATIONS_MANAGE)
+  listReservations(
+    @Query(zodBody(reservationListQuerySchema)) query: ReservationListQueryInput,
+  ): Promise<TableReservation[]> {
+    return this.reservations.list(query);
+  }
+
+  @Post('reservations')
+  @RequirePermissions(Permission.RESERVATIONS_MANAGE)
+  @ApiOperation({ summary: 'Book a table; refused when it clashes with another booking' })
+  createReservation(
+    @Body(zodBody(createReservationSchema)) body: CreateReservationInput,
+  ): Promise<TableReservation> {
+    return this.reservations.create(body);
+  }
+
+  @Patch('reservations/:id')
+  @RequirePermissions(Permission.RESERVATIONS_MANAGE)
+  @ApiOperation({ summary: 'Edit a booking or move it on: seated, completed, cancelled, no-show' })
+  updateReservation(
+    @Param('id') id: string,
+    @Body(zodBody(updateReservationSchema)) body: UpdateReservationInput,
+  ): Promise<TableReservation> {
+    return this.reservations.update(id, body);
   }
 }
 

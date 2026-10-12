@@ -342,6 +342,30 @@ export const WaiterCallStatus = {
 } as const;
 export type WaiterCallStatus = (typeof WaiterCallStatus)[keyof typeof WaiterCallStatus];
 
+/** How the floor plan draws a table. */
+export const TableShape = {
+  SQUARE: 'SQUARE',
+  ROUND: 'ROUND',
+  RECT: 'RECT',
+} as const;
+export type TableShape = (typeof TableShape)[keyof typeof TableShape];
+
+/** The floor-plan canvas in plan units, whatever the screen draws it at. */
+export const FLOOR_PLAN = { width: 1000, height: 625 } as const;
+
+/**
+ * BOOKED → SEATED → COMPLETED, or BOOKED → CANCELLED / NO_SHOW. The last
+ * three are final.
+ */
+export const ReservationStatus = {
+  BOOKED: 'BOOKED',
+  SEATED: 'SEATED',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  NO_SHOW: 'NO_SHOW',
+} as const;
+export type ReservationStatus = (typeof ReservationStatus)[keyof typeof ReservationStatus];
+
 /* -------------------------------------------------------------------------- */
 /* Storage (TZ §39)                                                           */
 /* -------------------------------------------------------------------------- */

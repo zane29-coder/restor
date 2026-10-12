@@ -11,7 +11,11 @@ import type {
   PromoCode,
   PromoCodeUsage,
   Promotion,
+  ReservationStatus,
   RestaurantTable,
+  TableFloor,
+  TableReservation,
+  TableShape,
   TelegramBotStatus,
   TelegramConfig,
   TelegramRoute,
@@ -252,6 +256,7 @@ export class TablesResource {
     name?: string | null;
     seats?: number | null;
     zone?: string | null;
+    shape?: TableShape;
   }): Promise<RestaurantTable> {
     return this.http.post<RestaurantTable>('tables', payload);
   }
@@ -264,9 +269,55 @@ export class TablesResource {
       seats?: number | null;
       zone?: string | null;
       isActive?: boolean;
+      shape?: TableShape;
     },
   ): Promise<RestaurantTable> {
     return this.http.patch<RestaurantTable>(`tables/${id}`, payload);
+  }
+
+  /** The live floor of one branch: tables with open orders, calls and bookings. */
+  floor(branchId: string): Promise<TableFloor> {
+    return this.http.get<TableFloor>('tables/floor', { query: { branchId } });
+  }
+
+  /** Saves floor-plan positions in one go. */
+  saveLayout(items: Array<{ id: string; x: number; y: number; shape?: TableShape }>): Promise<RestaurantTable[]> {
+    return this.http.put<RestaurantTable[]>('tables/layout', { items });
+  }
+
+  /** Bookings starting inside `[from, to)`; at most 31 days. */
+  listReservations(query: { branchId?: string; from: string; to: string; tableId?: string }): Promise<TableReservation[]> {
+    return this.http.get<TableReservation[]>('reservations', { query });
+  }
+
+  createReservation(payload: {
+    branchId: string;
+    tableId?: string | null;
+    guestName: string;
+    guestPhone: string;
+    partySize: number;
+    startsAt: string;
+    durationMinutes?: number;
+    note?: string | null;
+  }): Promise<TableReservation> {
+    return this.http.post<TableReservation>('reservations', payload);
+  }
+
+  /** Edits a booking, or moves it on (seated, completed, cancelled, no-show). */
+  updateReservation(
+    id: string,
+    payload: {
+      tableId?: string | null;
+      guestName?: string;
+      guestPhone?: string;
+      partySize?: number;
+      startsAt?: string;
+      durationMinutes?: number;
+      note?: string | null;
+      status?: ReservationStatus;
+    },
+  ): Promise<TableReservation> {
+    return this.http.patch<TableReservation>(`reservations/${id}`, payload);
   }
 
   remove(id: string): Promise<void> {

@@ -139,6 +139,9 @@ export const Permission = {
   TABLES_VIEW: 'tables.view',
   TABLES_MANAGE: 'tables.manage',
   WAITER_CALLS_HANDLE: 'waiter_calls.handle',
+  /** Taking and updating bookings — separate from `tables.manage`, which
+      can re-issue QR codes and should not come with answering the phone. */
+  RESERVATIONS_MANAGE: 'reservations.manage',
 
   // --- Inventory (TZ §29-§31) ---
   INVENTORY_VIEW: 'inventory.view',
@@ -293,6 +296,7 @@ export const PERMISSION_GROUPS: Readonly<Record<string, readonly Permission[]>> 
     Permission.TABLES_VIEW,
     Permission.TABLES_MANAGE,
     Permission.WAITER_CALLS_HANDLE,
+    Permission.RESERVATIONS_MANAGE,
   ],
   Inventory: [Permission.INVENTORY_VIEW, Permission.INVENTORY_MANAGE],
   Telegram: [Permission.TELEGRAM_VIEW, Permission.TELEGRAM_ROUTES_MANAGE],
@@ -412,6 +416,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<
     Permission.TABLES_VIEW,
     Permission.TABLES_MANAGE,
     Permission.WAITER_CALLS_HANDLE,
+    Permission.RESERVATIONS_MANAGE,
     Permission.PROMOTIONS_VIEW,
     Permission.PROMO_CODES_VIEW,
     Permission.REPORTS_VIEW,
@@ -440,6 +445,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<
     Permission.CASHBOX_TRANSACTION,
     Permission.CUSTOMERS_VIEW,
     Permission.TABLES_VIEW,
+    // The till is where a walk-in asks for a table tonight.
+    Permission.RESERVATIONS_MANAGE,
   ],
 
   /** Kitchen display only — cannot see money. */
@@ -502,6 +509,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Readonly<
     Permission.COURIERS_VIEW,
     Permission.COURIERS_TRACK,
     Permission.PROMO_CODES_VIEW,
+    // Bookings mostly arrive as phone calls, which is the call centre.
+    Permission.RESERVATIONS_MANAGE,
   ],
 
   MARKETING: [

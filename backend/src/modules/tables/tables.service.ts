@@ -4,16 +4,31 @@ import { randomBytes } from 'node:crypto';
 import {
   DomainEvent,
   OrderStatus,
+  OrderType,
+  ReservationStatus,
+  TableShape,
   WaiterCallStatus,
   WaiterCallType,
+  type FloorTable,
   type RestaurantTable,
+  type TableFloor,
   type WaiterCall,
 } from '@restor/shared-types';
+import { startOfDayInZone } from '@restor/shared-utils';
+import type { TableLayoutInput } from '@restor/validation';
 import { AppException } from '../../common/errors/app-exception';
 import { getContext, runUnscoped } from '../../common/context/request-context';
+import { BranchScope } from '../../common/guards/branch-scope.guard';
 import { AppConfig } from '../../config/configuration';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
+
+const OPEN_ORDER = { notIn: [OrderStatus.DELIVERED, OrderStatus.CANCELLED] };
+
+/** How far ahead a booking starts showing its table as reserved. */
+const RESERVED_AHEAD_MS = 3 * 60 * 60_000;
+/** How long a late party keeps its table before the floor shows it free. */
+const LATE_GRACE_MS = 30 * 60_000;
 
 /** What a guest sees after scanning, before they have ordered anything. */
 export interface TableSession {
@@ -51,6 +66,7 @@ export class TablesService {
     private readonly audit: AuditService,
     private readonly events: EventEmitter2,
     private readonly config: AppConfig,
+    private readonly branchScope: BranchScope,
   ) {}
 
   /* ------------------------------------------------------------------ */
@@ -59,11 +75,178 @@ export class TablesService {
 
   async list(branchId?: string): Promise<RestaurantTable[]> {
     const rows = await this.prisma.db.restaurantTable.findMany({
-      where: { ...(branchId ? { branchId } : {}), deletedAt: null },
+      where: { branchId: this.branchScope.filterFor(branchId), deletedAt: null },
       orderBy: [{ zone: 'asc' }, { number: 'asc' }],
     });
 
     return rows.map((row) => this.toTable(row));
+  }
+
+  /**
+   * The live floor of one branch: every table with what is happening at it.
+   *
+   * One request rather than the client stitching orders, calls and bookings
+   * together, because the board refreshes every few seconds on a tablet at
+   * the host stand.
+   */
+  async floor(branchId: string): Promise<TableFloor> {
+    this.branchScope.assertCanAccess(branchId);
+    const branch = await this.prisma.db.branch.findFirst({
+      where: { id: branchId },
+      select: { timezone: true },
+    });
+    if (!branch) throw AppException.notFound('Branch');
+
+    const now = new Date();
+    const dayStart = startOfDayInZone(now, branch.timezone);
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+
+    const [tables, orders, calls, reservations, completed, bookedToday] = await Promise.all([
+      this.prisma.db.restaurantTable.findMany({
+        where: { branchId, deletedAt: null },
+        orderBy: [{ zone: 'asc' }, { number: 'asc' }],
+      }),
+      this.prisma.db.order.findMany({
+        where: { branchId, tableId: { not: null }, status: OPEN_ORDER },
+        select: {
+          id: true,
+          tableId: true,
+          displayNumber: true,
+          status: true,
+          total: true,
+          createdAt: true,
+          createdBy: { select: { fullName: true } },
+          _count: { select: { items: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.db.waiterCall.findMany({
+        where: { branchId, status: { in: [WaiterCallStatus.PENDING, WaiterCallStatus.ACKNOWLEDGED] } },
+        select: { id: true, tableId: true, type: true, status: true, createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.db.tableReservation.findMany({
+        where: {
+          branchId,
+          tableId: { not: null },
+          OR: [
+            { status: ReservationStatus.SEATED },
+            {
+              status: ReservationStatus.BOOKED,
+              startsAt: {
+                gte: new Date(now.getTime() - LATE_GRACE_MS),
+                lte: new Date(now.getTime() + RESERVED_AHEAD_MS),
+              },
+            },
+          ],
+        },
+        orderBy: { startsAt: 'asc' },
+      }),
+      this.prisma.db.order.aggregate({
+        where: {
+          branchId,
+          type: OrderType.DINE_IN,
+          status: OrderStatus.DELIVERED,
+          createdAt: { gte: dayStart, lt: dayEnd },
+        },
+        _sum: { total: true, refundedTotal: true },
+        _count: true,
+      }),
+      this.prisma.db.tableReservation.count({
+        where: {
+          branchId,
+          startsAt: { gte: dayStart, lt: dayEnd },
+          status: { notIn: [ReservationStatus.CANCELLED] },
+        },
+      }),
+    ]);
+
+    const floorTables: FloorTable[] = tables.map((row) => {
+      const order = orders.find((o) => o.tableId === row.id);
+      // Guests sitting on a booking outrank the next one coming.
+      const held = reservations.filter((r) => r.tableId === row.id);
+      const reservation = held.find((r) => r.status === ReservationStatus.SEATED) ?? held[0];
+      return {
+        ...this.toTable(row),
+        openOrder: order
+          ? {
+              id: order.id,
+              displayNumber: order.displayNumber,
+              status: order.status as OrderStatus,
+              total: order.total,
+              itemCount: order._count.items,
+              createdAt: order.createdAt.toISOString(),
+              createdByName: order.createdBy?.fullName ?? null,
+            }
+          : null,
+        calls: calls
+          .filter((c) => c.tableId === row.id)
+          .map((c) => ({
+            id: c.id,
+            type: c.type as WaiterCallType,
+            status: c.status as WaiterCallStatus,
+            createdAt: c.createdAt.toISOString(),
+          })),
+        reservation: reservation
+          ? {
+              id: reservation.id,
+              guestName: reservation.guestName,
+              guestPhone: reservation.guestPhone,
+              partySize: reservation.partySize,
+              startsAt: reservation.startsAt.toISOString(),
+              status: reservation.status as ReservationStatus,
+              note: reservation.note,
+            }
+          : null,
+      };
+    });
+
+    return {
+      branchId,
+      tables: floorTables,
+      today: {
+        orders: completed._count,
+        revenue: (completed._sum.total ?? 0) - (completed._sum.refundedTotal ?? 0),
+        reservations: bookedToday,
+      },
+    };
+  }
+
+  /**
+   * Saves table positions from the plan editor, all or nothing.
+   *
+   * Every id is checked against the caller's tenant (the scoped query) and
+   * branch before anything is written, so a crafted request cannot move
+   * another branch's tables.
+   */
+  async saveLayout(input: TableLayoutInput): Promise<RestaurantTable[]> {
+    const ids = [...new Set(input.items.map((item) => item.id))];
+    const rows = await this.prisma.db.restaurantTable.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, branchId: true },
+    });
+    if (rows.length !== ids.length) throw AppException.notFound('Table');
+    for (const branchId of new Set(rows.map((row) => row.branchId))) {
+      this.branchScope.assertCanAccess(branchId);
+    }
+
+    const updated = await this.prisma.db.$transaction(
+      input.items.map((item) =>
+        this.prisma.db.restaurantTable.update({
+          where: { id: item.id },
+          data: { layoutX: item.x, layoutY: item.y, ...(item.shape ? { shape: item.shape } : {}) },
+        }),
+      ),
+    );
+
+    await this.audit.record({
+      action: 'TABLE_LAYOUT_SAVED',
+      entity: 'RestaurantTable',
+      entityId: rows[0]!.id,
+      newValue: { branchIds: [...new Set(rows.map((row) => row.branchId))], tables: ids.length },
+    });
+
+    return updated.map((row) => this.toTable(row));
   }
 
   async create(input: {
@@ -72,7 +255,9 @@ export class TablesService {
     name?: string | null;
     seats?: number | null;
     zone?: string | null;
+    shape?: TableShape;
   }): Promise<RestaurantTable> {
+    this.branchScope.assertCanAccess(input.branchId);
     const tenantId = this.requireTenant();
 
     const duplicate = await this.prisma.db.restaurantTable.findFirst({
@@ -91,6 +276,7 @@ export class TablesService {
         name: input.name ?? null,
         seats: input.seats ?? null,
         zone: input.zone ?? null,
+        shape: input.shape ?? TableShape.SQUARE,
         qrToken: qrToken(),
       },
     });
@@ -113,9 +299,23 @@ export class TablesService {
       seats?: number | null;
       zone?: string | null;
       isActive?: boolean;
+      shape?: TableShape;
     },
   ): Promise<RestaurantTable> {
-    await this.require(id);
+    const current = await this.require(id);
+
+    if (input.number !== undefined && input.number !== current.number) {
+      const duplicate = await this.prisma.db.restaurantTable.findFirst({
+        where: { branchId: current.branchId, number: input.number, deletedAt: null, id: { not: id } },
+        select: { id: true },
+      });
+      if (duplicate) throw AppException.conflict(`${input.number}-stol allaqachon mavjud`);
+    }
+
+    // Moving a table to another zone puts it on another plan, where its old
+    // coordinates mean nothing; it is laid out afresh there.
+    const zone = input.zone !== undefined ? input.zone ?? null : current.zone;
+    const leavesZone = zone !== current.zone;
 
     const row = await this.prisma.db.restaurantTable.update({
       where: { id },
@@ -123,8 +323,10 @@ export class TablesService {
         ...(input.number !== undefined ? { number: input.number } : {}),
         ...(input.name !== undefined ? { name: input.name ?? null } : {}),
         ...(input.seats !== undefined ? { seats: input.seats ?? null } : {}),
-        ...(input.zone !== undefined ? { zone: input.zone ?? null } : {}),
+        ...(input.zone !== undefined ? { zone } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+        ...(input.shape !== undefined ? { shape: input.shape } : {}),
+        ...(leavesZone ? { layoutX: null, layoutY: null } : {}),
       },
     });
 
@@ -309,7 +511,7 @@ export class TablesService {
   }): Promise<WaiterCall[]> {
     const rows = await this.prisma.db.waiterCall.findMany({
       where: {
-        ...(query.branchId ? { branchId: query.branchId } : {}),
+        branchId: this.branchScope.filterFor(query.branchId),
         // Default to what still needs a person, not the whole history.
         status: query.status ?? {
           in: [WaiterCallStatus.PENDING, WaiterCallStatus.ACKNOWLEDGED],
@@ -334,6 +536,7 @@ export class TablesService {
   private async advance(id: string, status: WaiterCallStatus): Promise<WaiterCall> {
     const call = await this.prisma.db.waiterCall.findFirst({ where: { id } });
     if (!call) throw AppException.notFound('WaiterCall');
+    this.branchScope.assertCanAccess(call.branchId);
 
     const row = await this.prisma.db.waiterCall.update({
       where: { id },
@@ -361,6 +564,7 @@ export class TablesService {
       where: { id, deletedAt: null },
     });
     if (!row) throw AppException.notFound('Table');
+    this.branchScope.assertCanAccess(row.branchId);
     return row;
   }
 
@@ -374,6 +578,9 @@ export class TablesService {
     zone: string | null;
     qrToken: string;
     isActive: boolean;
+    layoutX: number | null;
+    layoutY: number | null;
+    shape: string;
     createdAt: Date;
     updatedAt: Date;
   }): RestaurantTable {
@@ -390,6 +597,9 @@ export class TablesService {
       // entry point exists, and a printed code cannot point at a stale path.
       qrUrl: `${this.config.customerWebUrl.replace(/\/+$/, '')}/t/${row.qrToken}`,
       isActive: row.isActive,
+      layoutX: row.layoutX,
+      layoutY: row.layoutY,
+      shape: row.shape as TableShape,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };

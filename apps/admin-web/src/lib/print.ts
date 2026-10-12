@@ -1,9 +1,60 @@
-import type { Order } from '@restor/shared-types';
+import type { Order, RestaurantTable } from '@restor/shared-types';
 import { dateTimeOf, som } from './format';
 import { ORDER_TYPE_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from './labels';
 
 const escape = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+/**
+ * The QR image for a table.
+ *
+ * From a public generator rather than a bundled encoder: it is printed once
+ * per table and never rendered at scale, so a dependency would cost more than
+ * it returns. The URL it encodes is built server-side, so a printed code
+ * cannot point at a stale path.
+ */
+export function qrImageUrl(data: string, size = 240): string {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(data)}`;
+}
+
+/**
+ * Prints table tents: one card per table with its code, number and zone, on
+ * A4. "Save as PDF" in the print dialog is the PDF the floor manager asks for.
+ */
+export function printQrSheet(tables: RestaurantTable[], restaurantName: string, branchName: string) {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) return false;
+
+  const cards = tables
+    .map(
+      (t) => `<div class="card">
+  <div class="brand">${escape(restaurantName)}</div>
+  <img src="${qrImageUrl(t.qrUrl, 360)}" alt="">
+  <div class="num">${escape(t.number)}-stol</div>
+  <div class="zone">${escape([t.zone, t.name].filter(Boolean).join(' · '))}</div>
+  <div class="hint">Menyuni koʻrish va buyurtma berish uchun skanerlang</div>
+</div>`,
+    )
+    .join('');
+
+  win.document.write(`<!doctype html><html lang="uz"><head><meta charset="utf-8"><title>QR kodlar — ${escape(branchName)}</title>
+<style>
+  @page { size: A4; margin: 10mm; }
+  body { font: 13px/1.35 system-ui, sans-serif; color: #111; margin: 0; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8mm; }
+  .card { border: 1px dashed #999; border-radius: 4mm; padding: 5mm; text-align: center; break-inside: avoid; }
+  .brand { font-weight: 700; letter-spacing: .5px; margin-bottom: 3mm; }
+  img { width: 100%; max-width: 50mm; aspect-ratio: 1; }
+  .num { font-size: 20px; font-weight: 800; margin-top: 2mm; }
+  .zone { color: #555; min-height: 1.3em; }
+  .hint { font-size: 10px; color: #777; margin-top: 2mm; }
+</style></head><body>
+  <div class="grid">${cards}</div>
+  <script>window.onload = function () { window.print(); };</script>
+</body></html>`);
+  win.document.close();
+  return true;
+}
 
 /**
  * Prints a kitchen/customer receipt for one order.

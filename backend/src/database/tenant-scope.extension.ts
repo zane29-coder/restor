@@ -58,6 +58,7 @@ const STRICT_TENANT_MODELS = new Set<string>([
   'TelegramConfig',
   'RestaurantTable',
   'WaiterCall',
+  'TableReservation',
   'KitchenStation',
   'AuditLog',
   'Notification',

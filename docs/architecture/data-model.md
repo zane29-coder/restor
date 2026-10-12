@@ -48,7 +48,7 @@ PostgreSQL 16 + Prisma 6. Schema:
 
 **Telegram** — `telegram_configs` · `telegram_routes`
 
-**Floor** — `tables` · `waiter_calls` · `kitchen_stations` ·
+**Floor** — `tables` · `waiter_calls` · `table_reservations` · `kitchen_stations` ·
 `kitchen_station_categories` · `kitchen_tickets` · `kitchen_ticket_items`
 
 **Platform services** — `audit_logs` · `notifications` · `files`

@@ -242,6 +242,14 @@ enum WaiterCallStatus {
   CANCELLED
 }
 
+enum ReservationStatus {
+  BOOKED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
 /// How a stock item is measured. Recipe quantities use the item's own unit.
 enum StockUnit {
   KG
@@ -389,6 +397,7 @@ model Tenant {
   deliveryZones    DeliveryZone[]
   tables          RestaurantTable[]
   waiterCalls     WaiterCall[]
+  reservations    TableReservation[]
   kitchenStations KitchenStation[]
   auditLogs       AuditLog[]
   notifications   Notification[]
@@ -504,6 +513,7 @@ model User {
   stockMovements      StockMovement[]
   handoversConfirmed  CashHandover[]        @relation("HandoverCashier")
   waiterCallsHandled  WaiterCall[]
+  reservationsTaken   TableReservation[]
   auditLogs           AuditLog[]
   filesUploaded       FileAsset[]
   campaignsCreated    MarketingCampaign[]
@@ -694,6 +704,7 @@ model Branch {
   stockItems       StockItem[]
   tables           RestaurantTable[]
   waiterCalls      WaiterCall[]
+  reservations     TableReservation[]
   kitchenStations  KitchenStation[]
   deliveryZones    DeliveryZone[]
 
@@ -2137,6 +2148,13 @@ model RestaurantTable {
   qrToken  String  @unique @db.VarChar(48)
   isActive Boolean @default(true)
 
+  /// Position on the zone's floor plan, in plan units (1000 × 625 canvas),
+  /// measured to the table's centre. Null until someone places it.
+  layoutX Int?
+  layoutY Int?
+  /// SQUARE | ROUND | RECT — how the plan draws it.
+  shape   String @default("SQUARE") @db.VarChar(10)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -2144,8 +2162,9 @@ model RestaurantTable {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  orders      Order[]
-  waiterCalls WaiterCall[]
+  orders       Order[]
+  waiterCalls  WaiterCall[]
+  reservations TableReservation[]
 
   @@unique([branchId, number])
   @@index([tenantId, branchId])
@@ -2175,6 +2194,41 @@ model WaiterCall {
 
   @@index([branchId, status, createdAt])
   @@map("waiter_calls")
+}
+
+/// A booked table. Guest details are snapshotted rather than linked to a
+/// customer: most bookings arrive by phone from someone who has never ordered.
+model TableReservation {
+  id       String  @id @default(uuid()) @db.Uuid
+  tenantId String  @db.Uuid
+  branchId String  @db.Uuid
+  /// Null while the host has not picked a table yet.
+  tableId  String? @db.Uuid
+
+  guestName  String @db.VarChar(120)
+  guestPhone String @db.VarChar(20)
+  partySize  Int
+
+  startsAt        DateTime
+  durationMinutes Int               @default(120)
+  status          ReservationStatus @default(BOOKED)
+  note            String?           @db.VarChar(500)
+
+  seatedAt    DateTime?
+  closedAt    DateTime?
+  createdByUserId String? @db.Uuid
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  table     RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  createdBy User?            @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, branchId, startsAt])
+  @@index([tableId, startsAt])
+  @@map("table_reservations")
 }
 
 // =============================================================================

@@ -4,9 +4,12 @@ import type {
   NotificationChannel,
   NotificationStatus,
   OrderSource,
+  OrderStatus,
   OrderType,
   PaymentMethod,
+  ReservationStatus,
   StorageProvider,
+  TableShape,
   TelegramEvent,
   WaiterCallStatus,
   WaiterCallType,
@@ -165,6 +168,10 @@ export interface RestaurantTable extends BaseEntity {
   /** Fully-qualified URL a guest lands on after scanning. */
   qrUrl: string;
   isActive: boolean;
+  /** Centre on the zone's plan, in units of a 1000 × 625 canvas; null until placed. */
+  layoutX: number | null;
+  layoutY: number | null;
+  shape: TableShape;
 }
 
 export interface WaiterCall extends BaseEntity {
@@ -177,6 +184,47 @@ export interface WaiterCall extends BaseEntity {
   acknowledgedByUserId: string | null;
   acknowledgedAt: string | null;
   resolvedAt: string | null;
+}
+
+export interface TableReservation extends BaseEntity {
+  branchId: string;
+  tableId: string | null;
+  tableNumber: string | null;
+  guestName: string;
+  guestPhone: string;
+  partySize: number;
+  startsAt: string;
+  durationMinutes: number;
+  status: ReservationStatus;
+  note: string | null;
+  seatedAt: string | null;
+  closedAt: string | null;
+  createdByName: string | null;
+}
+
+/** One table as the live floor shows it. */
+export interface FloorTable extends RestaurantTable {
+  /** The dine-in order currently open on it, if any. */
+  openOrder: {
+    id: string;
+    displayNumber: string;
+    status: OrderStatus;
+    total: number;
+    itemCount: number;
+    createdAt: string;
+    createdByName: string | null;
+  } | null;
+  /** Waiter calls still waiting for, or being walked to by, staff. */
+  calls: Array<{ id: string; type: WaiterCallType; status: WaiterCallStatus; createdAt: string }>;
+  /** A guest sitting on a reservation, or the next booking within three hours. */
+  reservation: Pick<TableReservation, 'id' | 'guestName' | 'guestPhone' | 'partySize' | 'startsAt' | 'status' | 'note'> | null;
+}
+
+export interface TableFloor {
+  branchId: string;
+  tables: FloorTable[];
+  /** Today's completed dine-in orders at this branch, in the branch's day. */
+  today: { orders: number; revenue: number; reservations: number };
 }
 
 /* -------------------------------------------------------------------------- */

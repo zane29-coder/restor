@@ -65,6 +65,7 @@ const SPECIFIC: Partial<Record<Permission, string>> = {
   [Permission.LOYALTY_MANAGE]: 'Sodiqlik dasturini sozlash',
   [Permission.MARKETING_BROADCAST]: 'Mijozlarga xabar yuborish',
   [Permission.WAITER_CALLS_HANDLE]: 'Ofitsiant chaqiruvlari',
+  [Permission.RESERVATIONS_MANAGE]: 'Stol bronlarini qabul qilish',
   [Permission.TELEGRAM_ROUTES_MANAGE]: 'Guruh/hodisa yoʻnalishlari',
   [Permission.FINANCE_VIEW]: 'Moliya (kassa kamomadlari)',
   [Permission.FINANCE_MANAGE]: 'Moliyani boshqarish',

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ReservationsService } from './reservations.service';
 import { TableGuestController, TablesController } from './tables.controller';
 import { TablesService } from './tables.service';
 
@@ -14,7 +15,7 @@ import { TablesService } from './tables.service';
  */
 @Module({
   controllers: [TablesController, TableGuestController],
-  providers: [TablesService],
+  providers: [TablesService, ReservationsService],
   exports: [TablesService],
 })
 export class TablesModule {}
