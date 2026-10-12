@@ -10,10 +10,14 @@ import {
   addMoney,
   calculateDiscount,
   distanceMeters,
+  isPointInPolygon,
   isWithinRadius,
   multiplyMoney,
   normalizeCode,
   subtractMoney,
+  toLatLngRing,
+  type Coordinates,
+  type LatLngRing,
 } from '@restor/shared-utils';
 import { AppException } from '../../common/errors/app-exception';
 import { PrismaService } from '../../database/prisma.service';
@@ -63,6 +67,49 @@ export interface PricingResult {
   promoCodeId: string | null;
   warnings: string[];
   estimatedPrepMinutes: number;
+  /**
+   * The delivery minimum that applies to THIS address: the zone's when the
+   * address fell in a zone that sets one, the branch's otherwise.
+   */
+  minOrderAmount: number;
+  /** The drawn zone that priced the delivery, when the branch uses zones. */
+  deliveryZone: { id: string; name: string } | null;
+}
+
+/** A drawn delivery zone, as pricing reads it. */
+export interface PricingZone {
+  id: string;
+  name: string;
+  polygon: LatLngRing;
+  deliveryPrice: number;
+  minOrderAmount: number | null;
+  freeDeliveryFrom: number | null;
+  sortOrder: number;
+}
+
+/**
+ * The zone that contains `point`.
+ *
+ * Where zones overlap the lowest `sortOrder` wins, so an owner can draw a
+ * cheap inner zone on top of a wider outer one and the inner tariff applies
+ * near the branch. `null` means the point is outside every zone.
+ */
+export function zoneFor(point: Coordinates, zones: readonly PricingZone[]): PricingZone | null {
+  const ordered = [...zones].sort((a, b) => a.sortOrder - b.sortOrder);
+  return ordered.find((zone) => isPointInPolygon(point, zone.polygon)) ?? null;
+}
+
+/**
+ * What a delivery costs inside a zone: its flat price, or nothing once the
+ * discounted goods total reaches the zone's free threshold. Same threshold
+ * rule as the branch's `freeDeliveryFrom`, measured on what the customer pays.
+ */
+export function zoneFeeFor(
+  zone: Pick<PricingZone, 'deliveryPrice' | 'freeDeliveryFrom'>,
+  goodsTotal: number,
+): number {
+  if (zone.freeDeliveryFrom != null && goodsTotal >= zone.freeDeliveryFrom) return 0;
+  return zone.deliveryPrice;
 }
 
 /** The delivery-charge rules a branch can configure (TZ §11). */
@@ -148,10 +195,23 @@ export class OrderPricingService {
     const items = await this.priceItems(request);
     const subtotal = addMoney(...items.map((item) => item.total));
 
+    // Drawn zones, when the branch has any, replace the radius as its
+    // delivery area.
+    const zones =
+      request.type === OrderType.DELIVERY
+        ? (
+            await this.prisma.db.deliveryZone.findMany({
+              where: { branchId: branch.id, isActive: true },
+              orderBy: { sortOrder: 'asc' },
+            })
+          ).map((row) => ({ ...row, polygon: toLatLngRing(row.polygon) }))
+        : [];
+
     // Deliverability is settled before any discount work: an address outside
-    // the radius is refused, not priced, and there is no point evaluating
+    // the area is refused, not priced, and there is no point evaluating
     // promotions for an order that cannot be delivered.
-    const distanceM = this.assertDeliverable(request, branch, warnings);
+    const distanceM = this.assertDeliverable(request, branch, warnings, zones.length > 0);
+    const zone = this.resolveZone(request, zones, warnings);
 
     // Promotions first, then the promo code on top of the already-reduced
     // subtotal — otherwise a 20% promotion plus a 20% code could exceed 40%.
@@ -173,13 +233,15 @@ export class OrderPricingService {
     // pays for the goods, not the pre-discount subtotal: a code that halves a
     // basket should not still earn the reward for a large order.
     const goodsTotal = subtractMoney(subtotal, discountTotal);
-    const deliveryFee = this.deliveryFeeFor(request, branch, distanceM, goodsTotal);
+    const deliveryFee =
+      request.type === OrderType.DELIVERY && zone
+        ? zoneFeeFor(zone, goodsTotal)
+        : this.deliveryFeeFor(request, branch, distanceM, goodsTotal);
     const effectiveDeliveryFee = promo.freeDelivery ? 0 : deliveryFee;
+    const minOrderAmount = zone?.minOrderAmount ?? branch.minOrderAmount;
 
-    if (subtotal < branch.minOrderAmount && request.type === OrderType.DELIVERY) {
-      warnings.push(
-        `The minimum order for delivery at this branch is ${branch.minOrderAmount}`,
-      );
+    if (subtotal < minOrderAmount && request.type === OrderType.DELIVERY) {
+      warnings.push(`The minimum order for delivery at this address is ${minOrderAmount}`);
     }
 
     const total = addMoney(subtractMoney(subtotal, discountTotal), effectiveDeliveryFee);
@@ -199,7 +261,43 @@ export class OrderPricingService {
         (max, item) => Math.max(max, item.preparationTime),
         branch.averagePrepMinutes,
       ),
+      minOrderAmount,
+      deliveryZone: zone ? { id: zone.id, name: zone.name } : null,
     };
+  }
+
+  /**
+   * The zone this delivery falls in, when the branch delivers by zones.
+   *
+   * `null` both when the branch has no zones and when the address has no
+   * coordinates — the latter is accepted at the branch's flat price with a
+   * warning, exactly as the radius check treats a phone order with no pin.
+   * An address with coordinates outside every zone is refused.
+   */
+  private resolveZone(
+    request: PricingRequest,
+    zones: PricingZone[],
+    warnings: string[],
+  ): PricingZone | null {
+    if (request.type !== OrderType.DELIVERY || zones.length === 0) return null;
+
+    if (request.deliveryLatitude == null || request.deliveryLongitude == null) {
+      warnings.push('Delivery address has no coordinates; the delivery zone was not verified');
+      return null;
+    }
+
+    const zone = zoneFor(
+      { latitude: request.deliveryLatitude, longitude: request.deliveryLongitude },
+      zones,
+    );
+    if (!zone) {
+      throw new AppException(
+        ErrorCode.OUTSIDE_DELIVERY_RADIUS,
+        'Bu manzil filialning yetkazib berish hududidan tashqarida',
+        422,
+      );
+    }
+    return zone;
   }
 
   /** The shape the preview endpoint returns to the cart screen. */
@@ -376,6 +474,8 @@ export class OrderPricingService {
       acceptsDelivery: boolean;
     },
     warnings: string[],
+    /** Drawn zones define the area instead; the radius then stands down. */
+    usesZones = false,
   ): number | null {
     if (request.type !== OrderType.DELIVERY) return null;
 
@@ -387,7 +487,7 @@ export class OrderPricingService {
     const hasOrigin = branch.latitude != null && branch.longitude != null;
 
     if (!hasTarget || !hasOrigin) {
-      if (branch.deliveryRadiusM != null) {
+      if (branch.deliveryRadiusM != null && !usesZones) {
         // Without coordinates the radius cannot be checked; the order is still
         // accepted, but the dispatcher is told to confirm.
         warnings.push('Delivery address has no coordinates; the radius was not verified');
@@ -400,7 +500,7 @@ export class OrderPricingService {
       { latitude: request.deliveryLatitude!, longitude: request.deliveryLongitude! },
     );
 
-    if (!isWithinRadius(
+    if (!usesZones && !isWithinRadius(
       { latitude: branch.latitude!, longitude: branch.longitude! },
       { latitude: request.deliveryLatitude!, longitude: request.deliveryLongitude! },
       branch.deliveryRadiusM,

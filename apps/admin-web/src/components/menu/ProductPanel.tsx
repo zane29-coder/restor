@@ -23,6 +23,7 @@ import { useAuth } from '../../lib/auth';
 import { dayTimeOf, percent, som } from '../../lib/format';
 import { SidePanel, Switch } from '../ui';
 import { digits } from './CatalogManagers';
+import { availabilityAt } from '../../lib/catalog';
 
 const PORTION_LABELS: Record<PortionUnit, string> = { G: 'gr', ML: 'ml', PCS: 'dona' };
 
@@ -165,15 +166,18 @@ export function ProductPanel({
   });
 
   const availability = useMutation({
-    mutationFn: ({ branchId, isStopListed }: { branchId: string; isStopListed: boolean }) =>
-      api.catalog.setAvailability(product!.id, { branchId, isStopListed }),
+    mutationFn: (payload: { branchId: string; isStopListed?: boolean; isAvailable?: boolean }) =>
+      api.catalog.setAvailability(product!.id, payload),
     onSuccess: invalidate,
     onError: (caught) => fail(caught, 'Stop-list oʻzgarmadi'),
   });
 
-  const stoppedAt = (branchId: string) =>
-    product?.branchSettings?.find((s) => s.branchId === branchId)?.isStopListed ?? false;
-  const scopeBranches = currentBranchId ? branches.filter((b) => b.id === currentBranchId) : branches;
+  const stateAt = (branchId: string) => (product ? availabilityAt(product, branchId) : 'off');
+  const stoppedAt = (branchId: string) => stateAt(branchId) === 'stopped';
+  // Stop-listing only means something where the dish is sold at all.
+  const scopeBranches = (currentBranchId ? branches.filter((b) => b.id === currentBranchId) : branches).filter(
+    (b) => stateAt(b.id) !== 'off',
+  );
   const allStopped = scopeBranches.length > 0 && scopeBranches.every((b) => stoppedAt(b.id));
 
   const setAll = async (isStopListed: boolean) => {
@@ -356,24 +360,49 @@ export function ProductPanel({
           </div>
           <div className="stack" style={{ gap: 8 }}>
             {branches.map((branch) => {
-              const stopped = stoppedAt(branch.id);
+              const state = stateAt(branch.id);
               const setting = product.branchSettings?.find((s) => s.branchId === branch.id);
-              const unavailable = setting ? !setting.isAvailable : false;
               return (
                 <div key={branch.id} className="soft-box row" style={{ flexWrap: 'nowrap', padding: '10px 12px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="cell-main">{branch.name}</div>
-                    <div className="cell-sub" style={{ color: stopped ? 'var(--danger-ink)' : unavailable ? undefined : 'var(--success-ink)' }}>
-                      {unavailable ? 'Bu filialda sotilmaydi' : stopped ? 'Stop-list — tugagan' : 'Mavjud'}
+                    <div
+                      className="cell-sub"
+                      style={{ color: state === 'stopped' ? 'var(--danger-ink)' : state === 'selling' ? 'var(--success-ink)' : undefined }}
+                    >
+                      {state === 'off' ? 'Bu filialda sotilmaydi' : state === 'stopped' ? 'Stop-list — tugagan' : 'Sotuvda'}
                       {setting?.priceOverride != null && ` · narx ${som(setting.priceOverride)}`}
                     </div>
                   </div>
-                  <Switch
-                    checked={!stopped && !unavailable}
-                    disabled={!canStop || availability.isPending || unavailable}
-                    onChange={(available) => availability.mutate({ branchId: branch.id, isStopListed: !available })}
-                    title={stopped ? 'Stop-listdan chiqarish' : 'Stop-listga kiritish'}
-                  />
+                  {canStop &&
+                    (state === 'off' ? (
+                      <button
+                        type="button"
+                        className="btn btn--sm btn--soft"
+                        disabled={availability.isPending}
+                        onClick={() => availability.mutate({ branchId: branch.id, isAvailable: true, isStopListed: false })}
+                      >
+                        Sotuvga qoʻshish
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn--sm btn--ghost"
+                          title="Bu filial menyusidan butunlay olib tashlash"
+                          disabled={availability.isPending}
+                          onClick={() => availability.mutate({ branchId: branch.id, isAvailable: false })}
+                        >
+                          Olib tashlash
+                        </button>
+                        <Switch
+                          checked={state === 'selling'}
+                          disabled={availability.isPending}
+                          onChange={(available) => availability.mutate({ branchId: branch.id, isStopListed: !available })}
+                          title={state === 'stopped' ? 'Stop-listdan chiqarish' : 'Stop-listga kiritish'}
+                        />
+                      </>
+                    ))}
                 </div>
               );
             })}

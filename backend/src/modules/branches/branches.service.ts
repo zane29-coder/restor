@@ -4,6 +4,7 @@ import {
   ErrorCode,
   type Branch,
   type BranchSummary,
+  type DeliveryZone,
   type Paginated,
   type Weekday,
 } from '@restor/shared-types';
@@ -13,9 +14,14 @@ import {
   isOpenAt,
   normalizePagination,
   paginated,
+  toLatLngRing as ringFrom,
   uniqueSlug,
 } from '@restor/shared-utils';
-import type { CreateBranchInput, UpdateBranchInput } from '@restor/validation';
+import type {
+  CreateBranchInput,
+  DeliveryZoneInput,
+  UpdateBranchInput,
+} from '@restor/validation';
 import { AppException } from '../../common/errors/app-exception';
 import { BranchScope } from '../../common/guards/branch-scope.guard';
 import { getContext } from '../../common/context/request-context';
@@ -309,6 +315,62 @@ export class BranchesService {
     });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Delivery zones                                                     */
+  /* ------------------------------------------------------------------ */
+
+  async zones(branchId: string): Promise<DeliveryZone[]> {
+    await this.get(branchId); // existence and branch scope
+    const rows = await this.prisma.db.deliveryZone.findMany({
+      where: { branchId },
+      orderBy: { sortOrder: 'asc' },
+    });
+    return rows.map(toZone);
+  }
+
+  /**
+   * Replaces a branch's zones with the editor's full list.
+   *
+   * Wholesale, in one transaction: the editor always holds the complete set,
+   * and a half-applied save would leave the branch delivering to an area
+   * nobody drew. Array order becomes precedence where zones overlap.
+   */
+  async saveZones(branchId: string, zones: DeliveryZoneInput[]): Promise<DeliveryZone[]> {
+    const branch = await this.get(branchId);
+    const before = await this.prisma.db.deliveryZone.count({ where: { branchId } });
+
+    const rows = await this.prisma.transaction(async (tx) => {
+      await tx.deliveryZone.deleteMany({ where: { branchId } });
+      for (const [index, zone] of zones.entries()) {
+        await tx.deliveryZone.create({
+          data: {
+            tenantId: branch.tenantId,
+            branchId,
+            name: zone.name,
+            color: zone.color,
+            polygon: zone.polygon,
+            deliveryPrice: zone.deliveryPrice,
+            minOrderAmount: zone.minOrderAmount ?? null,
+            freeDeliveryFrom: zone.freeDeliveryFrom ?? null,
+            isActive: zone.isActive,
+            sortOrder: index,
+          },
+        });
+      }
+      return tx.deliveryZone.findMany({ where: { branchId }, orderBy: { sortOrder: 'asc' } });
+    });
+
+    await this.audit.recordChange(
+      'BRANCH_ZONES_UPDATED',
+      'Branch',
+      branchId,
+      { zones: before },
+      { zones: rows.map((row) => ({ name: row.name, price: row.deliveryPrice, active: row.isActive })) },
+    );
+
+    return rows.map(toZone);
+  }
+
   /** Used by the order service to validate delivery against branch settings. */
   async findForOrdering(branchId: string): Promise<BranchRow> {
     const row = await this.prisma.db.branch.findFirst({
@@ -343,6 +405,32 @@ export function isBranchOpen(row: {
     row.workingHours.map((hours) => ({ ...hours, dayOfWeek: hours.dayOfWeek as Weekday })),
     row.timezone,
   );
+}
+
+function toZone(row: {
+  id: string;
+  branchId: string;
+  name: string;
+  color: string;
+  polygon: unknown;
+  deliveryPrice: number;
+  minOrderAmount: number | null;
+  freeDeliveryFrom: number | null;
+  isActive: boolean;
+  sortOrder: number;
+}): DeliveryZone {
+  return {
+    id: row.id,
+    branchId: row.branchId,
+    name: row.name,
+    color: row.color,
+    polygon: ringFrom(row.polygon).map(([lat, lng]) => [lat, lng] as [number, number]),
+    deliveryPrice: row.deliveryPrice,
+    minOrderAmount: row.minOrderAmount,
+    freeDeliveryFrom: row.freeDeliveryFrom,
+    isActive: row.isActive,
+    sortOrder: row.sortOrder,
+  };
 }
 
 function toBranch(row: BranchRow): Branch {

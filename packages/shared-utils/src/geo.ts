@@ -55,6 +55,44 @@ export function isWithinRadius(
   return distanceMeters(center, point) <= radiusM;
 }
 
+/** A ring of `[latitude, longitude]` pairs; the last point joins the first. */
+export type LatLngRing = ReadonlyArray<readonly [number, number]>;
+
+/**
+ * Whether `point` lies inside the polygon `ring` (even-odd ray casting).
+ *
+ * Planar on purpose: delivery zones span a few kilometres, where treating
+ * degrees as a flat grid is off by centimetres — far below a map pin's own
+ * error. A point exactly on an edge may land either side; a zone is drawn
+ * by hand and no one can place a pin that precisely anyway.
+ *
+ * Fewer than three vertices encloses nothing and returns false.
+ */
+export function isPointInPolygon(point: Coordinates, ring: LatLngRing): boolean {
+  if (ring.length < 3) return false;
+  const { latitude: y, longitude: x } = point;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [yi, xi] = ring[i]!;
+    const [yj, xj] = ring[j]!;
+    const crosses = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Reads a stored polygon (JSON) defensively: malformed points are dropped,
+ * and anything that is not an array encloses nothing.
+ */
+export function toLatLngRing(json: unknown): Array<[number, number]> {
+  if (!Array.isArray(json)) return [];
+  return json.filter(
+    (p): p is [number, number] =>
+      Array.isArray(p) && p.length === 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]),
+  );
+}
+
 /** Picks the nearest entry, or `null` for an empty list. */
 export function findNearest<T extends Coordinates>(
   origin: Coordinates,

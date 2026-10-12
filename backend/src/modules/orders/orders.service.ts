@@ -241,10 +241,11 @@ export class OrdersService {
       deliveryLongitude: address?.longitude ?? null,
     });
 
-    if (input.type === OrderType.DELIVERY && priced.subtotal < branch.minOrderAmount) {
+    // The zone's minimum when the address fell in a zone that sets one.
+    if (input.type === OrderType.DELIVERY && priced.subtotal < priced.minOrderAmount) {
       throw new AppException(
         ErrorCode.MIN_ORDER_NOT_REACHED,
-        `The minimum delivery order at this branch is ${branch.minOrderAmount}`,
+        `The minimum delivery order at this branch is ${priced.minOrderAmount}`,
         422,
       );
     }

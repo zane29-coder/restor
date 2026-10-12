@@ -65,6 +65,7 @@ const STRICT_TENANT_MODELS = new Set<string>([
   'Supplier',
   'StockItem',
   'StockMovement',
+  'DeliveryZone',
   // Storefront (TZ 48). A favourite carries the restaurant it belongs to, so
   // scoping it is what keeps one restaurant's dish out of another's cart; the
   // cross-restaurant "Tanlanganlar" list reads it with an explicit

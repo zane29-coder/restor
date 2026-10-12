@@ -386,6 +386,7 @@ model Tenant {
   suppliers        Supplier[]
   stockItems       StockItem[]
   stockMovements   StockMovement[]
+  deliveryZones    DeliveryZone[]
   tables          RestaurantTable[]
   waiterCalls     WaiterCall[]
   kitchenStations KitchenStation[]
@@ -690,10 +691,49 @@ model Branch {
   tables           RestaurantTable[]
   waiterCalls      WaiterCall[]
   kitchenStations  KitchenStation[]
+  deliveryZones    DeliveryZone[]
 
   @@unique([tenantId, slug])
   @@index([tenantId, isActive])
   @@map("branches")
+}
+
+/// A drawn delivery area with its own tariff (TZ §11).
+///
+/// When a branch has any active zone, the zones ARE its delivery area: an
+/// address inside one is priced by that zone, an address outside all of them
+/// is refused, and the branch's radius rules stand down. A branch with no
+/// zones keeps the radius rules unchanged.
+model DeliveryZone {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  name  String @db.VarChar(80)
+  /// Map fill, `#RRGGBB`.
+  color String @default("#FF6B00") @db.VarChar(9)
+  /// Closed ring of `[latitude, longitude]` pairs; the last point joins the
+  /// first. At least three points.
+  polygon Json
+
+  deliveryPrice    Int  @default(0)
+  /// Overrides the branch minimum inside this zone; `null` keeps the branch's.
+  minOrderAmount   Int?
+  /// Free inside this zone once the discounted goods total reaches it.
+  freeDeliveryFrom Int?
+
+  isActive  Boolean @default(true)
+  /// Where zones overlap, the lowest sortOrder wins.
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, branchId])
+  @@map("delivery_zones")
 }
 
 model BranchWorkingHours {

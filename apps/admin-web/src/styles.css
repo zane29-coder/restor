@@ -1565,6 +1565,94 @@ kbd {
   font-weight: 600;
 }
 
+/* ---------------- Maps ---------------- */
+
+.leaflet-host {
+  width: 100%;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  z-index: 0;
+  background: var(--surface-low);
+}
+
+/* Dark theme: invert the light OSM tiles rather than fetch a second style. */
+:root[data-theme='dark'] .leaflet-host .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(200deg) brightness(0.85) contrast(0.9) saturate(0.6);
+}
+
+.leaflet-container {
+  font-family: var(--font);
+}
+
+.map-dot {
+  background: none;
+  border: none;
+}
+
+.map-dot span {
+  display: block;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+}
+
+.map-dot em {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #fff;
+  color: #0b1c30;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}
+
+.map-vertex {
+  background: #fff;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  cursor: grab;
+}
+
+.zone-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+}
+
+.zone-editor__hint {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: 12.5px;
+}
+
+.zone-editor__hint > span {
+  flex: 1;
+  min-width: 180px;
+}
+
+@media (max-width: 1100px) {
+  .zone-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------------- Kanban ---------------- */
 
 .kanban {
@@ -2348,6 +2436,10 @@ tr.row--selected:hover {
 
 .drawer--wide {
   width: min(760px, 100vw);
+}
+
+.drawer--full {
+  width: min(1240px, 100vw);
 }
 
 .drawer:focus {

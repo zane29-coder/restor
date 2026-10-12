@@ -103,6 +103,31 @@ export const updateBranchSchema = z.object({
   },
 );
 
+/** One drawn delivery zone. Money in minor units, like everywhere else. */
+export const deliveryZoneSchema = z.object({
+  name: z.string().trim().min(1, 'Zona nomini kiriting').max(80),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, 'Rang #RRGGBB koʻrinishida boʻlishi kerak')
+    .default('#FF6B00'),
+  polygon: z
+    .array(z.tuple([latitudeSchema, longitudeSchema]))
+    .min(3, 'Zona kamida 3 nuqtadan iborat boʻlishi kerak')
+    .max(300),
+  deliveryPrice: moneySchema.default(0),
+  minOrderAmount: moneySchema.nullish(),
+  freeDeliveryFrom: moneySchema.positive().nullish(),
+  isActive: z.boolean().default(true),
+});
+
+/** The editor saves a branch's full set at once; order is precedence. */
+export const saveDeliveryZonesSchema = z.object({
+  zones: z.array(deliveryZoneSchema).max(30),
+});
+
+export type DeliveryZoneInput = z.infer<typeof deliveryZoneSchema>;
+export type SaveDeliveryZonesInput = z.infer<typeof saveDeliveryZonesSchema>;
+
 export type CreateBranchInput = z.infer<typeof createBranchSchema>;
 export type UpdateBranchInput = z.infer<typeof updateBranchSchema>;
 export type WorkingHoursInput = z.infer<typeof workingHoursSchema>;

@@ -13,10 +13,15 @@ export function Drawer({
   title,
   onClose,
   children,
+  width,
+  footer,
 }: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  /** `wide` for forms with two columns; `full` for a map editor. */
+  width?: 'wide' | 'full';
+  footer?: ReactNode;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const titleId = useId();
@@ -47,7 +52,7 @@ export function Drawer({
       <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
       <aside
         ref={panelRef}
-        className="drawer"
+        className={`drawer${width === 'wide' ? ' drawer--wide' : width === 'full' ? ' drawer--full' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -62,6 +67,7 @@ export function Drawer({
           </button>
         </header>
         <div className="drawer__body">{children}</div>
+        {footer && <footer className="drawer__foot">{footer}</footer>}
       </aside>
     </>,
     document.body,

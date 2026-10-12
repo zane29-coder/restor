@@ -74,6 +74,30 @@ export type UpdateBranchRequest = Partial<CreateBranchRequest> & {
   isActive?: boolean;
 };
 
+/**
+ * A drawn delivery area with its own tariff (TZ §11).
+ *
+ * When a branch has any active zone, the zones are its delivery area and the
+ * radius rules stand down; where zones overlap the earlier one wins.
+ */
+export interface DeliveryZone {
+  id: string;
+  branchId: string;
+  name: string;
+  /** `#RRGGBB`. */
+  color: string;
+  /** Closed ring of `[latitude, longitude]`. */
+  polygon: Array<[number, number]>;
+  deliveryPrice: number;
+  /** Overrides the branch minimum inside the zone; `null` keeps the branch's. */
+  minOrderAmount: number | null;
+  freeDeliveryFrom: number | null;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export type DeliveryZoneRequest = Omit<DeliveryZone, 'id' | 'branchId' | 'sortOrder'>;
+
 /** Branch list entry for pickers — deliberately lighter than {@link Branch}. */
 export interface BranchSummary {
   id: string;

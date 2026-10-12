@@ -1,421 +1,401 @@
-import { useState, type FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Permission, type Branch } from '@restor/shared-types';
-import { formatMoney, formatPhone } from '@restor/shared-utils';
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import L from 'leaflet';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CourierStatus, Permission, type Branch, type DeliveryZone } from '@restor/shared-types';
+import {
+  IconBan,
+  IconBarChart,
+  IconBasket,
+  IconBranch,
+  IconChart,
+  IconClock,
+  IconCourier,
+  IconGrid,
+  IconMap,
+  IconMapPin,
+  IconPhone,
+  IconPlus,
+  IconPolygon,
+  IconSearch,
+  IconSliders,
+  IconTable,
+  IconWallet,
+} from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { todaysHours } from '../lib/branch';
+import { amount, compactSom, count, isoDay, phone, som } from '../lib/format';
+import { BranchForm } from '../components/branches/BranchForm';
 import { Drawer } from '../components/Drawer';
-import { ErrorState, Empty, Loading, Notice } from '../components/States';
+import { LeafletMap, dotIcon, useLayer } from '../components/map/LeafletMap';
+import { ZoneEditor } from '../components/map/ZoneEditor';
+import { ErrorState, Loading, Notice } from '../components/States';
+import { Kpi, PageHeader, Seg, Switch } from '../components/ui';
+import { OpenPill } from '../components/BranchSwitcher';
 
-/** Branch list and delivery settings (TZ §8, §11). */
+type OpenFilter = 'all' | 'open' | 'closed';
+
+/**
+ * Branches (TZ §8, §11): the network at a glance and every branch's settings.
+ *
+ * Today's figures come from `/reports/branches`, the same aggregation the
+ * dashboard ranks by, so a card and the ranking never disagree.
+ */
 export function BranchesPage() {
   const { can } = useAuth();
-  const [editing, setEditing] = useState<Branch | null>(null);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [view, setView] = useState<'cards' | 'map'>('cards');
+  const [filter, setFilter] = useState<OpenFilter>('all');
+  const [text, setText] = useState('');
+  const [form, setForm] = useState<{ branch: Branch | null; section?: 'hours' | 'delivery' } | null>(null);
+  const [zonesFor, setZonesFor] = useState<Branch | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const branches = useQuery({
-    queryKey: ['branches'],
-    queryFn: () => api.branches.list({ limit: 100 }),
+  const branches = useQuery({ queryKey: ['branches', 'full'], queryFn: () => api.branches.list({ limit: 100 }) });
+  const items = branches.data?.items ?? [];
+  const today = isoDay(new Date());
+
+  const report = useQuery({
+    queryKey: ['reports', 'branches', 'today', today],
+    queryFn: () => api.reports.branches({ dateFrom: today, dateTo: today }),
+    enabled: can(Permission.REPORTS_VIEW),
+    refetchInterval: 60_000,
+  });
+  const tables = useQuery({
+    queryKey: ['tables', 'all'],
+    queryFn: () => api.tables.list(),
+    enabled: can(Permission.TABLES_VIEW),
+  });
+  const couriers = useQuery({
+    queryKey: ['couriers', 'all-for-branches'],
+    queryFn: () => api.couriers.list({ limit: 100 }),
+    enabled: can(Permission.COURIERS_VIEW),
+  });
+  const zoneQueries = useQueries({
+    queries: items.map((b) => ({
+      queryKey: ['branches', b.id, 'zones'],
+      queryFn: () => api.branches.zones(b.id),
+    })),
+  });
+  const zonesOf = (id: string): DeliveryZone[] =>
+    zoneQueries[items.findIndex((b) => b.id === id)]?.data ?? [];
+
+  const toggleActive = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => api.branches.update(id, { isActive }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['branches'] }),
+    onError: (e) => setNotice({ ok: false, text: e instanceof RestorApiError ? e.message : 'Saqlanmadi' }),
   });
 
+  const filtered = useMemo(() => {
+    const needle = text.trim().toLowerCase();
+    return items.filter((b) => {
+      if (filter === 'open' && !b.isOpenNow) return false;
+      if (filter === 'closed' && b.isOpenNow) return false;
+      return !needle || `${b.name} ${b.address} ${b.phone ?? ''}`.toLowerCase().includes(needle);
+    });
+  }, [items, filter, text]);
+
   if (branches.isLoading) return <Loading />;
-  if (branches.isError) {
-    return <ErrorState error={branches.error} onRetry={() => void branches.refetch()} />;
-  }
+  if (branches.isError) return <ErrorState error={branches.error} onRetry={() => void branches.refetch()} />;
 
-  const items = branches.data?.items ?? [];
-  if (items.length === 0) {
-    return <Empty title="Filial yoʻq" description="Birinchi filialni qoʻshing." />;
-  }
-
-  const canManage = can(Permission.BRANCHES_UPDATE);
+  const openCount = items.filter((b) => b.isOpenNow).length;
+  const activeCount = items.filter((b) => b.isActive).length;
+  const avgPrep = items.length ? Math.round(items.reduce((s, b) => s + b.averagePrepMinutes, 0) / items.length) : 0;
+  const todayRevenue = report.data?.reduce((s, r) => s + r.revenue, 0) ?? 0;
+  const todayOrders = report.data?.reduce((s, r) => s + r.ordersCount, 0) ?? 0;
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="page">
       {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-          gap: 14,
-        }}
-      >
-        {items.map((branch) => (
-          <div key={branch.id} className="card">
-            <div className="row" style={{ marginBottom: 10 }}>
-              <h2 style={{ fontSize: 16, margin: 0 }}>{branch.name}</h2>
-              <div className="spacer" />
-              <span
-                className="badge"
-                style={{
-                  background: branch.isOpenNow ? '#DCFCE7' : '#FEE2E2',
-                  color: branch.isOpenNow ? '#166534' : '#991B1B',
-                }}
-              >
-                {branch.isOpenNow ? 'Ochiq' : 'Yopiq'}
-              </span>
-            </div>
-
-            <p className="muted" style={{ margin: '0 0 4px' }}>{branch.address}</p>
-            {branch.phone && (
-              <p className="muted" style={{ margin: '0 0 12px' }}>{formatPhone(branch.phone)}</p>
-            )}
-
-            <dl style={{ display: 'grid', gap: 5, margin: 0 }}>
-              <Row label="Minimal buyurtma" value={formatMoney(branch.minOrderAmount)} />
-              <Row label="Yetkazish" value={deliverySummary(branch)} />
-              <Row label="Radius" value={km(branch.deliveryRadiusM)} />
-              {branch.freeDeliveryRadiusM != null && (
-                <Row label="Bepul zona" value={km(branch.freeDeliveryRadiusM)} />
-              )}
-              {branch.freeDeliveryFrom != null && (
-                <Row label="Bepul (summadan)" value={formatMoney(branch.freeDeliveryFrom)} />
-              )}
-              <Row label="Tayyorlash" value={`${branch.averagePrepMinutes} min`} />
-            </dl>
-
-            <div className="row" style={{ marginTop: 12, gap: 6 }}>
-              {branch.acceptsDelivery && <span className="badge" style={tone}>Yetkazish</span>}
-              {branch.acceptsPickup && <span className="badge" style={tone}>Olib ketish</span>}
-              {branch.acceptsDineIn && <span className="badge" style={tone}>Zalda</span>}
-            </div>
-
-            {branch.workingHours.length > 0 && (
-              <details style={{ marginTop: 12 }}>
-                <summary className="muted" style={{ cursor: 'pointer', fontSize: 13 }}>
-                  Ish vaqti
-                </summary>
-                <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 13 }}>
-                  {branch.workingHours.map((hours) => (
-                    <li key={hours.id} className="muted">
-                      {WEEKDAYS[hours.dayOfWeek - 1]}:{' '}
-                      {hours.isClosed ? 'yopiq' : `${hours.opensAt}–${hours.closesAt}`}
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            )}
-
-            {canManage && (
-              <button
-                type="button"
-                className="btn btn--ghost"
-                style={{ marginTop: 14, width: '100%' }}
-                onClick={() => {
-                  setNotice(null);
-                  setEditing(branch);
-                }}
-              >
-                Yetkazish sozlamalari
+      <PageHeader
+        crumb="Filiallar"
+        title="Filiallar boshqaruvi"
+        badge={<span className="pill tone-primary">{items.length} ta nuqta</span>}
+        subtitle="Filiallar tarmogʻi, ish vaqti, yetkazib berish sozlamalari va zonalar"
+        actions={
+          <>
+            <button type="button" className="btn btn--ghost" onClick={() => setView('map')}>
+              <IconMap size={16} /> Zonalar xaritasi
+            </button>
+            {can(Permission.REPORTS_VIEW) && (
+              <button type="button" className="btn btn--ghost" onClick={() => navigate('/reports?tab=branches')}>
+                <IconChart size={16} /> Tarmoq hisoboti
               </button>
             )}
-          </div>
-        ))}
+            {can(Permission.BRANCHES_CREATE) && (
+              <button type="button" className="btn" onClick={() => setForm({ branch: null })}>
+                <IconPlus size={17} /> Yangi filial
+              </button>
+            )}
+          </>
+        }
+      />
+
+      <div className="kpi-grid">
+        <Kpi
+          label="Jami filiallar"
+          value={items.length}
+          unit="ta"
+          Icon={IconBranch}
+          tone="tone-primary"
+          foot={<span>{activeCount === items.length ? 'Hammasi faol' : `${items.length - activeCount} tasi nofaol`}</span>}
+        />
+        <Kpi
+          label="Hozir ochiq"
+          value={openCount}
+          unit="ta filial"
+          Icon={IconClock}
+          tone="tone-success"
+          foot={<span>{items.length ? `${Math.round((openCount / items.length) * 100)}% ochiq` : '—'}</span>}
+        />
+        <Kpi
+          label="Oʻrtacha tayyorlash"
+          value={avgPrep}
+          unit="daqiqa"
+          Icon={IconCourier}
+          tone="tone-info"
+          foot={<span>Filiallar meʼyori boʻyicha</span>}
+        />
+        {can(Permission.REPORTS_VIEW) && (
+          <Kpi
+            label="Bugungi tarmoq tushumi"
+            value={amount(todayRevenue)}
+            unit="soʻm"
+            Icon={IconWallet}
+            tone="tone-warning"
+            foot={<span>{count(todayOrders)} ta yakunlangan buyurtma</span>}
+          />
+        )}
       </div>
 
-      {editing && (
-        <DeliverySettings
-          branch={editing}
-          onClose={() => setEditing(null)}
+      <div className="toolbar">
+        <div className="search-input">
+          <IconSearch size={16} />
+          <input type="search" placeholder="Filial nomi, manzil yoki telefon…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Filiallarni qidirish" />
+        </div>
+        <Seg
+          label="Holat"
+          quiet
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'open', label: 'Ochiq', count: openCount },
+            { value: 'all', label: 'Barchasi', count: items.length },
+            { value: 'closed', label: 'Yopiq', count: items.length - openCount },
+          ]}
+        />
+        <span className="spacer" />
+        <Seg
+          label="Koʻrinish"
+          quiet
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'cards', label: <><IconGrid size={15} /> Kartalar</> },
+            { value: 'map', label: <><IconMap size={15} /> Xarita</> },
+          ]}
+        />
+      </div>
+
+      {view === 'map' ? (
+        <NetworkMap branches={filtered} zonesOf={zonesOf} onEditZones={(b) => setZonesFor(b)} />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 14 }}>
+          {filtered.map((branch) => {
+            const today = report.data?.find((r) => r.branchId === branch.id);
+            const zones = zonesOf(branch.id);
+            const tableCount = tables.data?.filter((t) => t.branchId === branch.id && t.isActive).length;
+            const onShift = couriers.data?.items.filter((c) => c.branchId === branch.id && c.status !== CourierStatus.OFFLINE).length;
+            const hours = todaysHours(branch);
+            return (
+              <article key={branch.id} className="card stack" style={{ gap: 14, opacity: branch.isActive ? 1 : 0.7 }}>
+                <header className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+                  <span className="kpi__icon tone-primary"><IconBranch size={20} /></span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h2 className="card__title">{branch.name}</h2>
+                    <div className="row cell-sub" style={{ gap: 6 }}>
+                      <OpenPill open={branch.isOpenNow ?? false} />
+                      <IconClock size={13} />
+                      {hours ?? 'Bugun dam olish'}
+                      {!branch.isActive && <span className="pill tone-neutral">Nofaol</span>}
+                    </div>
+                  </div>
+                  {can(Permission.REPORTS_VIEW) && (
+                    <button type="button" className="icon-btn icon-btn--sm" title="Hisobot" aria-label="Filial hisoboti" onClick={() => navigate(`/reports?branch=${branch.id}`)}>
+                      <IconBarChart size={16} />
+                    </button>
+                  )}
+                </header>
+
+                <div className="stack" style={{ gap: 6, fontSize: 13 }}>
+                  <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}><IconMapPin size={15} style={{ color: 'var(--text-muted)' }} /> {branch.address}</span>
+                  {branch.phone && <span className="row" style={{ gap: 6 }}><IconPhone size={15} style={{ color: 'var(--text-muted)' }} /> {phone(branch.phone)}</span>}
+                </div>
+
+                <div className="row" style={{ gap: 6 }}>
+                  <span className={`pill ${branch.acceptsDelivery ? 'tone-success' : 'tone-neutral'}`}><IconCourier size={13} /> Yetkazish</span>
+                  <span className={`pill ${branch.acceptsPickup ? 'tone-success' : 'tone-neutral'}`}><IconBasket size={13} /> Olib ketish</span>
+                  <span className={`pill ${branch.acceptsDineIn ? 'tone-success' : 'tone-neutral'}`}>
+                    {branch.acceptsDineIn ? <IconTable size={13} /> : <IconBan size={13} />}
+                    {branch.acceptsDineIn ? `Zalda${tableCount !== undefined ? ` · ${tableCount} stol` : ''}` : 'Zal yoʻq'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                  <div className="soft-box stat-mini"><span className="stat-mini__label">Min. buyurtma</span><span className="stat-mini__value">{som(branch.minOrderAmount)}</span></div>
+                  <div className="soft-box stat-mini">
+                    <span className="stat-mini__label">Yetkazish haqi</span>
+                    <span className="stat-mini__value">
+                      {zones.some((z) => z.isActive) ? `${zones.filter((z) => z.isActive).length} ta zona` : branch.deliveryPrice === 0 && !branch.deliveryPricePerKm ? 'Bepul' : `${som(branch.deliveryPrice)}${branch.deliveryPricePerKm ? ` +${amount(branch.deliveryPricePerKm)}/km` : ''}`}
+                    </span>
+                  </div>
+                  <div className="soft-box stat-mini">
+                    <span className="stat-mini__label">Xizmat hududi</span>
+                    <span className="stat-mini__value">
+                      {zones.some((z) => z.isActive) ? 'Poligon zonalar' : branch.deliveryRadiusM ? `${(branch.deliveryRadiusM / 1000).toFixed(1).replace('.', ',')} km radius` : 'Cheklovsiz'}
+                    </span>
+                  </div>
+                  <div className="soft-box stat-mini"><span className="stat-mini__label">Oʻrt. tayyorlash</span><span className="stat-mini__value">{branch.averagePrepMinutes} daq</span></div>
+                </div>
+
+                {(today || onShift !== undefined) && (
+                  <div className="banner banner--info" style={{ padding: '8px 10px', fontSize: 12.5 }}>
+                    <IconChart size={15} />
+                    <span>
+                      Bugun:{' '}
+                      {today && <><strong>{today.ordersCount}</strong> ta buyurtma · <strong>{compactSom(today.revenue)}</strong> soʻm</>}
+                      {today && onShift !== undefined && ' · '}
+                      {onShift !== undefined && `${onShift} ta kuryer smenada`}
+                    </span>
+                  </div>
+                )}
+
+                <footer className="row" style={{ gap: 8, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                  <Switch
+                    checked={branch.isActive}
+                    disabled={!can(Permission.BRANCHES_UPDATE) || toggleActive.isPending}
+                    onChange={(isActive) => toggleActive.mutate({ id: branch.id, isActive })}
+                    label="Buyurtma qabul qilish"
+                  />
+                  <span className="spacer" />
+                  {can(Permission.BRANCHES_UPDATE) && (
+                    <>
+                      <button type="button" className="btn btn--sm btn--ghost" onClick={() => setForm({ branch, section: 'hours' })}>
+                        <IconClock size={14} /> Ish vaqti
+                      </button>
+                      <button type="button" className="btn btn--sm btn--ghost" onClick={() => setZonesFor(branch)}>
+                        <IconPolygon size={14} /> Zonalar
+                      </button>
+                      <button type="button" className="btn btn--sm btn--soft" onClick={() => setForm({ branch })}>
+                        <IconSliders size={14} /> Sozlash
+                      </button>
+                    </>
+                  )}
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {can(Permission.BRANCHES_UPDATE) && items.length > 0 && view === 'cards' && (
+        <div className="banner" style={{ background: 'var(--sidebar-bg)', color: '#fff', padding: '16px 18px' }}>
+          <span className="banner__icon" style={{ background: 'var(--primary)' }}><IconPolygon size={16} /></span>
+          <div className="banner__body">
+            <div className="banner__title">Poligon yetkazish zonalari</div>
+            <div style={{ opacity: 0.8, fontSize: 12.5 }}>
+              Har filial uchun xaritada yetkazish hududini chizing va har bir zonaga alohida narx, minimal buyurtma va bepul yetkazish chegarasini belgilang.
+            </div>
+          </div>
+          <button type="button" className="btn" onClick={() => setZonesFor(items[0]!)}>Muharrirni ochish</button>
+        </div>
+      )}
+
+      {form && (
+        <BranchForm
+          branch={form.branch}
+          section={form.section}
+          onClose={() => setForm(null)}
           onSaved={(text) => {
-            setEditing(null);
+            setForm(null);
             setNotice({ ok: true, text });
           }}
-          onError={(text) => setNotice({ ok: false, text })}
         />
+      )}
+
+      {zonesFor && (
+        <Drawer
+          width="full"
+          title={
+            <span className="row" style={{ gap: 10 }}>
+              Yetkazish zonalari ·
+              <select
+                value={zonesFor.id}
+                onChange={(e) => setZonesFor(items.find((b) => b.id === e.target.value) ?? zonesFor)}
+                aria-label="Filial"
+                style={{ minHeight: 32 }}
+              >
+                {items.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </span>
+          }
+          onClose={() => setZonesFor(null)}
+        >
+          <ZoneEditor key={zonesFor.id} branch={zonesFor} canEdit={can(Permission.BRANCHES_UPDATE)} />
+        </Drawer>
       )}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-
-/**
- * Delivery charge rules (TZ §11).
- *
- * The three settings restaurants actually ask for: deliver free, deliver free
- * nearby, and deliver only within a radius. They combine, so the form shows a
- * worked example underneath rather than making the manager reason about the
- * interaction in their head.
- */
-function DeliverySettings({
-  branch,
-  onClose,
-  onSaved,
-  onError,
+/** Every branch and its zones on one map. */
+function NetworkMap({
+  branches,
+  zonesOf,
+  onEditZones,
 }: {
-  branch: Branch;
-  onClose: () => void;
-  onSaved: (message: string) => void;
-  onError: (message: string) => void;
+  branches: Branch[];
+  zonesOf: (id: string) => DeliveryZone[];
+  onEditZones: (branch: Branch) => void;
 }) {
-  const queryClient = useQueryClient();
+  const [map, setMap] = useState<L.Map | null>(null);
+  const zoneKey = branches.map((b) => `${b.id}:${zonesOf(b.id).length}`).join('|');
 
-  // Metres in the database, kilometres in the form: nobody types "5000 m".
-  const [radiusKm, setRadiusKm] = useState(toKm(branch.deliveryRadiusM));
-  const [freeRadiusKm, setFreeRadiusKm] = useState(toKm(branch.freeDeliveryRadiusM));
-  const [price, setPrice] = useState(String(branch.deliveryPrice));
-  const [perKm, setPerKm] = useState(branch.deliveryPricePerKm?.toString() ?? '');
-  const [freeFrom, setFreeFrom] = useState(branch.freeDeliveryFrom?.toString() ?? '');
-  const [minOrder, setMinOrder] = useState(String(branch.minOrderAmount));
-
-  const payload = {
-    deliveryRadiusM: toMetres(radiusKm),
-    freeDeliveryRadiusM: toMetres(freeRadiusKm),
-    deliveryPrice: toAmount(price) ?? 0,
-    deliveryPricePerKm: toAmount(perKm),
-    freeDeliveryFrom: toAmount(freeFrom),
-    minOrderAmount: toAmount(minOrder) ?? 0,
-  };
-
-  const radiusConflict =
-    payload.freeDeliveryRadiusM != null &&
-    payload.deliveryRadiusM != null &&
-    payload.freeDeliveryRadiusM > payload.deliveryRadiusM;
-
-  const needsCoordinates =
-    (payload.deliveryRadiusM != null || payload.freeDeliveryRadiusM != null) &&
-    branch.latitude == null;
-
-  const save = useMutation({
-    mutationFn: () => api.branches.update(branch.id, payload),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['branches'] });
-      onSaved(`${branch.name}: yetkazish sozlamalari saqlandi`);
+  useLayer(
+    map,
+    (group) => {
+      const points: L.LatLngExpression[] = [];
+      for (const b of branches) {
+        for (const z of zonesOf(b.id)) {
+          if (z.polygon.length < 3) continue;
+          L.polygon(z.polygon, { color: z.color, weight: 2, fillOpacity: z.isActive ? 0.15 : 0.04, dashArray: z.isActive ? undefined : '6 6' })
+            .bindTooltip(`${b.name}: ${z.name} · ${z.deliveryPrice ? som(z.deliveryPrice) : 'bepul'}`, { sticky: true })
+            .addTo(group);
+          points.push(...z.polygon);
+        }
+        if (b.latitude != null && b.longitude != null) {
+          const marker = L.marker([b.latitude, b.longitude], { icon: dotIcon(b.isOpenNow ? '#1baf7a' : '#8a93a8', b.name, 18) }).addTo(group);
+          marker.on('click', () => onEditZones(b));
+          points.push([b.latitude, b.longitude]);
+          if (b.deliveryRadiusM && !zonesOf(b.id).some((z) => z.isActive)) {
+            L.circle([b.latitude, b.longitude], { radius: b.deliveryRadiusM, color: '#ff6b00', weight: 1, dashArray: '6 6', fillOpacity: 0.05 }).addTo(group);
+          }
+        }
+      }
+      if (points.length > 0 && map) map.fitBounds(L.latLngBounds(points as L.LatLngTuple[]), { padding: [30, 30], maxZoom: 14 });
     },
-    onError: (error) =>
-      onError(error instanceof RestorApiError ? error.message : 'Saqlanmadi'),
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (radiusConflict || needsCoordinates) return;
-    save.mutate();
-  }
-
-  return (
-    <Drawer title={`${branch.name} — yetkazish`} onClose={onClose}>
-      <form onSubmit={submit}>
-        <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
-          Boʻsh qoldirilgan maydon — qoida ishlatilmaydi.
-        </p>
-
-        {/* The page notice sits behind the drawer; show a failed save here too. */}
-        {save.isError && (
-          <div className="alert alert--error">
-            {save.error instanceof RestorApiError ? save.error.message : 'Saqlanmadi'}
-          </div>
-        )}
-
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: 14,
-          }}
-        >
-          <Field
-            label="Yetkazish radiusi (km)"
-            hint="Bundan uzoqqa buyurtma qabul qilinmaydi. Boʻsh — cheklovsiz."
-            value={radiusKm}
-            onChange={setRadiusKm}
-            placeholder="5"
-          />
-          <Field
-            label="Bepul zona (km)"
-            hint="Shu masofagacha yetkazish bepul."
-            value={freeRadiusKm}
-            onChange={setFreeRadiusKm}
-            placeholder="1"
-          />
-          <Field
-            label="Yetkazish narxi"
-            hint="Bepul zonadan tashqarida olinadi. 0 — har doim bepul."
-            value={price}
-            onChange={setPrice}
-            placeholder="15000"
-          />
-          <Field
-            label="Har km uchun qoʻshimcha"
-            hint="Bepul zona chekkasidan boshlab, har boshlangan km uchun."
-            value={perKm}
-            onChange={setPerKm}
-            placeholder="3000"
-          />
-          <Field
-            label="Shu summadan bepul"
-            hint="Buyurtma shu summaga yetsa, masofadan qatʼi nazar bepul."
-            value={freeFrom}
-            onChange={setFreeFrom}
-            placeholder="150000"
-          />
-          <Field
-            label="Minimal buyurtma"
-            hint="Bundan kam buyurtma uchun ogohlantirish chiqadi."
-            value={minOrder}
-            onChange={setMinOrder}
-            placeholder="50000"
-          />
-        </div>
-
-        {needsCoordinates && (
-          <p style={{ color: '#991B1B', fontSize: 13, marginTop: 14 }}>
-            Radius ishlashi uchun filialga koordinata kiritilishi kerak.
-          </p>
-        )}
-        {radiusConflict && (
-          <p style={{ color: '#991B1B', fontSize: 13, marginTop: 14 }}>
-            Bepul zona yetkazish radiusidan katta boʻlishi mumkin emas.
-          </p>
-        )}
-
-        <Preview {...payload} />
-
-        <button
-          type="submit"
-          className="btn"
-          style={{ marginTop: 16 }}
-          disabled={save.isPending || radiusConflict || needsCoordinates}
-        >
-          {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-        </button>
-      </form>
-    </Drawer>
+    [zoneKey],
   );
-}
-
-/**
- * What a customer would be charged at a few distances.
- *
- * Mirrors the server's rules rather than calling it: this is a preview of an
- * unsaved form. The server remains the only authority on the real price — it
- * re-prices every order from the menu regardless of what any client says.
- */
-function Preview({
-  deliveryPrice,
-  freeDeliveryRadiusM,
-  freeDeliveryFrom,
-  deliveryPricePerKm,
-}: {
-  deliveryPrice: number;
-  freeDeliveryRadiusM: number | null;
-  freeDeliveryFrom: number | null;
-  deliveryPricePerKm: number | null;
-}) {
-  const basket = 60_000;
-
-  function feeAt(distanceM: number): number {
-    if (freeDeliveryFrom != null && basket >= freeDeliveryFrom) return 0;
-    if (freeDeliveryRadiusM != null && distanceM <= freeDeliveryRadiusM) return 0;
-    if (deliveryPricePerKm == null) return deliveryPrice;
-    const chargeableKm = Math.ceil(Math.max(0, distanceM - (freeDeliveryRadiusM ?? 0)) / 1000);
-    return deliveryPrice + deliveryPricePerKm * chargeableKm;
-  }
 
   return (
-    <div
-      style={{
-        marginTop: 16,
-        padding: 14,
-        borderRadius: 10,
-        background: 'var(--bg, #F9FAFB)',
-        border: '1px solid var(--border)',
-      }}
-    >
-      <p className="muted" style={{ fontSize: 12, margin: '0 0 8px', letterSpacing: 0.4 }}>
-        {formatMoney(basket)} LIK BUYURTMA UCHUN
+    <div className="card" style={{ padding: 10 }}>
+      <LeafletMap height="min(70vh, 640px)" onReady={(m) => setMap(m)} />
+      <p className="cell-sub" style={{ margin: '8px 4px 0' }}>
+        Yashil — hozir ochiq filial. Filial belgisini bossangiz uning zonalari muharriri ochiladi. Toʻq chiziq — chizilgan zona, punktir — radius.
       </p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18 }}>
-        {[500, 2000, 5000].map((distanceM) => (
-          <div key={distanceM}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>
-              {feeAt(distanceM) === 0 ? 'Bepul' : formatMoney(feeAt(distanceM))}
-            </div>
-            <div className="muted" style={{ fontSize: 12 }}>{distanceM / 1000} km</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  hint: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <label style={{ display: 'grid', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-      <input
-        type="text"
-        inputMode="decimal"
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        style={{
-          padding: '9px 12px',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          fontSize: 14,
-        }}
-      />
-      <span className="muted" style={{ fontSize: 12 }}>{hint}</span>
-    </label>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-
-const WEEKDAYS = ['Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba', 'Yakshanba'];
-
-const tone = { background: 'var(--primary-light)', color: '#9A3412' } as const;
-
-/** One line summarising how this branch charges, for the card. */
-function deliverySummary(branch: Branch): string {
-  if (branch.deliveryPrice === 0 && branch.deliveryPricePerKm == null) return 'Bepul';
-
-  const base = formatMoney(branch.deliveryPrice);
-  if (branch.deliveryPricePerKm == null) return base;
-  return `${base} + ${formatMoney(branch.deliveryPricePerKm)}/km`;
-}
-
-function km(metres: number | null): string {
-  return metres == null ? '—' : `${(metres / 1000).toFixed(1)} km`;
-}
-
-function toKm(metres: number | null): string {
-  return metres == null ? '' : String(metres / 1000);
-}
-
-/** Kilometres in the form, metres in the database. Blank means "no rule". */
-function toMetres(value: string): number | null {
-  const parsed = Number(value.replace(',', '.').trim());
-  if (!value.trim() || !Number.isFinite(parsed) || parsed <= 0) return null;
-  return Math.round(parsed * 1000);
-}
-
-/** Blank means "no rule"; zero is a real amount and must survive. */
-function toAmount(value: string): number | null {
-  const parsed = Number(value.replace(/\s/g, '').trim());
-  if (!value.trim() || !Number.isFinite(parsed) || parsed < 0) return null;
-  return Math.round(parsed);
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="row" style={{ justifyContent: 'space-between' }}>
-      <dt className="muted">{label}</dt>
-      <dd style={{ margin: 0 }}>{value}</dd>
     </div>
   );
 }

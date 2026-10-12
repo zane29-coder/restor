@@ -72,6 +72,23 @@ straight-line distance — deliberately conservative, since real driving distanc
 is always longer. Without coordinates the order is still accepted, with a
 warning for the dispatcher.
 
+**Drawn zones replace the radius.** A branch with at least one active
+`delivery_zones` row (drawn in Admin → Filiallar → Zonalar) delivers only
+inside its zones:
+
+- inside a zone: that zone's `deliveryPrice`, free once the discounted goods
+  total reaches its `freeDeliveryFrom`; its `minOrderAmount`, when set,
+  replaces the branch minimum;
+- where zones overlap, the lowest `sortOrder` (higher in the editor's list)
+  wins — draw a cheap inner zone above a wider outer one;
+- outside every zone: refused with `OUTSIDE_DELIVERY_RADIUS`;
+- no coordinates: accepted at the branch's flat price with a warning, exactly
+  as the radius check treats a phone order with no pin.
+
+The geometry is planar point-in-polygon (`isPointInPolygon` in
+`shared-utils/geo.ts`) on JSONB rings, not PostGIS — tested in
+`delivery-zone.spec.ts`.
+
 ### 7. Total
 
 ```

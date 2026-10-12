@@ -23,6 +23,7 @@ import {
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useBranch } from '../lib/branch';
+import { availabilityAt } from '../lib/catalog';
 import { count, som } from '../lib/format';
 import { Drawer } from '../components/Drawer';
 import { CategoryManager, ModifierGroupManager } from '../components/menu/CatalogManagers';
@@ -87,8 +88,9 @@ export function MenuPage() {
 
   const all = products.data ?? [];
   const scopeIds = branchId ? [branchId] : branches.map((b) => b.id);
-  const stoppedAt = (p: Product) =>
-    scopeIds.filter((id) => p.branchSettings?.find((s) => s.branchId === id)?.isStopListed);
+  const stoppedAt = (p: Product) => scopeIds.filter((id) => availabilityAt(p, id) === 'stopped');
+  /** Branches that do not sell the dish at all (no row, or switched off). */
+  const offAt = (p: Product) => scopeIds.filter((id) => availabilityAt(p, id) === 'off');
   const isStopped = (p: Product) => stoppedAt(p).length > 0;
 
   const filtered = useMemo(() => {
@@ -121,7 +123,9 @@ export function MenuPage() {
 
   const toggleStop = useMutation({
     mutationFn: async ({ product, stop }: { product: Product; stop: boolean }) => {
-      for (const id of scopeIds) {
+      // Only where the dish is sold: an upsert at a branch that does not sell
+      // it would create the row and quietly put the dish on that menu.
+      for (const id of scopeIds.filter((b) => availabilityAt(product, b) !== 'off')) {
         await api.catalog.setAvailability(product.id, { branchId: id, isStopListed: stop });
       }
     },
@@ -368,6 +372,8 @@ export function MenuPage() {
                 <tbody>
                   {pageRows.map((p) => {
                     const stopped = stoppedAt(p);
+                    const off = offAt(p);
+                    const selling = scopeIds.length - stopped.length - off.length;
                     return (
                       <tr key={p.id} className={`row--clickable${p.id === openId ? ' row--selected' : ''}`} onClick={() => open(p.id)}>
                         <td>
@@ -404,12 +410,17 @@ export function MenuPage() {
                         </td>
                         <td className="cell-sub"><span className="row" style={{ gap: 4 }}><IconClock size={13} />{p.preparationTime} daq</span></td>
                         <td>
-                          {stopped.length === 0 ? (
+                          {selling === scopeIds.length ? (
                             <span className="pill tone-success">{branchId ? 'Mavjud' : 'Barcha filiallarda'}</span>
-                          ) : stopped.length === scopeIds.length ? (
+                          ) : selling === 0 && off.length === scopeIds.length ? (
+                            <span className="pill tone-neutral">{branchId ? 'Bu filialda sotilmaydi' : 'Hech qayerda sotilmaydi'}</span>
+                          ) : selling === 0 ? (
                             <span className="pill tone-danger">{branchId ? 'Stop-list' : 'Hamma joyda stop'}</span>
                           ) : (
-                            <span className="pill tone-warning">{stopped.length} ta filialda stop</span>
+                            <span className="cell-stack">
+                              <span className="pill tone-warning">{selling} / {scopeIds.length} filialda</span>
+                              {stopped.length > 0 && <span className="cell-sub">{stopped.length} ta filialda stop</span>}
+                            </span>
                           )}
                         </td>
                         <td onClick={(event) => event.stopPropagation()}>

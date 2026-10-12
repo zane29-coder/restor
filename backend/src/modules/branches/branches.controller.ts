@@ -1,10 +1,18 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Permission, type Branch, type BranchSummary, type Paginated } from '@restor/shared-types';
+import {
+  Permission,
+  type Branch,
+  type BranchSummary,
+  type DeliveryZone,
+  type Paginated,
+} from '@restor/shared-types';
 import {
   createBranchSchema,
+  saveDeliveryZonesSchema,
   updateBranchSchema,
   type CreateBranchInput,
+  type SaveDeliveryZonesInput,
   type UpdateBranchInput,
 } from '@restor/validation';
 import { Public, RequirePermissions } from '../../common/decorators';
@@ -63,6 +71,24 @@ export class BranchesController {
     @Body(zodBody(updateBranchSchema)) body: UpdateBranchInput,
   ): Promise<Branch> {
     return this.branches.update(id, body);
+  }
+
+  @Get(':id/zones')
+  @RequirePermissions(Permission.BRANCHES_VIEW)
+  @ApiOperation({ summary: 'Drawn delivery zones of a branch, in precedence order' })
+  zones(@Param('id') id: string): Promise<DeliveryZone[]> {
+    return this.branches.zones(id);
+  }
+
+  /** Replaces the branch's zones wholesale — the map editor saves them all. */
+  @Put(':id/zones')
+  @RequirePermissions(Permission.BRANCHES_UPDATE)
+  @ApiOperation({ summary: 'Save the full set of delivery zones for a branch' })
+  saveZones(
+    @Param('id') id: string,
+    @Body(zodBody(saveDeliveryZonesSchema)) body: SaveDeliveryZonesInput,
+  ): Promise<DeliveryZone[]> {
+    return this.branches.saveZones(id, body.zones);
   }
 
   @Delete(':id')

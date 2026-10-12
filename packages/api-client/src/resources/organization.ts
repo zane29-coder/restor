@@ -4,6 +4,8 @@ import type {
   CreateBranchRequest,
   CreateEmployeeRequest,
   CreateRoleRequest,
+  DeliveryZone,
+  DeliveryZoneRequest,
   Employee,
   Paginated,
   PaginationQuery,
@@ -43,6 +45,16 @@ export class BranchesResource {
 
   remove(id: string): Promise<void> {
     return this.http.delete<void>(`branches/${id}`);
+  }
+
+  /** Drawn delivery zones, in precedence order. */
+  zones(id: string): Promise<DeliveryZone[]> {
+    return this.http.get<DeliveryZone[]>(`branches/${id}/zones`);
+  }
+
+  /** Replaces the branch's zones; array order is precedence where they overlap. */
+  saveZones(id: string, zones: DeliveryZoneRequest[]): Promise<DeliveryZone[]> {
+    return this.http.put<DeliveryZone[]>(`branches/${id}/zones`, { zones });
   }
 }
 
