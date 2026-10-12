@@ -110,11 +110,16 @@ export class CatalogController {
       limit?: number;
       categoryId?: string;
       branchId?: string;
-      isActive?: boolean;
+      /** Arrives as the string "true"/"false"; Prisma wants a boolean. */
+      isActive?: boolean | string;
       search?: string;
     },
   ): Promise<Paginated<Product>> {
-    return this.products.list(query);
+    const isActive =
+      query.isActive === undefined || query.isActive === ''
+        ? undefined
+        : query.isActive === true || query.isActive === 'true';
+    return this.products.list({ ...query, isActive });
   }
 
   @Get('products/:id')
