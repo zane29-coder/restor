@@ -11,6 +11,7 @@ import {
   type DashboardStats,
   type FinanceReport,
   type PaymentBreakdownRow,
+  type PromotionStats,
   type RevenuePoint,
   type SalesReport,
   type TopProductRow,
@@ -337,6 +338,119 @@ export class ReportsService {
         };
       })
       .sort((a, b) => b.revenue - a.revenue);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Promotions                                                         */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * What each offer did: uses, the discount it cost, and the revenue of the
+   * orders it was on — plus the same per branch.
+   *
+   * Read through ORDERS (tenant-scoped by the extension) rather than
+   * `order_promotions` directly: that table has no tenant column of its own,
+   * so querying it at the top level would not be scoped. Same revenue rule
+   * as every report — DELIVERED orders, net of refunds.
+   */
+  async promotions(range: ReportRange): Promise<PromotionStats> {
+    const { from, to, branchId } = await this.resolveRange(range);
+    const allowed = this.branchScope.filterFor(branchId);
+
+    const orders = await this.prisma.db.order.findMany({
+      where: {
+        ...(allowed ? { branchId: allowed } : {}),
+        status: OrderStatus.DELIVERED,
+        createdAt: { gte: from, lte: to },
+      },
+      select: {
+        branchId: true,
+        total: true,
+        refundedTotal: true,
+        discountTotal: true,
+        promoCodeId: true,
+        customerId: true,
+        appliedPromotions: { select: { promotionId: true, amount: true } },
+        promoCodeUsage: { select: { discountAmount: true } },
+        branch: { select: { name: true } },
+      },
+    });
+
+    const promoMap = new Map<string, { uses: number; discountTotal: number; revenue: number }>();
+    const codeMap = new Map<string, { uses: number; discountTotal: number; revenue: number; customers: Set<string> }>();
+    const branchMap = new Map<string, { branchName: string; ordersWithDiscount: number; discountTotal: number; revenue: number }>();
+    let ordersWithDiscount = 0;
+    let discountTotal = 0;
+    let discountedRevenue = 0;
+    let revenueTotal = 0;
+
+    for (const order of orders) {
+      const revenue = order.total - order.refundedTotal;
+      revenueTotal += revenue;
+      if (order.discountTotal <= 0) continue;
+
+      ordersWithDiscount++;
+      discountTotal += order.discountTotal;
+      discountedRevenue += revenue;
+
+      const branch = branchMap.get(order.branchId) ?? { branchName: order.branch.name, ordersWithDiscount: 0, discountTotal: 0, revenue: 0 };
+      branch.ordersWithDiscount++;
+      branch.discountTotal += order.discountTotal;
+      branch.revenue += revenue;
+      branchMap.set(order.branchId, branch);
+
+      for (const applied of order.appliedPromotions) {
+        if (!applied.promotionId) continue;
+        const entry = promoMap.get(applied.promotionId) ?? { uses: 0, discountTotal: 0, revenue: 0 };
+        entry.uses++;
+        entry.discountTotal += applied.amount;
+        entry.revenue += revenue;
+        promoMap.set(applied.promotionId, entry);
+      }
+
+      if (order.promoCodeId) {
+        const entry = codeMap.get(order.promoCodeId) ?? { uses: 0, discountTotal: 0, revenue: 0, customers: new Set<string>() };
+        entry.uses++;
+        entry.discountTotal += order.promoCodeUsage?.discountAmount ?? 0;
+        entry.revenue += revenue;
+        if (order.customerId) entry.customers.add(order.customerId);
+        codeMap.set(order.promoCodeId, entry);
+      }
+    }
+
+    // "New customers" for a code: people whose FIRST completed order used it.
+    const codeCustomerIds = [...new Set([...codeMap.values()].flatMap((e) => [...e.customers]))];
+    const firstOrders =
+      codeCustomerIds.length > 0
+        ? await this.prisma.db.order.findMany({
+            where: { customerId: { in: codeCustomerIds }, status: OrderStatus.DELIVERED },
+            orderBy: { createdAt: 'asc' },
+            distinct: ['customerId'],
+            select: { customerId: true, promoCodeId: true },
+          })
+        : [];
+    const firstCodeOf = new Map(firstOrders.map((o) => [o.customerId, o.promoCodeId]));
+
+    return {
+      dateFrom: from.toISOString(),
+      dateTo: to.toISOString(),
+      ordersWithDiscount,
+      ordersTotal: orders.length,
+      discountTotal,
+      discountedRevenue,
+      revenueTotal,
+      promotions: [...promoMap.entries()].map(([promotionId, e]) => ({ promotionId, ...e })),
+      promoCodes: [...codeMap.entries()].map(([promoCodeId, e]) => ({
+        promoCodeId,
+        uses: e.uses,
+        discountTotal: e.discountTotal,
+        revenue: e.revenue,
+        newCustomers: [...e.customers].filter((id) => firstCodeOf.get(id) === promoCodeId).length,
+      })),
+      byBranch: [...branchMap.entries()]
+        .map(([id, e]) => ({ branchId: id, ...e }))
+        .sort((a, b) => b.revenue - a.revenue),
+    };
   }
 
   /* ------------------------------------------------------------------ */

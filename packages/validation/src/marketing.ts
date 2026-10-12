@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { PromoCodeType, PromotionType } from '@restor/shared-types';
-import { moneySchema, timeSchema, uuidSchema } from './primitives';
+import { moneySchema, queryBooleanSchema, timeSchema, uuidSchema } from './primitives';
 
 /* -------------------------------------------------------------------------- */
 /* Promotions (TZ §10)                                                        */
@@ -123,7 +123,7 @@ export const updatePromotionSchema = withPromotionRules(promotionBase.partial())
 
 export const promotionListQuerySchema = z.object({
   branchId: uuidSchema.optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBooleanSchema.optional(),
   search: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
@@ -194,7 +194,7 @@ export const updatePromoCodeSchema = z.object({
 });
 
 export const promoCodeListQuerySchema = z.object({
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBooleanSchema.optional(),
   search: z.string().trim().max(40).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),

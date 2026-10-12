@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { emailSchema, uuidSchema } from './primitives';
+import { emailSchema, queryBooleanSchema, uuidSchema } from './primitives';
 
 /* -------------------------------------------------------------------------- */
 /* Customers (TZ §10)                                                         */
@@ -7,10 +7,7 @@ import { emailSchema, uuidSchema } from './primitives';
 
 export const customerListQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
-  // Not `z.coerce.boolean()`: that turns the query string "false" into true.
-  isBlocked: z
-    .preprocess((v) => (v === 'true' ? true : v === 'false' ? false : v), z.boolean())
-    .optional(),
+  isBlocked: queryBooleanSchema.optional(),
   /** See `CustomerSegment` for what each one means. */
   segment: z.enum(['NEW', 'VIP', 'FREQUENT', 'INACTIVE_30D', 'TOP_SPENDER']).optional(),
   sort: z.enum(['recent', 'spent', 'orders']).default('recent'),

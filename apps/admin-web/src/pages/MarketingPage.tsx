@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Permission,
@@ -6,722 +6,389 @@ import {
   PromotionType,
   type PromoCode,
   type Promotion,
+  type PromotionStats,
 } from '@restor/shared-types';
-import { formatMoney } from '@restor/shared-utils';
-import { IconPlus } from '@restor/ui';
+import {
+  IconBranch,
+  IconClock,
+  IconCopy,
+  IconEdit,
+  IconPercent,
+  IconPlus,
+  IconTag,
+  IconTrash,
+  IconTruck,
+  IconUserPlus,
+  IconWallet,
+} from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useBranch } from '../lib/branch';
+import { compactSom, count, dateOf, percent, som } from '../lib/format';
+import { WEEKDAY_SHORT } from '../lib/labels';
+import { PROMOTION_TYPE_LABELS, PromoCodeForm, PromotionForm } from '../components/marketing/PromotionForms';
 import { ErrorState, Loading, Notice } from '../components/States';
+import { Kpi, PageHeader, PeriodPicker, Switch, Tabs, downloadCsv, periodFor, type Period } from '../components/ui';
 
-type Tab = 'promotions' | 'codes';
+type Tab = 'active' | 'codes' | 'auto' | 'archive';
+
+const isHappyHour = (p: Promotion) => p.type === PromotionType.HAPPY_HOUR || Boolean(p.timeFrom);
+const expired = (endsAt: string | null) => Boolean(endsAt && new Date(endsAt).getTime() < Date.now());
+const daysLeft = (endsAt: string | null) => (endsAt ? Math.ceil((new Date(endsAt).getTime() - Date.now()) / 86_400_000) : null);
+const dateRange = (from: string | null, to: string | null) =>
+  from && to ? `${dateOf(from)} — ${dateOf(to)}` : to ? `${dateOf(to)} gacha` : from ? `${dateOf(from)} dan` : '';
 
 /**
- * Promotions and promo codes (TZ §10).
+ * Promotions and promo codes (TZ §10, §34), with what each one did.
  *
- * The pricing engine has always applied these; until now the only way to
- * create one was a database insert. Everything here is a thin form over that
- * existing behaviour.
- *
- * The one thing the UI must not let a manager get wrong: `value` means a
- * percentage for one type and an amount of soʻm for another. Typing 50 000
- * into a percentage discount would take every order to zero. So the field
- * relabels itself with the type, and the server refuses the combination
- * regardless of what any client sends.
+ * The pricing engine applies them on every order; this screen creates them
+ * and, from `/reports/promotions`, shows their uses, the discount they cost
+ * and the revenue of the orders they were on — so an offer that is costing
+ * more than it brings in is visible.
  */
 export function MarketingPage() {
   const { can } = useAuth();
-  const [tab, setTab] = useState<Tab>('promotions');
+  const queryClient = useQueryClient();
+  const { branches } = useBranch();
+  const [tab, setTab] = useState<Tab>('active');
+  const [period, setPeriod] = useState<Period>(() => periodFor('30d'));
+  const [form, setForm] = useState<{ kind: 'promotion'; item: Promotion | null; happyHour?: boolean } | { kind: 'code'; item: PromoCode | null } | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
-  return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
-
-      <div className="row" style={{ gap: 8 }}>
-        {(
-          [
-            ['promotions', 'Aksiyalar'],
-            ['codes', 'Promokodlar'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            className={tab === key ? 'btn' : 'btn btn--ghost'}
-            onClick={() => {
-              setTab(key);
-              setNotice(null);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'promotions' ? (
-        <Promotions
-          canManage={can(Permission.PROMOTIONS_MANAGE)}
-          onNotice={setNotice}
-        />
-      ) : (
-        <PromoCodes
-          canManage={can(Permission.PROMO_CODES_MANAGE)}
-          onNotice={setNotice}
-        />
-      )}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Promotions                                                                 */
-/* -------------------------------------------------------------------------- */
-
-function Promotions({
-  canManage,
-  onNotice,
-}: {
-  canManage: boolean;
-  onNotice: (n: { ok: boolean; text: string }) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [isCreating, setIsCreating] = useState(false);
-
-  const promotions = useQuery({
-    queryKey: ['promotions'],
-    queryFn: () => api.marketing.listPromotions({ limit: 100 }),
+  const promotions = useQuery({ queryKey: ['promotions', 'all'], queryFn: () => api.marketing.listPromotions({ limit: 100 }) });
+  const codes = useQuery({ queryKey: ['promo-codes', 'all'], queryFn: () => api.marketing.listPromoCodes({ limit: 100 }), enabled: can(Permission.PROMO_CODES_VIEW) });
+  const stats = useQuery({
+    queryKey: ['reports', 'promotions', period],
+    queryFn: () => api.reports.promotions({ dateFrom: period.dateFrom, dateTo: period.dateTo }),
   });
 
-  const toggle = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      api.marketing.updatePromotion(id, { isActive }),
+  const fail = (e: unknown, fallback: string) => setNotice({ ok: false, text: e instanceof RestorApiError ? e.message : fallback });
+  const togglePromotion = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => api.marketing.updatePromotion(id, { isActive }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['promotions'] }),
-    onError: (error) =>
-      onNotice({
-        ok: false,
-        text: error instanceof RestorApiError ? error.message : 'Oʻzgartirilmadi',
-      }),
+    onError: (e) => fail(e, 'Oʻzgartirilmadi'),
   });
+  const removePromotion = useMutation({
+    mutationFn: (id: string) => api.marketing.deletePromotion(id),
+    onSuccess: () => {
+      setNotice({ ok: true, text: 'Aksiya arxivga oʻtkazildi' });
+      void queryClient.invalidateQueries({ queryKey: ['promotions'] });
+    },
+    onError: (e) => fail(e, 'Oʻchirilmadi'),
+  });
+  const toggleCode = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => api.marketing.updatePromoCode(id, { isActive }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['promo-codes'] }),
+    onError: (e) => fail(e, 'Oʻzgartirilmadi'),
+  });
+
+  const all = promotions.data?.items ?? [];
+  const allCodes = codes.data?.items ?? [];
+  const live = (p: Promotion) => p.isActive && !expired(p.endsAt);
+  const lists = useMemo(
+    () => ({
+      active: all.filter((p) => live(p) && !isHappyHour(p)),
+      auto: all.filter((p) => live(p) && isHappyHour(p)),
+      archive: all.filter((p) => !live(p)),
+    }),
+    [all], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   if (promotions.isLoading) return <Loading />;
-  if (promotions.isError) {
-    return <ErrorState error={promotions.error} onRetry={() => void promotions.refetch()} />;
-  }
+  if (promotions.isError) return <ErrorState error={promotions.error} onRetry={() => void promotions.refetch()} />;
 
-  const items = promotions.data?.items ?? [];
+  const s = stats.data;
+  const activeCount = lists.active.length + lists.auto.length;
+  const coveredBranches = new Set(all.filter(live).flatMap((p) => (p.branchIds.length ? p.branchIds : branches.map((b) => b.id)))).size;
+  const avgDiscount = s && s.discountedRevenue + s.discountTotal > 0 ? (s.discountTotal / (s.discountedRevenue + s.discountTotal)) * 100 : null;
+  const newViaCodes = s?.promoCodes.reduce((sum, c) => sum + c.newCustomers, 0) ?? 0;
+  const statOf = (id: string) => s?.promotions.find((x) => x.promotionId === id);
+  const codeStat = (id: string) => s?.promoCodes.find((x) => x.promoCodeId === id);
+  const branchName = (id: string) => branches.find((b) => b.id === id)?.name ?? '—';
 
-  return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      {canManage && !isCreating && (
-        <button type="button" className="btn" onClick={() => setIsCreating(true)}>
-          <IconPlus size={16} /> Aksiya qoʻshish
-        </button>
-      )}
-
-      {isCreating && (
-        <PromotionForm
-          onClose={() => setIsCreating(false)}
-          onSaved={(text) => {
-            setIsCreating(false);
-            onNotice({ ok: true, text });
-            void queryClient.invalidateQueries({ queryKey: ['promotions'] });
-          }}
-          onError={(text) => onNotice({ ok: false, text })}
-        />
-      )}
-
-      {items.length === 0 ? (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            Aksiya yoʻq. Yaratilgan aksiya har bir buyurtmada avtomatik qoʻllanadi.
-          </p>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {items.map((promotion) => (
-            <div key={promotion.id} className="card row" style={{ gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 200, flex: 1 }}>
-                <strong>{promotion.name}</strong>
-                <div className="muted" style={{ fontSize: 13 }}>
-                  {describePromotion(promotion)}
-                </div>
-              </div>
-
-              <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-                {promotion.isExclusive && (
-                  <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>
-                    yakka
-                  </span>
-                )}
-                {promotion.timeFrom && (
-                  <span className="badge" style={{ background: '#FEF3C7', color: '#B45309' }}>
-                    {promotion.timeFrom}–{promotion.timeTo}
-                  </span>
-                )}
-                {promotion.branchIds.length > 0 && (
-                  <span className="badge" style={{ background: '#E0F2FE', color: '#075985' }}>
-                    {promotion.branchIds.length} filial
-                  </span>
-                )}
-              </div>
-
-              <div className="spacer" />
-              {canManage && (
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  disabled={toggle.isPending}
-                  onClick={() =>
-                    toggle.mutate({ id: promotion.id, isActive: !promotion.isActive })
-                  }
-                >
-                  {promotion.isActive ? 'Oʻchirish' : 'Yoqish'}
-                </button>
-              )}
-              <span
-                className="badge"
-                style={{
-                  background: promotion.isActive ? '#DCFCE7' : '#F3F4F6',
-                  color: promotion.isActive ? '#166534' : '#6B7280',
-                }}
-              >
-                {promotion.isActive ? 'Faol' : 'Oʻchiq'}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const PROMOTION_TYPES: Array<{ value: PromotionType; label: string }> = [
-  { value: PromotionType.PERCENTAGE_DISCOUNT, label: 'Foizli chegirma' },
-  { value: PromotionType.FIXED_DISCOUNT, label: 'Belgilangan chegirma' },
-  { value: PromotionType.FREE_DELIVERY, label: 'Bepul yetkazish' },
-  { value: PromotionType.HAPPY_HOUR, label: 'Happy hour' },
-];
-
-function PromotionForm({
-  onClose,
-  onSaved,
-  onError,
-}: {
-  onClose: () => void;
-  onSaved: (message: string) => void;
-  onError: (message: string) => void;
-}) {
-  const [name, setName] = useState('');
-  const [type, setType] = useState<PromotionType>(PromotionType.PERCENTAGE_DISCOUNT);
-  const [value, setValue] = useState('10');
-  const [minOrderAmount, setMinOrderAmount] = useState('');
-  const [maxDiscount, setMaxDiscount] = useState('');
-  const [timeFrom, setTimeFrom] = useState('');
-  const [timeTo, setTimeTo] = useState('');
-  const [isExclusive, setIsExclusive] = useState(true);
-
-  const isPercent = type === PromotionType.PERCENTAGE_DISCOUNT;
-  const needsValue = isPercent || type === PromotionType.FIXED_DISCOUNT;
-  const numericValue = Number(value.replace(/\D/g, '')) || 0;
-
-  const valueError = needsValue
-    ? isPercent && (numericValue < 1 || numericValue > 100)
-      ? 'Foiz 1–100 oraligʻida boʻlishi kerak'
-      : !isPercent && numericValue <= 0
-        ? 'Summa noldan katta boʻlishi kerak'
-        : null
-    : null;
-
-  // Half a window would run all day, which is the opposite of a happy hour.
-  const timeError =
-    Boolean(timeFrom) !== Boolean(timeTo) ? 'Ikkala vaqtni ham kiriting' : null;
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.marketing.createPromotion({
-        name: name.trim(),
-        type,
-        value: needsValue ? numericValue : 0,
-        minOrderAmount: toAmount(minOrderAmount),
-        maxDiscount: isPercent ? toAmount(maxDiscount) : null,
-        timeFrom: timeFrom || null,
-        timeTo: timeTo || null,
-        isExclusive,
-        isActive: true,
-      }),
-    onSuccess: () => onSaved(`"${name.trim()}" aksiyasi yaratildi`),
-    onError: (error) =>
-      onError(error instanceof RestorApiError ? error.message : 'Saqlanmadi'),
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (valueError || timeError || name.trim().length < 2) return;
-    save.mutate();
-  }
+  const canPromo = can(Permission.PROMOTIONS_MANAGE);
 
   return (
-    <form className="card" onSubmit={submit}>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h3 style={{ fontSize: 15, margin: 0 }}>Yangi aksiya</h3>
-        <div className="spacer" />
-        <button type="button" className="btn btn--ghost" onClick={onClose}>
-          Yopish
-        </button>
+    <div className="page">
+      {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
+      <PageHeader
+        crumb="Aksiyalar"
+        title="Aksiyalar va promokodlar"
+        subtitle="Avtomatik chegirmalar, promokodlar va ularning tushumga taʼsiri"
+        actions={
+          <>
+            {can(Permission.PROMO_CODES_MANAGE) && (
+              <button type="button" className="btn btn--ghost" onClick={() => setForm({ kind: 'code', item: null })}>
+                <IconTag size={16} /> Yangi promokod
+              </button>
+            )}
+            {canPromo && (
+              <button type="button" className="btn" onClick={() => setForm({ kind: 'promotion', item: null, happyHour: tab === 'auto' })}>
+                <IconPlus size={17} /> Yangi aksiya
+              </button>
+            )}
+          </>
+        }
+      />
+
+      <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+        <span className="muted" style={{ fontSize: 12.5 }}>Natijalar davri — yakunlangan buyurtmalar boʻyicha</span>
+        <PeriodPicker value={period} onChange={setPeriod} />
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: 14,
-        }}
-      >
-        <Field label="Nomi" hint="Mijoz chekda shu nomni koʻradi.">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Dushanba chegirmasi"
-            style={inputStyle}
-          />
-        </Field>
+      <div className="kpi-grid">
+        <Kpi
+          label="Faol kampaniyalar"
+          value={activeCount}
+          unit="ta"
+          Icon={IconTag}
+          tone="tone-primary"
+          foot={<span className="kpi__foot-text"><IconBranch size={13} /> {coveredBranches} / {branches.length} filialda · {allCodes.filter((c) => c.isActive && !expired(c.endsAt)).length} promokod</span>}
+        />
+        <Kpi
+          label="Chegirmali buyurtmalar tushumi"
+          value={s ? compactSom(s.discountedRevenue) : '…'}
+          unit="soʻm"
+          Icon={IconWallet}
+          tone="tone-success"
+          foot={<span>{s ? `${count(s.ordersWithDiscount)} ta buyurtma · tushumning ${percent(s.revenueTotal ? (s.discountedRevenue / s.revenueTotal) * 100 : null, 0)}` : '…'}</span>}
+        />
+        <Kpi
+          label="Oʻrtacha chegirma"
+          value={percent(avgDiscount)}
+          Icon={IconPercent}
+          tone={avgDiscount !== null && avgDiscount > 15 ? 'tone-danger' : 'tone-info'}
+          foot={<span>{s ? `Jami berilgan: ${som(s.discountTotal)}` : '…'}</span>}
+        />
+        <Kpi
+          label="Promokod bilan kelgan yangi mijozlar"
+          value={newViaCodes}
+          unit="nafar"
+          Icon={IconUserPlus}
+          tone="tone-violet"
+          foot={<span>Birinchi buyurtmasi promokod bilan boʻlganlar</span>}
+        />
+      </div>
 
-        <Field label="Turi" hint="Qiymat maydoni turga qarab oʻzgaradi.">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as PromotionType)}
-            style={inputStyle}
-          >
-            {PROMOTION_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </Field>
+      <Tabs
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'active', label: 'Faol aksiyalar', count: lists.active.length },
+          { value: 'codes', label: 'Promokodlar', count: allCodes.length },
+          { value: 'auto', label: 'Avtomatik chegirmalar (Happy hour)', count: lists.auto.length },
+          { value: 'archive', label: 'Arxiv va nofaol', count: lists.archive.length },
+        ]}
+      />
 
-        {needsValue && (
-          <Field
-            label={isPercent ? 'Chegirma (%)' : 'Chegirma (soʻm)'}
-            hint={isPercent ? '1 dan 100 gacha.' : 'Buyurtmadan ayriladigan summa.'}
-            error={valueError}
-          >
-            <input
-              inputMode="numeric"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={isPercent ? '10' : '15000'}
-              style={inputStyle}
-            />
-          </Field>
-        )}
-
-        {isPercent && (
-          <Field label="Maksimal chegirma" hint="Foizni cheklaydi. Boʻsh — cheklovsiz.">
-            <input
-              inputMode="numeric"
-              value={maxDiscount}
-              onChange={(e) => setMaxDiscount(e.target.value)}
-              placeholder="50000"
-              style={inputStyle}
-            />
-          </Field>
-        )}
-
-        <Field label="Minimal buyurtma" hint="Shundan kam buyurtmaga qoʻllanmaydi.">
-          <input
-            inputMode="numeric"
-            value={minOrderAmount}
-            onChange={(e) => setMinOrderAmount(e.target.value)}
-            placeholder="50000"
-            style={inputStyle}
-          />
-        </Field>
-
-        <Field label="Vaqt oraligʻi" hint="Faqat shu soatlarda. Boʻsh — kun boʻyi." error={timeError}>
-          <div className="row" style={{ gap: 6 }}>
-            <input
-              type="time"
-              value={timeFrom}
-              onChange={(e) => setTimeFrom(e.target.value)}
-              style={{ ...inputStyle, flex: 1 }}
-            />
-            <input
-              type="time"
-              value={timeTo}
-              onChange={(e) => setTimeTo(e.target.value)}
-              style={{ ...inputStyle, flex: 1 }}
-            />
+      {tab === 'codes' ? (
+        allCodes.length === 0 ? (
+          <p className="card muted" style={{ textAlign: 'center' }}>Promokod yoʻq</p>
+        ) : (
+          <div className="promo-grid">
+            {allCodes.map((c) => {
+              const st = codeStat(c.id);
+              const done = expired(c.endsAt);
+              return (
+                <article key={c.id} className="card stack" style={{ gap: 12, opacity: c.isActive && !done ? 1 : 0.65 }}>
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <span className="row" style={{ gap: 6 }}>
+                      <code className="pill pill--lg tone-primary" style={{ fontSize: 14, letterSpacing: 1 }}>{c.code}</code>
+                      <button type="button" className="icon-btn icon-btn--sm" aria-label="Nusxa olish" onClick={() => void navigator.clipboard?.writeText(c.code)}>
+                        <IconCopy size={14} />
+                      </button>
+                    </span>
+                    <span className={`pill ${done ? 'tone-neutral' : c.isActive ? 'tone-success' : 'tone-neutral'}`}>{done ? 'Muddati tugagan' : c.isActive ? 'Faol' : 'Oʻchiq'}</span>
+                  </div>
+                  <div className="cell-main">{describeCode(c)}{c.isPublic && <span className="pill tone-info" style={{ marginLeft: 6 }}>Ommaviy</span>}</div>
+                  <dl className="kv">
+                    <dt>Min. buyurtma</dt><dd>{c.minOrderAmount ? som(c.minOrderAmount) : '—'}</dd>
+                    <dt>Bir mijozga</dt><dd>{c.userLimit ? `${c.userLimit} marta` : 'cheklanmagan'}</dd>
+                    <dt>Filiallar</dt><dd>{c.branchIds.length ? c.branchIds.map(branchName).join(', ') : 'Barchasi'}</dd>
+                    <dt>Muddat</dt><dd>{c.startsAt || c.endsAt ? dateRange(c.startsAt, c.endsAt) : 'muddatsiz'}</dd>
+                  </dl>
+                  <div className="bar-row">
+                    <div className="bar-row__head"><span>Ishlatilgan</span><span className="bar-row__value">{c.usedCount}{c.usageLimit ? ` / ${c.usageLimit}` : ''}</span></div>
+                    {c.usageLimit && <div className="progress"><div className="progress__bar" style={{ width: `${Math.min(100, (c.usedCount / c.usageLimit) * 100)}%` }} /></div>}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div className="soft-box stat-mini"><span className="stat-mini__label">Davrdagi tushum</span><span className="stat-mini__value">{st ? compactSom(st.revenue) : '0'}</span></div>
+                    <div className="soft-box stat-mini"><span className="stat-mini__label">Yangi mijozlar</span><span className="stat-mini__value">{st?.newCustomers ?? 0}</span></div>
+                  </div>
+                  {can(Permission.PROMO_CODES_MANAGE) && (
+                    <div className="row" style={{ justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                      <Switch checked={c.isActive} disabled={toggleCode.isPending} onChange={(isActive) => toggleCode.mutate({ id: c.id, isActive })} label={c.isActive ? 'Faol' : 'Oʻchiq'} />
+                      <button type="button" className="btn btn--sm btn--ghost" onClick={() => setForm({ kind: 'code', item: c })}><IconEdit size={13} /> Tahrirlash</button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
           </div>
-        </Field>
-      </div>
-
-      <label className="row" style={{ gap: 8, marginTop: 14, fontSize: 13 }}>
-        <input
-          type="checkbox"
-          checked={isExclusive}
-          onChange={(e) => setIsExclusive(e.target.checked)}
-        />
-        Yakka — bu aksiya qoʻllansa, boshqalari qoʻshilmaydi
-      </label>
-
-      <button
-        type="submit"
-        className="btn"
-        style={{ marginTop: 16 }}
-        disabled={save.isPending || Boolean(valueError) || Boolean(timeError)}
-      >
-        {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-      </button>
-    </form>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Promo codes                                                                */
-/* -------------------------------------------------------------------------- */
-
-function PromoCodes({
-  canManage,
-  onNotice,
-}: {
-  canManage: boolean;
-  onNotice: (n: { ok: boolean; text: string }) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [isCreating, setIsCreating] = useState(false);
-
-  const codes = useQuery({
-    queryKey: ['promo-codes'],
-    queryFn: () => api.marketing.listPromoCodes({ limit: 100 }),
-  });
-
-  const toggle = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      api.marketing.updatePromoCode(id, { isActive }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['promo-codes'] }),
-    onError: (error) =>
-      onNotice({
-        ok: false,
-        text: error instanceof RestorApiError ? error.message : 'Oʻzgartirilmadi',
-      }),
-  });
-
-  if (codes.isLoading) return <Loading />;
-  if (codes.isError) {
-    return <ErrorState error={codes.error} onRetry={() => void codes.refetch()} />;
-  }
-
-  const items = codes.data?.items ?? [];
-
-  return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      {canManage && !isCreating && (
-        <button type="button" className="btn" onClick={() => setIsCreating(true)}>
-          <IconPlus size={16} /> Promokod qoʻshish
-        </button>
-      )}
-
-      {isCreating && (
-        <PromoCodeForm
-          onClose={() => setIsCreating(false)}
-          onSaved={(text) => {
-            setIsCreating(false);
-            onNotice({ ok: true, text });
-            void queryClient.invalidateQueries({ queryKey: ['promo-codes'] });
-          }}
-          onError={(text) => onNotice({ ok: false, text })}
-        />
-      )}
-
-      {items.length === 0 ? (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            Promokod yoʻq.
-          </p>
-        </div>
+        )
       ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {items.map((code) => (
-            <div key={code.id} className="card row" style={{ gap: 12, flexWrap: 'wrap' }}>
-              <code
-                style={{
-                  fontSize: 15,
-                  fontWeight: 700,
-                  letterSpacing: 1,
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  background: 'var(--primary-light)',
-                  color: '#9A3412',
-                }}
-              >
-                {code.code}
-              </code>
+        <PromotionGrid
+          items={tab === 'active' ? lists.active : tab === 'auto' ? lists.auto : lists.archive}
+          empty={tab === 'archive' ? 'Arxiv boʻsh' : tab === 'auto' ? 'Vaqtli chegirma yoʻq — masalan tushlik payti 15% chegirma' : 'Faol aksiya yoʻq'}
+          statOf={statOf}
+          branchName={branchName}
+          canManage={canPromo}
+          onToggle={(id, isActive) => togglePromotion.mutate({ id, isActive })}
+          onEdit={(p) => setForm({ kind: 'promotion', item: p })}
+          onArchive={(id) => removePromotion.mutate(id)}
+        />
+      )}
 
-              <div style={{ minWidth: 160 }}>
-                <div style={{ fontSize: 14 }}>{describeCode(code)}</div>
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {/* Usage against the cap is the number a marketer checks. */}
-                  {code.usedCount} marta ishlatilgan
-                  {code.usageLimit != null ? ` / ${code.usageLimit}` : ''}
-                </div>
-              </div>
-
-              <div className="spacer" />
-              {canManage && (
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  disabled={toggle.isPending}
-                  onClick={() => toggle.mutate({ id: code.id, isActive: !code.isActive })}
-                >
-                  {code.isActive ? 'Oʻchirish' : 'Yoqish'}
-                </button>
-              )}
-              <span
-                className="badge"
-                style={{
-                  background: code.isActive ? '#DCFCE7' : '#F3F4F6',
-                  color: code.isActive ? '#166534' : '#6B7280',
-                }}
-              >
-                {code.isActive ? 'Faol' : 'Oʻchiq'}
-              </span>
+      {s && s.byBranch.length > 0 && (
+        <section className="card card--flush">
+          <div className="card__head">
+            <div>
+              <h2 className="card__title">Filiallar boʻyicha aksiya taqsimoti</h2>
+              <p className="card__sub">Qaysi filialda chegirmalar qancha tushum keltirdi</p>
             </div>
-          ))}
-        </div>
+            <button type="button" className="btn btn--sm btn--ghost" onClick={() => exportStats(s, all, allCodes)}>Eksport</button>
+          </div>
+          <div className="table-wrap">
+            <table style={{ minWidth: 560 }}>
+              <thead>
+                <tr><th>Filial</th><th className="td-right">Chegirmali cheklar</th><th className="td-right">Chegirma summasi</th><th className="td-right">Sof tushum</th><th className="td-right">Chegirma ulushi</th></tr>
+              </thead>
+              <tbody>
+                {s.byBranch.map((b) => (
+                  <tr key={b.branchId}>
+                    <td className="cell-main">{b.branchName}</td>
+                    <td className="td-right num">{count(b.ordersWithDiscount)} ta</td>
+                    <td className="td-right num">{som(b.discountTotal)}</td>
+                    <td className="td-right num cell-main">{som(b.revenue)}</td>
+                    <td className="td-right">{percent(b.revenue + b.discountTotal ? (b.discountTotal / (b.revenue + b.discountTotal)) * 100 : null)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {form?.kind === 'promotion' && (
+        <PromotionForm promotion={form.item} happyHour={form.happyHour} branches={branches} onClose={() => setForm(null)} onSaved={(text) => { setForm(null); setNotice({ ok: true, text }); }} />
+      )}
+      {form?.kind === 'code' && (
+        <PromoCodeForm code={form.item} branches={branches} onClose={() => setForm(null)} onSaved={(text) => { setForm(null); setNotice({ ok: true, text }); }} />
       )}
     </div>
   );
 }
 
-const CODE_TYPES: Array<{ value: PromoCodeType; label: string }> = [
-  { value: PromoCodeType.PERCENTAGE, label: 'Foizli' },
-  { value: PromoCodeType.FIXED, label: 'Belgilangan summa' },
-  { value: PromoCodeType.FREE_DELIVERY, label: 'Bepul yetkazish' },
-];
-
-function PromoCodeForm({
-  onClose,
-  onSaved,
-  onError,
+function PromotionGrid({
+  items,
+  empty,
+  statOf,
+  branchName,
+  canManage,
+  onToggle,
+  onEdit,
+  onArchive,
 }: {
-  onClose: () => void;
-  onSaved: (message: string) => void;
-  onError: (message: string) => void;
+  items: Promotion[];
+  empty: string;
+  statOf: (id: string) => { uses: number; discountTotal: number; revenue: number } | undefined;
+  branchName: (id: string) => string;
+  canManage: boolean;
+  onToggle: (id: string, isActive: boolean) => void;
+  onEdit: (p: Promotion) => void;
+  onArchive: (id: string) => void;
 }) {
-  const [code, setCode] = useState('');
-  const [type, setType] = useState<PromoCodeType>(PromoCodeType.PERCENTAGE);
-  const [discount, setDiscount] = useState('10');
-  const [minOrderAmount, setMinOrderAmount] = useState('');
-  const [usageLimit, setUsageLimit] = useState('');
-  const [userLimit, setUserLimit] = useState('1');
-
-  const isPercent = type === PromoCodeType.PERCENTAGE;
-  const needsDiscount = isPercent || type === PromoCodeType.FIXED;
-  const numeric = Number(discount.replace(/\D/g, '')) || 0;
-
-  const normalised = code.trim().toUpperCase();
-  const codeError =
-    normalised.length > 0 && !/^[A-Z0-9_-]{3,40}$/.test(normalised)
-      ? 'Kamida 3 belgi; faqat harf, raqam, - va _'
-      : null;
-
-  const discountError = needsDiscount
-    ? isPercent && (numeric < 1 || numeric > 100)
-      ? 'Foiz 1–100 oraligʻida boʻlishi kerak'
-      : !isPercent && numeric <= 0
-        ? 'Summa noldan katta boʻlishi kerak'
-        : null
-    : null;
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.marketing.createPromoCode({
-        code: normalised,
-        type,
-        discount: needsDiscount ? numeric : 0,
-        minOrderAmount: toAmount(minOrderAmount),
-        usageLimit: toAmount(usageLimit),
-        userLimit: toAmount(userLimit),
-        isActive: true,
-      }),
-    onSuccess: () => onSaved(`"${normalised}" kodi yaratildi`),
-    onError: (error) =>
-      onError(error instanceof RestorApiError ? error.message : 'Saqlanmadi'),
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (codeError || discountError || normalised.length < 3) return;
-    save.mutate();
-  }
+  const [confirm, setConfirm] = useState<string | null>(null);
+  if (items.length === 0) return <p className="card muted" style={{ textAlign: 'center' }}>{empty}</p>;
 
   return (
-    <form className="card" onSubmit={submit}>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h3 style={{ fontSize: 15, margin: 0 }}>Yangi promokod</h3>
-        <div className="spacer" />
-        <button type="button" className="btn btn--ghost" onClick={onClose}>
-          Yopish
-        </button>
-      </div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: 14,
-        }}
-      >
-        <Field
-          label="Kod"
-          hint="Mijoz shu matnni kiritadi. Katta harfga oʻtkaziladi."
-          error={codeError}
-        >
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="SALOM10"
-            style={{ ...inputStyle, letterSpacing: 1, textTransform: 'uppercase' }}
-          />
-        </Field>
-
-        <Field label="Turi" hint="Chegirma maydoni turga qarab oʻzgaradi.">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as PromoCodeType)}
-            style={inputStyle}
-          >
-            {CODE_TYPES.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        {needsDiscount && (
-          <Field
-            label={isPercent ? 'Chegirma (%)' : 'Chegirma (soʻm)'}
-            hint={isPercent ? '1 dan 100 gacha.' : 'Buyurtmadan ayriladi.'}
-            error={discountError}
-          >
-            <input
-              inputMode="numeric"
-              value={discount}
-              onChange={(e) => setDiscount(e.target.value)}
-              style={inputStyle}
-            />
-          </Field>
-        )}
-
-        <Field label="Minimal buyurtma" hint="Boʻsh — cheklovsiz.">
-          <input
-            inputMode="numeric"
-            value={minOrderAmount}
-            onChange={(e) => setMinOrderAmount(e.target.value)}
-            placeholder="50000"
-            style={inputStyle}
-          />
-        </Field>
-
-        <Field label="Jami limit" hint="Necha marta ishlatilishi mumkin. Boʻsh — cheksiz.">
-          <input
-            inputMode="numeric"
-            value={usageLimit}
-            onChange={(e) => setUsageLimit(e.target.value)}
-            placeholder="100"
-            style={inputStyle}
-          />
-        </Field>
-
-        <Field label="Bir mijozga" hint="Bitta mijoz necha marta ishlata oladi.">
-          <input
-            inputMode="numeric"
-            value={userLimit}
-            onChange={(e) => setUserLimit(e.target.value)}
-            style={inputStyle}
-          />
-        </Field>
-      </div>
-
-      <button
-        type="submit"
-        className="btn"
-        style={{ marginTop: 16 }}
-        disabled={save.isPending || Boolean(codeError) || Boolean(discountError)}
-      >
-        {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-      </button>
-    </form>
+    <div className="promo-grid">
+      {items.map((p) => {
+        const st = statOf(p.id);
+        const left = daysLeft(p.endsAt);
+        const done = expired(p.endsAt);
+        return (
+          <article key={p.id} className="card stack" style={{ gap: 12, opacity: p.isActive && !done ? 1 : 0.7 }}>
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <span className="pill pill--lg tone-primary">
+                {p.type === PromotionType.FREE_DELIVERY ? <><IconTruck size={13} /> Bepul yetkazish</> : badgeOf(p)}
+              </span>
+              <span className={`pill ${done ? 'tone-neutral' : p.isActive ? 'tone-success' : 'tone-neutral'}`}>{done ? 'Tugagan' : p.isActive ? 'Faol' : 'Pauza'}</span>
+            </div>
+            <div>
+              <h3 className="card__title">{p.name}</h3>
+              {p.description && <p className="card__sub">{p.description}</p>}
+            </div>
+            <div className="row cell-sub" style={{ gap: 8 }}>
+              {p.timeFrom && <span className="row" style={{ gap: 4 }}><IconClock size={13} /> {p.timeFrom}–{p.timeTo}</span>}
+              {p.daysOfWeek.length > 0 && p.daysOfWeek.length < 7 && <span>{p.daysOfWeek.map((d) => WEEKDAY_SHORT[d]).join(', ')}</span>}
+              {left !== null && !done && <span className={left <= 3 ? 'pill tone-warning' : ''}>{left} kun qoldi</span>}
+              {(p.startsAt || p.endsAt) && <span>{dateRange(p.startsAt, p.endsAt)}</span>}
+            </div>
+            <dl className="kv">
+              <dt>Turi</dt><dd>{PROMOTION_TYPE_LABELS[p.type] ?? p.type}</dd>
+              <dt>Min. buyurtma</dt><dd>{p.minOrderAmount ? som(p.minOrderAmount) : '—'}</dd>
+              <dt>Filiallar</dt><dd>{p.branchIds.length ? p.branchIds.map(branchName).join(', ') : 'Barchasi'}</dd>
+              <dt>Yakka</dt><dd>{p.isExclusive ? 'Ha — boshqasi qoʻshilmaydi' : 'Yoʻq — boshqalar bilan birga'}</dd>
+            </dl>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+              <div className="soft-box stat-mini"><span className="stat-mini__label">Qoʻllanish</span><span className="stat-mini__value">{st?.uses ?? 0} marta</span></div>
+              <div className="soft-box stat-mini"><span className="stat-mini__label">Tushum</span><span className="stat-mini__value">{compactSom(st?.revenue ?? 0)}</span></div>
+              <div className="soft-box stat-mini"><span className="stat-mini__label">Chegirma</span><span className="stat-mini__value">{compactSom(st?.discountTotal ?? 0)}</span></div>
+            </div>
+            {canManage && (
+              <div className="row" style={{ justifyContent: 'space-between', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <Switch checked={p.isActive} onChange={(v) => onToggle(p.id, v)} label={p.isActive ? 'Faol' : 'Pauza'} />
+                <span className="row" style={{ gap: 4 }}>
+                  <button type="button" className="btn btn--sm btn--ghost" onClick={() => onEdit(p)}><IconEdit size={13} /> Tahrirlash</button>
+                  {confirm === p.id ? (
+                    <>
+                      <button type="button" className="btn btn--sm btn--danger" onClick={() => onArchive(p.id)}>Ha</button>
+                      <button type="button" className="btn btn--sm btn--ghost" onClick={() => setConfirm(null)}>Yoʻq</button>
+                    </>
+                  ) : (
+                    <button type="button" className="icon-btn icon-btn--sm icon-btn--danger" aria-label="Arxivga" title="Arxivga" onClick={() => setConfirm(p.id)}><IconTrash size={14} /></button>
+                  )}
+                </span>
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-
-function Field({
-  label,
-  hint,
-  error,
-  children,
-}: {
-  label: string;
-  hint: string;
-  error?: string | null;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: 'grid', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-      {children}
-      <span className="muted" style={{ fontSize: 12, color: error ? '#991B1B' : undefined }}>
-        {error ?? hint}
-      </span>
-    </label>
-  );
-}
-
-const inputStyle = {
-  padding: '9px 12px',
-  borderRadius: 8,
-  border: '1px solid var(--border)',
-  fontSize: 14,
-} as const;
-
-/** Blank means "no limit"; the server stores null. */
-function toAmount(value: string): number | null {
-  const parsed = Number(value.replace(/\s/g, '').trim());
-  if (!value.trim() || !Number.isFinite(parsed) || parsed <= 0) return null;
-  return Math.round(parsed);
-}
-
-function describePromotion(promotion: Promotion): string {
-  switch (promotion.type) {
-    case PromotionType.PERCENTAGE_DISCOUNT:
-      return `${promotion.value}% chegirma${
-        promotion.maxDiscount ? `, maksimal ${formatMoney(promotion.maxDiscount)}` : ''
-      }`;
-    case PromotionType.FIXED_DISCOUNT:
-      return `${formatMoney(promotion.value)} chegirma`;
-    case PromotionType.FREE_DELIVERY:
-      return 'Bepul yetkazish';
-    case PromotionType.HAPPY_HOUR:
-      return `Happy hour${promotion.value ? ` — ${promotion.value}%` : ''}`;
-    default:
-      return promotion.type;
-  }
+function badgeOf(p: Promotion): string {
+  if (p.type === PromotionType.FIXED_DISCOUNT) return `−${som(p.value)}`;
+  if (p.type === PromotionType.PERCENTAGE_DISCOUNT || p.type === PromotionType.HAPPY_HOUR) return `−${p.value}% chegirma`;
+  return PROMOTION_TYPE_LABELS[p.type] ?? p.type;
 }
 
 function describeCode(code: PromoCode): string {
   switch (code.type) {
     case PromoCodeType.PERCENTAGE:
-      return `${code.discount}% chegirma`;
+      return `${code.discount}% chegirma${code.maxDiscount ? `, maksimal ${som(code.maxDiscount)}` : ''}`;
     case PromoCodeType.FIXED:
-      return `${formatMoney(code.discount)} chegirma`;
+      return `${som(code.discount)} chegirma`;
     case PromoCodeType.FREE_DELIVERY:
       return 'Bepul yetkazish';
     default:
       return code.type;
   }
+}
+
+function exportStats(s: PromotionStats, promotions: Promotion[], codes: PromoCode[]) {
+  const name = (id: string) => promotions.find((p) => p.id === id)?.name ?? id;
+  const code = (id: string) => codes.find((c) => c.id === id)?.code ?? id;
+  downloadCsv(`aksiyalar_${s.dateFrom.slice(0, 10)}_${s.dateTo.slice(0, 10)}`, [
+    ['Aksiya', 'Qoʻllanish', 'Chegirma (soʻm)', 'Tushum (soʻm)'],
+    ...s.promotions.map((p) => [name(p.promotionId), p.uses, p.discountTotal, p.revenue]),
+    [],
+    ['Promokod', 'Qoʻllanish', 'Chegirma (soʻm)', 'Tushum (soʻm)', 'Yangi mijozlar'],
+    ...s.promoCodes.map((c) => [code(c.promoCodeId), c.uses, c.discountTotal, c.revenue, c.newCustomers]),
+    [],
+    ['Filial', 'Chegirmali cheklar', 'Chegirma (soʻm)', 'Tushum (soʻm)'],
+    ...s.byBranch.map((b) => [b.branchName, b.ordersWithDiscount, b.discountTotal, b.revenue]),
+  ]);
 }

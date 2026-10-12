@@ -5,6 +5,7 @@ import {
   type BranchReportRow,
   type DashboardStats,
   type FinanceReport,
+  type PromotionStats,
   type SalesReport,
   type TopProductRow,
 } from '@restor/shared-types';
@@ -57,6 +58,14 @@ export class ReportsController {
     @Query(zodBody(reportQuerySchema)) query: ReportQueryInput,
   ): Promise<BranchReportRow[]> {
     return this.reports.branches(query);
+  }
+
+  /** Behind the marketing permission: whoever runs the offers needs their results. */
+  @Get('promotions')
+  @RequirePermissions(Permission.PROMOTIONS_VIEW)
+  @ApiOperation({ summary: 'Uses, discount and revenue per promotion, code and branch' })
+  promotions(@Query(zodBody(reportQuerySchema)) query: ReportQueryInput): Promise<PromotionStats> {
+    return this.reports.promotions(query);
   }
 
   /**

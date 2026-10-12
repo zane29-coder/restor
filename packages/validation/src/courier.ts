@@ -7,6 +7,7 @@ import {
   moneySchema,
   passwordSchema,
   phoneSchema,
+  queryBooleanSchema,
   uuidSchema,
 } from './primitives';
 
@@ -48,7 +49,7 @@ export const assignDeliverySchema = z.object({
 export const courierListQuerySchema = z.object({
   branchId: uuidSchema.optional(),
   status: courierStatusSchema.optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryBooleanSchema.optional(),
   search: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),

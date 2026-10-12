@@ -87,6 +87,17 @@ export const timezoneSchema = z.string().refine((tz) => {
 
 export const isoDateTimeSchema = z.string().datetime({ offset: true });
 
+/**
+ * A boolean query-string parameter.
+ *
+ * Not `z.coerce.boolean()`: that is `Boolean(value)`, and `Boolean("false")`
+ * is true — so `?isActive=false` used to return exactly the active rows.
+ */
+export const queryBooleanSchema = z.preprocess(
+  (value) => (value === 'true' || value === '1' ? true : value === 'false' || value === '0' ? false : value),
+  z.boolean(),
+);
+
 export const shortTextSchema = z.string().trim().min(1).max(255);
 export const longTextSchema = z.string().trim().max(2000);
 

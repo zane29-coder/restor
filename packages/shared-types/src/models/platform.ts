@@ -290,6 +290,29 @@ export interface BranchReportRow {
   dailyRevenueTarget: number | null;
 }
 
+/** What the offers did in a period: per promotion, per code, per branch. */
+export interface PromotionStats {
+  dateFrom: string;
+  dateTo: string;
+  /** Completed orders in the period that carried any discount. */
+  ordersWithDiscount: number;
+  ordersTotal: number;
+  /** Everything the offers gave away, minor units. */
+  discountTotal: number;
+  /** Net revenue of the discounted orders. */
+  discountedRevenue: number;
+  revenueTotal: number;
+  promotions: Array<{ promotionId: string; uses: number; discountTotal: number; revenue: number }>;
+  promoCodes: Array<{ promoCodeId: string; uses: number; discountTotal: number; revenue: number; newCustomers: number }>;
+  byBranch: Array<{
+    branchId: string;
+    branchName: string;
+    ordersWithDiscount: number;
+    discountTotal: number;
+    revenue: number;
+  }>;
+}
+
 export interface RevenuePoint {
   /** Bucket start, ISO date or datetime depending on the granularity. */
   at: string;

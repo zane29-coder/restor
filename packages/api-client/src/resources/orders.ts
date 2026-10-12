@@ -14,6 +14,7 @@ import type {
   OrderStatusHistoryEntry,
   Paginated,
   Payment,
+  PromotionStats,
   RefundRequest,
   SalesReport,
   TopProductRow,
@@ -209,6 +210,11 @@ export class ReportsResource {
   /** Every branch side by side, best first, with its daily target. */
   branches(query?: Omit<ReportQuery, 'branchId'>): Promise<BranchReportRow[]> {
     return this.http.get<BranchReportRow[]>('reports/branches', { query });
+  }
+
+  /** Uses, discount and revenue per promotion, promo code and branch. */
+  promotions(query?: ReportQuery): Promise<PromotionStats> {
+    return this.http.get<PromotionStats>('reports/promotions', { query });
   }
 
   /** Shift totals and every closing discrepancy. Needs `finance.view`. */
