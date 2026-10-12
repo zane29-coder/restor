@@ -41,7 +41,9 @@ compute midnight itself and get it wrong for a branch in another zone.
 GET /reports/dashboard   ?branchId&dateFrom&dateTo
 GET /reports/sales       …&granularity=hour|day|week|month
 GET /reports/products    …&limit
-GET /reports/finance     …
+GET /reports/branches    ?dateFrom&dateTo
+GET /reports/promotions  …            (promotions.view)
+GET /reports/finance     …            (finance.view)
 ```
 
 Default range is the last 30 days.
@@ -60,6 +62,19 @@ App, QR table — as opposed to a till or a call taken by staff.
 Revenue split by order type, by source and by tender, plus a timeline.
 Discounts and delivery fees are reported separately — the discount total is
 what the offers actually cost.
+
+### Cost of goods and margin
+
+`sales` returns `costOfGoods` and `costedRevenue`; `products` returns
+`unitCost` and `marginPercent` per dish. The cost is the dish's **recipe** at
+current ingredient prices.
+
+Costed **per branch**: a recipe points at stock items, and stock items belong
+to a branch, so a burger costs what that branch's shelf says. Revenue a
+branch made on a dish it has no recipe for is left out of `costedRevenue`
+rather than counted as free — a margin is only ever claimed over what was
+actually costed, and the screen says what share of revenue that is.
+`costOfGoods` is `null` when nothing sold had a recipe.
 
 ### Products and ABC
 
@@ -92,6 +107,25 @@ size of the drawer and leave a reader comparing two numbers that disagree with
 
 Trading totals (`cashSales`, `cardSales`, `onlineSales`) still cover every
 shift in the window.
+
+`shifts` is the Z-report ledger: every shift in the window (at most 200,
+newest first) with branch, who opened and closed it, expected and counted
+cash, and card plus online takings.
+
+## Branch scope
+
+Without a `branchId`, a branch-scoped user gets **their own branches**, never
+the whole tenant: every report filters by `BranchScope.filterFor`. Asking for
+a branch outside one's scope is refused.
+
+## The admin screen
+
+Tabs: sales and revenue, product profitability (ABC + margin), finance and
+cash (behind `finance.view`), branch comparison. `?tab=` and `?branch=` are
+read from the URL, which is how the branches page links into it. Comparisons
+with the previous period are two server answers side by side; the weekend
+insight and month-end forecast are arithmetic on the returned timeline, shown
+only when there is enough data for them to mean something.
 
 ## Permissions
 

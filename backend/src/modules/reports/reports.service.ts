@@ -59,13 +59,13 @@ export class ReportsService {
   /* ------------------------------------------------------------------ */
 
   async dashboard(range: ReportRange): Promise<DashboardStats> {
-    const { from, to, branchId } = await this.resolveRange(range);
+    const { from, to, branchWhere } = await this.resolveRange(range);
 
     // The preceding window of equal length, for the change percentages.
     const span = to.getTime() - from.getTime();
     const prevFrom = new Date(from.getTime() - span);
 
-    const scope = { ...(branchId ? { branchId } : {}) };
+    const scope = branchWhere;
     const delivered = { status: OrderStatus.DELIVERED };
 
     const [current, previous, cancelled, byType, bySource, customers, newCustomers] =
@@ -120,7 +120,7 @@ export class ReportsService {
     return {
       dateFrom: from.toISOString(),
       dateTo: to.toISOString(),
-      branchId: branchId ?? null,
+      branchId: range.branchId ?? null,
       revenue,
       ordersCount,
       averageCheck: ordersCount > 0 ? Math.round(revenue / ordersCount) : 0,
@@ -149,14 +149,14 @@ export class ReportsService {
   /* ------------------------------------------------------------------ */
 
   async sales(range: ReportRange, granularity: Granularity): Promise<SalesReport> {
-    const { from, to, branchId } = await this.resolveRange(range);
+    const { from, to, branchId, branchWhere } = await this.resolveRange(range);
     const scope = {
-      ...(branchId ? { branchId } : {}),
+      ...branchWhere,
       status: OrderStatus.DELIVERED,
       createdAt: { gte: from, lte: to },
     };
 
-    const [totals, byType, bySource, payments, orders] = await Promise.all([
+    const [totals, byType, bySource, payments, orders, costing] = await Promise.all([
       this.prisma.db.order.aggregate({
         where: scope,
         _sum: { total: true, refundedTotal: true, discountTotal: true, deliveryFee: true },
@@ -177,7 +177,7 @@ export class ReportsService {
       this.prisma.db.payment.groupBy({
         by: ['method'],
         where: {
-          ...(branchId ? { branchId } : {}),
+          ...branchWhere,
           status: PaymentTransactionStatus.SUCCESS,
           paidAt: { gte: from, lte: to },
         },
@@ -192,7 +192,13 @@ export class ReportsService {
         select: { createdAt: true, total: true, refundedTotal: true },
         orderBy: { createdAt: 'asc' },
       }),
+      this.productCosting(from, to, branchWhere),
     ]);
+
+    const costed = [...costing.values()].reduce(
+      (sum, row) => ({ revenue: sum.revenue + row.costedRevenue, cost: sum.cost + row.cost }),
+      { revenue: 0, cost: 0 },
+    );
 
     const revenue = net(totals._sum.total, totals._sum.refundedTotal);
     const ordersCount = totals._count._all;
@@ -209,6 +215,8 @@ export class ReportsService {
       averageCheck: ordersCount > 0 ? Math.round(revenue / ordersCount) : 0,
       discountTotal: totals._sum.discountTotal ?? 0,
       deliveryFees: totals._sum.deliveryFee ?? 0,
+      costedRevenue: costed.revenue,
+      costOfGoods: costed.revenue > 0 ? costed.cost : null,
       byType: byType.map((row) => ({
         type: row.type as OrderType,
         count: row._count._all,
@@ -244,19 +252,22 @@ export class ReportsService {
    * a menu can afford to drop.
    */
   async products(range: ReportRange, limit = 50): Promise<TopProductRow[]> {
-    const { from, to, branchId } = await this.resolveRange(range);
+    const { from, to, branchWhere } = await this.resolveRange(range);
 
-    const rows = await this.prisma.db.orderItem.groupBy({
-      by: ['productId', 'name'],
-      where: {
-        order: {
-          ...(branchId ? { branchId } : {}),
-          status: OrderStatus.DELIVERED,
-          createdAt: { gte: from, lte: to },
+    const [rows, costing] = await Promise.all([
+      this.prisma.db.orderItem.groupBy({
+        by: ['productId', 'name'],
+        where: {
+          order: {
+            ...branchWhere,
+            status: OrderStatus.DELIVERED,
+            createdAt: { gte: from, lte: to },
+          },
         },
-      },
-      _sum: { quantity: true, total: true },
-    });
+        _sum: { quantity: true, total: true },
+      }),
+      this.productCosting(from, to, branchWhere),
+    ]);
 
     const ranked = rows
       .map((row) => ({
@@ -273,14 +284,85 @@ export class ReportsService {
     return ranked.slice(0, limit).map((row) => {
       running += row.revenue;
       const cumulative = total > 0 ? running / total : 0;
+      const cost = row.productId ? costing.get(row.productId) : undefined;
+      const known = cost && cost.costedQuantity > 0 ? cost : null;
 
       return {
         ...row,
         abcClass: cumulative <= 0.8 ? 'A' : cumulative <= 0.95 ? 'B' : 'C',
         revenueSharePercent:
           total > 0 ? Math.round((row.revenue / total) * 1000) / 10 : 0,
+        unitCost: known ? Math.round(known.cost / known.costedQuantity) : null,
+        marginPercent:
+          known && known.costedRevenue > 0
+            ? Math.round(((known.costedRevenue - known.cost) / known.costedRevenue) * 1000) / 10
+            : null,
       } satisfies TopProductRow;
     });
+  }
+
+  /**
+   * What the dishes sold in a window cost to make, per product.
+   *
+   * Costed per branch, because a recipe points at stock items and stock
+   * items belong to a branch — the same burger costs what Chilonzor's shelf
+   * says in Chilonzor. Revenue a branch made on a dish it has no recipe for is
+   * left out of `costedRevenue` rather than counted as free, so a margin is
+   * only ever claimed over what was actually costed.
+   */
+  private async productCosting(
+    from: Date,
+    to: Date,
+    branchWhere: { branchId?: string | { in: string[] } },
+  ): Promise<Map<string, { cost: number; costedRevenue: number; costedQuantity: number }>> {
+    const branches = await this.prisma.db.branch.findMany({
+      where: { ...(branchWhere.branchId ? { id: branchWhere.branchId } : {}) },
+      select: { id: true },
+    });
+
+    const sold = await Promise.all(
+      branches.map(async (branch) => ({
+        branchId: branch.id,
+        rows: await this.prisma.db.orderItem.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { not: null },
+            order: { branchId: branch.id, status: OrderStatus.DELIVERED, createdAt: { gte: from, lte: to } },
+          },
+          _sum: { quantity: true, total: true },
+        }),
+      })),
+    );
+
+    const productIds = [...new Set(sold.flatMap((s) => s.rows.map((r) => r.productId!)))];
+    const result = new Map<string, { cost: number; costedRevenue: number; costedQuantity: number }>();
+    if (productIds.length === 0) return result;
+
+    // The join table has no tenantId; the ids came from this tenant's orders.
+    const ingredients = await this.prisma.db.productIngredient.findMany({
+      where: { productId: { in: productIds } },
+      select: { productId: true, quantity: true, stockItem: { select: { branchId: true, costPerUnit: true, deletedAt: true } } },
+    });
+    const perServing = new Map<string, number>();
+    for (const row of ingredients) {
+      if (row.stockItem.deletedAt) continue;
+      const key = `${row.productId}:${row.stockItem.branchId}`;
+      perServing.set(key, (perServing.get(key) ?? 0) + row.quantity.toNumber() * row.stockItem.costPerUnit);
+    }
+
+    for (const { branchId, rows } of sold) {
+      for (const row of rows) {
+        const unit = perServing.get(`${row.productId}:${branchId}`);
+        if (unit === undefined) continue;
+        const quantity = row._sum.quantity ?? 0;
+        const entry = result.get(row.productId!) ?? { cost: 0, costedRevenue: 0, costedQuantity: 0 };
+        entry.cost += Math.round(unit * quantity);
+        entry.costedRevenue += row._sum.total ?? 0;
+        entry.costedQuantity += quantity;
+        result.set(row.productId!, entry);
+      }
+    }
+    return result;
   }
 
   /* ------------------------------------------------------------------ */
@@ -464,14 +546,18 @@ export class ReportsService {
    * how the month went; the list tells them which evening to ask about.
    */
   async finance(range: ReportRange): Promise<FinanceReport> {
-    const { from, to, branchId } = await this.resolveRange(range);
+    const { from, to, branchId, branchWhere } = await this.resolveRange(range);
 
     const shifts = await this.prisma.db.cashShift.findMany({
       where: {
-        ...(branchId ? { branchId } : {}),
+        ...branchWhere,
         openedAt: { gte: from, lte: to },
       },
-      include: { closedBy: { select: { fullName: true } } },
+      include: {
+        closedBy: { select: { fullName: true } },
+        openedBy: { select: { fullName: true } },
+        branch: { select: { name: true } },
+      },
       orderBy: { openedAt: 'desc' },
     });
 
@@ -536,6 +622,24 @@ export class ReportsService {
           closedByName: shift.closedBy?.fullName ?? null,
           comment: shift.comment,
         })),
+      // The Z-report ledger: every shift in the window, newest first.
+      shifts: shifts.slice(0, 200).map((shift) => ({
+        shiftId: shift.id,
+        branchId: shift.branchId,
+        branchName: shift.branch.name,
+        openedAt: shift.openedAt.toISOString(),
+        closedAt: shift.closedAt?.toISOString() ?? null,
+        openedByName: shift.openedBy?.fullName ?? null,
+        closedByName: shift.closedBy?.fullName ?? null,
+        expectedCash: shift.expectedCash,
+        actualCash: shift.actualCash,
+        difference: shift.difference,
+        cashTotal: shift.cashTotal,
+        cardTotal: shift.cardTotal,
+        onlineTotal: shift.onlineTotal,
+        refundTotal: shift.refundTotal,
+        orderCount: shift.orderCount,
+      })),
     };
   }
 
@@ -562,7 +666,12 @@ export class ReportsService {
       throw AppException.badRequest('Boshlanish sanasi tugashdan keyin boʻlishi mumkin emas');
     }
 
-    return { from, to, branchId: range.branchId, timezone };
+    // Without a branch, a branch-scoped user still sees only their own: the
+    // filter is the caller's branches, never "everything".
+    const allowed = this.branchScope.filterFor(range.branchId);
+    const branchWhere: { branchId?: string | { in: string[] } } = allowed ? { branchId: allowed } : {};
+
+    return { from, to, branchId: range.branchId, timezone, branchWhere };
   }
 
   private async timezoneFor(branchId?: string): Promise<string> {

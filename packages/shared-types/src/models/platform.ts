@@ -381,6 +381,10 @@ export interface TopProductRow {
   abcClass?: 'A' | 'B' | 'C';
   /** This product's share of the period's revenue, as a percentage. */
   revenueSharePercent?: number;
+  /** Ingredient cost of one serving, averaged over branches that cost it; null without a recipe. */
+  unitCost?: number | null;
+  /** Gross margin over the costed sales; null without a recipe. */
+  marginPercent?: number | null;
 }
 
 /** How a period's takings were tendered (TZ §35). */
@@ -404,6 +408,14 @@ export interface SalesReport {
   /** Discounts and promotions given away — what the offers actually cost. */
   discountTotal: number;
   deliveryFees: number;
+  /**
+   * Ingredient cost of the dishes sold, from their recipes, and the revenue
+   * it is measured against. Only dishes with a recipe at the branch that sold
+   * them are costed, so `costOfGoods / costedRevenue` is an honest margin;
+   * `costOfGoods` is null when nothing sold had a recipe.
+   */
+  costOfGoods: number | null;
+  costedRevenue: number;
   byType: Array<{ type: OrderType; count: number; revenue: number }>;
   bySource: Array<{ source: OrderSource; count: number; revenue: number }>;
   byPayment: PaymentBreakdownRow[];
@@ -449,5 +461,23 @@ export interface FinanceReport {
     difference: number;
     closedByName: string | null;
     comment: string | null;
+  }>;
+  /** Every shift in the window, newest first (at most 200) — the Z-report ledger. */
+  shifts: Array<{
+    shiftId: string;
+    branchId: string;
+    branchName: string;
+    openedAt: string;
+    closedAt: string | null;
+    openedByName: string | null;
+    closedByName: string | null;
+    expectedCash: number;
+    actualCash: number | null;
+    difference: number | null;
+    cashTotal: number;
+    cardTotal: number;
+    onlineTotal: number;
+    refundTotal: number;
+    orderCount: number;
   }>;
 }

@@ -1153,6 +1153,43 @@ kbd {
   align-items: start;
 }
 
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+
+.abc-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-left: 4px solid var(--border-strong);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.abc-card--a { border-left-color: var(--success); }
+.abc-card--b { border-left-color: var(--info); }
+.abc-card--c { border-left-color: var(--text-subtle); }
+
+.abc-card.is-active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 40%, transparent);
+}
+
+.abc-card__letter {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--surface-low);
+  font-size: 20px;
+  font-weight: 800;
+}
+
 .soft-box {
   padding: 12px;
   border-radius: var(--radius);
@@ -1418,6 +1455,10 @@ kbd {
   border-radius: inherit;
   background: var(--primary);
   transition: width 300ms ease;
+}
+
+.progress__bar--ok {
+  background: var(--success);
 }
 
 /* ---------------- Split view (list + detail panel) ---------------- */

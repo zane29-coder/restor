@@ -1,363 +1,626 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  OrderSource,
-  OrderType,
-  PaymentMethod,
   Permission,
+  type BranchReportRow,
   type FinanceReport,
   type SalesReport,
   type TopProductRow,
 } from '@restor/shared-types';
-import { formatMoney } from '@restor/shared-utils';
+import {
+  IconBarChart,
+  IconBranch,
+  IconCash,
+  IconCheckCircle,
+  IconDownload,
+  IconHistory,
+  IconOrders,
+  IconPieChart,
+  IconSearch,
+  IconTrendUp,
+  IconWallet,
+} from '@restor/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useBranch } from '../lib/branch';
+import { compactSom, count, dateTimeOf, percent, som, timeOf } from '../lib/format';
+import { ORDER_TYPE_LABELS, PAYMENT_METHOD_LABELS, SOURCE_LABELS } from '../lib/labels';
+import { buildChart, chartLabel, type ChartGranularity } from '../lib/timeline';
+import { BarList, Donut, LineChart, type LineSeries } from '../components/charts';
 import { ErrorState, Loading } from '../components/States';
+import {
+  Card,
+  Delta,
+  Kpi,
+  PageHeader,
+  PeriodPicker,
+  Seg,
+  Tabs,
+  changeOf,
+  downloadCsv,
+  periodDays,
+  periodFor,
+  previousPeriod,
+  type Period,
+} from '../components/ui';
 
-type Tab = 'sales' | 'products' | 'finance';
+type Tab = 'sales' | 'products' | 'finance' | 'branches';
+const TABS: Tab[] = ['sales', 'products', 'finance', 'branches'];
 
 /**
- * Reporting (TZ §7, §37).
+ * Reports (TZ 7, 37).
  *
- * Every figure is computed from live orders, payments and shifts, so nothing
- * here can disagree with the operations screens.
- *
- * The date range defaults to the last 30 days and the boundaries are resolved
- * in the BRANCH's timezone server-side — a report that starts at 05:00
- * because the server runs UTC quietly moves five hours of trade into the
- * wrong day.
+ * Every figure is the server's, computed from orders, payments and shifts on
+ * request — revenue is DELIVERED orders net of refunds, everywhere. The
+ * screen adds nothing of its own but the comparisons between two server
+ * answers.
  */
 export function ReportsPage() {
   const { can } = useAuth();
-  const [tab, setTab] = useState<Tab>('sales');
-  const [branchId, setBranchId] = useState('');
-  const [dateFrom, setDateFrom] = useState(isoDaysAgo(29));
-  const [dateTo, setDateTo] = useState(isoDaysAgo(0));
+  const { branches, branchId: headerBranch } = useBranch();
+  const [params, setParams] = useSearchParams();
+  const canFinance = can(Permission.FINANCE_VIEW);
 
-  const branches = useQuery({
-    queryKey: ['branches', 'summary'],
-    queryFn: () => api.branches.summaries(),
+  const requested = params.get('tab') as Tab | null;
+  const tab: Tab = requested && TABS.includes(requested) && (requested !== 'finance' || canFinance) ? requested : 'sales';
+  const branchId = params.get('branch') ?? headerBranch;
+  const [period, setPeriod] = useState<Period>(() => periodFor('30d'));
+  const [compare, setCompare] = useState(true);
+  const [granularity, setGranularity] = useState<ChartGranularity>('day');
+
+  const setParam = (key: string, value: string) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p);
+        if (value) next.set(key, value);
+        else next.delete(key);
+        return next;
+      },
+      { replace: true },
+    );
+
+  const days = periodDays(period);
+  const grain: ChartGranularity = days <= 1 ? 'hour' : granularity === 'hour' ? 'day' : granularity === 'week' && days < 14 ? 'day' : granularity;
+  const query = { branchId: branchId || undefined, dateFrom: period.dateFrom, dateTo: period.dateTo };
+  const prev = previousPeriod(period);
+  const prevQuery = { ...query, dateFrom: prev.dateFrom, dateTo: prev.dateTo };
+
+  const sales = useQuery({
+    queryKey: ['reports', 'sales', query, grain],
+    queryFn: () => api.reports.sales({ ...query, granularity: grain }),
+    enabled: tab === 'sales',
+  });
+  const prevSales = useQuery({
+    queryKey: ['reports', 'sales', prevQuery, grain],
+    queryFn: () => api.reports.sales({ ...prevQuery, granularity: grain }),
+    enabled: tab === 'sales',
+  });
+  const products = useQuery({
+    queryKey: ['reports', 'products', query],
+    queryFn: () => api.reports.products({ ...query, limit: 200 }),
+    enabled: tab === 'sales' || tab === 'products',
+  });
+  const finance = useQuery({
+    queryKey: ['reports', 'finance', query],
+    queryFn: () => api.reports.finance(query),
+    enabled: canFinance && (tab === 'finance' || tab === 'sales'),
+  });
+  const branchRows = useQuery({
+    queryKey: ['reports', 'branches', { dateFrom: period.dateFrom, dateTo: period.dateTo }],
+    queryFn: () => api.reports.branches({ dateFrom: period.dateFrom, dateTo: period.dateTo }),
+    enabled: tab === 'branches',
   });
 
-  const range = {
-    ...(branchId ? { branchId } : {}),
-    dateFrom,
-    dateTo,
+  const exportCurrent = () => {
+    const stamp = `${period.dateFrom}_${period.dateTo}`;
+    if (tab === 'sales' && sales.data) exportSales(sales.data, stamp);
+    if (tab === 'products' && products.data) exportProducts(products.data, stamp);
+    if (tab === 'finance' && finance.data) exportFinance(finance.data, stamp);
+    if (tab === 'branches' && branchRows.data) exportBranches(branchRows.data, days, stamp);
   };
 
-  const canSeeFinance = can(Permission.FINANCE_VIEW);
-
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-        <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={control}>
-          <option value="">Barcha filiallar</option>
-          {branches.data?.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
+    <div className="page">
+      <PageHeader
+        crumb="Hisobotlar"
+        title="Moliya va hisobotlar markazi"
+        subtitle="Sof tushum, sotuvlar tahlili, toʻlov turlari, kassa smenalari va filiallar solishtirmasi"
+        actions={
+          <>
+            {tab === 'sales' && (
+              <button type="button" className={compare ? 'btn btn--soft' : 'btn btn--ghost'} aria-pressed={compare} onClick={() => setCompare((v) => !v)}>
+                <IconTrendUp size={16} /> Davrni solishtirish
+              </button>
+            )}
+            {canFinance && tab !== 'finance' && (
+              <button type="button" className="btn btn--ghost" onClick={() => setParam('tab', 'finance')}>
+                <IconHistory size={16} /> Z-hisobotlar
+              </button>
+            )}
+            <button type="button" className="btn" onClick={exportCurrent}>
+              <IconDownload size={16} /> Eksport (Excel)
+            </button>
+          </>
+        }
+      />
 
-        <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={control} />
-        <span className="muted">—</span>
-        <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={control} />
+      <Tabs
+        value={tab}
+        onChange={(t) => setParam('tab', t === 'sales' ? '' : t)}
+        options={[
+          { value: 'sales' as Tab, label: 'Sotuv va tushum', Icon: IconBarChart },
+          { value: 'products' as Tab, label: 'Mahsulotlar rentabelligi', Icon: IconPieChart },
+          ...(canFinance ? [{ value: 'finance' as Tab, label: 'Moliya va kassa', Icon: IconCash }] : []),
+          { value: 'branches' as Tab, label: 'Filiallar solishtirmasi', Icon: IconBranch },
+        ]}
+      />
 
-        <div className="spacer" />
-
-        {(
-          [
-            ['sales', 'Sotuv'],
-            ['products', 'Mahsulotlar'],
-            ...(canSeeFinance ? ([['finance', 'Moliya']] as const) : []),
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            className={tab === key ? 'btn' : 'btn btn--ghost'}
-            onClick={() => setTab(key as Tab)}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+        <PeriodPicker value={period} onChange={setPeriod} />
+        <div className="row" style={{ gap: 8 }}>
+          {tab !== 'branches' && branches.length > 1 && (
+            <select aria-label="Filial" value={branchId} onChange={(e) => setParam('branch', e.target.value)}>
+              <option value="">Barcha filiallar ({branches.length} ta)</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          )}
+          {tab === 'sales' && days > 1 && (
+            <Seg
+              label="Qadam"
+              quiet
+              options={[
+                { value: 'day' as ChartGranularity, label: 'Kunlik' },
+                ...(days >= 14 ? [{ value: 'week' as ChartGranularity, label: 'Haftalik' }] : []),
+              ]}
+              value={grain}
+              onChange={setGranularity}
+            />
+          )}
+        </div>
       </div>
 
-      {tab === 'sales' && <SalesTab range={range} />}
-      {tab === 'products' && <ProductsTab range={range} />}
-      {tab === 'finance' && canSeeFinance && <FinanceTab range={range} />}
+      {tab === 'sales' && (
+        sales.isLoading ? <Loading /> : sales.isError ? <ErrorState error={sales.error} onRetry={() => void sales.refetch()} /> : (
+          <SalesTab
+            sales={sales.data!}
+            prevSales={compare ? prevSales.data : undefined}
+            products={products.data ?? []}
+            finance={canFinance ? finance.data : undefined}
+            period={period}
+            granularity={grain}
+          />
+        )
+      )}
+      {tab === 'products' && (
+        products.isLoading ? <Loading /> : products.isError ? <ErrorState error={products.error} onRetry={() => void products.refetch()} /> : <ProductsTab rows={products.data ?? []} />
+      )}
+      {tab === 'finance' && canFinance && (
+        finance.isLoading ? <Loading /> : finance.isError ? <ErrorState error={finance.error} onRetry={() => void finance.refetch()} /> : <FinanceTab report={finance.data!} />
+      )}
+      {tab === 'branches' && (
+        branchRows.isLoading ? <Loading /> : branchRows.isError ? <ErrorState error={branchRows.error} onRetry={() => void branchRows.refetch()} /> : (
+          <BranchesTab rows={branchRows.data ?? []} days={days} highlight={params.get('branch')} />
+        )
+      )}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
+/* Sales                                                                      */
+/* -------------------------------------------------------------------------- */
 
-function SalesTab({ range }: { range: Record<string, string> }) {
-  const [granularity, setGranularity] = useState<'day' | 'week' | 'month'>('day');
+const WEEKEND = new Set([0, 6]);
 
-  const report = useQuery({
-    queryKey: ['reports', 'sales', range, granularity],
-    queryFn: () => api.reports.sales({ ...range, granularity }),
-  });
+function SalesTab({
+  sales,
+  prevSales,
+  products,
+  finance,
+  period,
+  granularity,
+}: {
+  sales: SalesReport;
+  prevSales: SalesReport | undefined;
+  products: TopProductRow[];
+  finance: FinanceReport | undefined;
+  period: Period;
+  granularity: ChartGranularity;
+}) {
+  const chart = useMemo(
+    () => buildChart(sales.timeline, prevSales?.timeline ?? [], 'revenue', granularity, period),
+    [sales.timeline, prevSales?.timeline, granularity, period],
+  );
+  const series: LineSeries[] = [
+    { key: 'current', label: 'Joriy davr', color: 'var(--series-1)', values: chart.current, area: true },
+    ...(prevSales ? [{ key: 'previous', label: 'Oldingi davr', color: 'var(--series-2)', values: chart.previous, dashed: true }] : []),
+  ];
 
-  if (report.isLoading) return <Loading />;
-  if (report.isError) {
-    return <ErrorState error={report.error} onRetry={() => void report.refetch()} />;
-  }
-  if (!report.data) return null;
+  const peak = sales.timeline.reduce<(typeof sales.timeline)[number] | null>((best, p) => (!best || p.revenue > best.revenue ? p : best), null);
 
-  const data: SalesReport = report.data;
-  const peak = Math.max(1, ...data.timeline.map((point) => point.revenue));
+  // Weekend against weekday, from the days actually traded — stated only
+  // when there are enough of both to mean something.
+  const weekendInsight = useMemo(() => {
+    if (granularity !== 'day') return null;
+    const daily = sales.timeline.map((p) => ({ day: new Date(`${p.at.slice(0, 10)}T12:00:00`).getDay(), revenue: p.revenue }));
+    const we = daily.filter((d) => WEEKEND.has(d.day));
+    const wd = daily.filter((d) => !WEEKEND.has(d.day));
+    if (we.length < 2 || wd.length < 4) return null;
+    const avg = (rows: typeof daily) => rows.reduce((s, r) => s + r.revenue, 0) / rows.length;
+    const diff = changeOf(avg(we), avg(wd));
+    return diff === null || Math.abs(diff) < 5 ? null : diff;
+  }, [sales.timeline, granularity]);
+
+  // A month-to-date figure projected to the month's end at the same daily
+  // rate — only for "this month", where the projection means something.
+  const forecast = useMemo(() => {
+    if (period.key !== 'month') return null;
+    const today = new Date();
+    const elapsed = today.getDate();
+    const inMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    return elapsed > 0 ? Math.round((sales.revenue / elapsed) * inMonth) : null;
+  }, [period.key, sales.revenue]);
+
+  const margin = sales.costOfGoods !== null && sales.costedRevenue > 0 ? ((sales.costedRevenue - sales.costOfGoods) / sales.costedRevenue) * 100 : null;
+  const costedShare = sales.revenue > 0 ? (sales.costedRevenue / sales.revenue) * 100 : 0;
+
+  // Three validated series colours; the tail is folded into "Boshqa".
+  const tenders = [...sales.byPayment].sort((a, b) => b.amount - a.amount);
+  const paymentTotal = tenders.reduce((s, r) => s + r.amount, 0);
+  const slices = [
+    ...tenders.slice(0, 3).map((r, i) => ({ key: r.method, label: PAYMENT_METHOD_LABELS[r.method] ?? r.method, value: r.amount, color: `var(--series-${i + 1})` })),
+    ...(tenders.length > 3 ? [{ key: 'other', label: 'Boshqa', value: tenders.slice(3).reduce((s, r) => s + r.amount, 0), color: 'var(--text-subtle)' }] : []),
+  ];
+
+  const byRevenue = products[0];
+  const byQuantity = [...products].sort((a, b) => b.quantity - a.quantity)[0];
+  const byMargin = products.filter((p) => p.marginPercent !== null && p.marginPercent !== undefined && p.quantity >= 3).sort((a, b) => b.marginPercent! - a.marginPercent!)[0];
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={cardGrid}>
-        <Stat label="Tushum" value={formatMoney(data.revenue)} big />
-        <Stat label="Buyurtma" value={String(data.ordersCount)} big />
-        <Stat label="Oʻrtacha chek" value={formatMoney(data.averageCheck)} />
-        <Stat label="Chegirmalar" value={formatMoney(data.discountTotal)} />
-        <Stat label="Yetkazish haqi" value={formatMoney(data.deliveryFees)} />
-        <Stat label="Qaytarilgan" value={formatMoney(data.refunds)} tone={data.refunds > 0 ? 'warn' : undefined} />
-      </div>
-
-      <div className="card">
-        <div className="row" style={{ marginBottom: 14 }}>
-          <h3 style={{ fontSize: 15, margin: 0 }}>Tushum dinamikasi</h3>
-          <div className="spacer" />
-          {(['day', 'week', 'month'] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={granularity === value ? 'btn' : 'btn btn--ghost'}
-              style={{ padding: '5px 12px', minHeight: 30, fontSize: 12 }}
-              onClick={() => setGranularity(value)}
-            >
-              {value === 'day' ? 'Kun' : value === 'week' ? 'Hafta' : 'Oy'}
-            </button>
-          ))}
-        </div>
-
-        {data.timeline.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>Bu davrda sotuv yoʻq.</p>
+    <>
+      <div className="kpi-grid">
+        <Kpi
+          label="Jami sof tushum"
+          value={compactSom(sales.revenue)}
+          unit="soʻm"
+          Icon={IconWallet}
+          tone="tone-primary"
+          foot={
+            <>
+              <span className="kpi__foot-text"><Delta value={prevSales ? changeOf(sales.revenue, prevSales.revenue) : null} /></span>
+              <span>{prevSales ? 'oldingi davrga nisbatan' : `${som(sales.refunds)} qaytarilgan`}</span>
+            </>
+          }
+        />
+        <Kpi
+          label="Cheklar soni"
+          value={count(sales.ordersCount)}
+          unit="ta"
+          Icon={IconOrders}
+          tone="tone-info"
+          foot={
+            <>
+              <span className="kpi__foot-text">Oʻrtacha: {som(sales.averageCheck)}</span>
+              <Delta value={prevSales ? changeOf(sales.averageCheck, prevSales.averageCheck) : null} />
+            </>
+          }
+        />
+        <Kpi
+          label="Tannarx va marja"
+          value={margin === null ? '—' : percent(margin)}
+          unit={margin === null ? undefined : 'yalpi marja'}
+          Icon={IconPieChart}
+          tone="tone-success"
+          foot={
+            <span className="kpi__foot-text" title="Faqat retsepti kiritilgan taomlar boʻyicha">
+              {margin === null
+                ? 'Taomlarga retsept kiritilmagan'
+                : `${compactSom(sales.costedRevenue - sales.costOfGoods!)} yalpi foyda · tushumning ${percent(costedShare, 0)}i boʻyicha`}
+            </span>
+          }
+        />
+        {finance ? (
+          <Kpi
+            label="Kassa: kutilgan va sanalgan"
+            value={`${finance.difference > 0 ? '+' : ''}${compactSom(finance.difference)}`}
+            unit="soʻm"
+            Icon={finance.difference === 0 ? IconCheckCircle : IconCash}
+            tone={finance.difference < 0 ? 'tone-danger' : 'tone-success'}
+            alert={finance.difference < 0}
+            foot={<span>{finance.shiftsCount - finance.openShiftsCount} yopilgan smena{finance.openShiftsCount ? ` · ${finance.openShiftsCount} ochiq` : ''}</span>}
+          />
         ) : (
-          /*
-            A CSS bar chart rather than a charting library: this is one series
-            of at most a few dozen points, and a dependency for it would cost
-            more than it returns.
-          */
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 160 }}>
-            {data.timeline.map((point) => (
-              <div
-                key={point.at}
-                title={`${point.at}: ${formatMoney(point.revenue)} · ${point.orders} ta`}
-                style={{
-                  flex: 1,
-                  minWidth: 4,
-                  height: `${Math.max(2, (point.revenue / peak) * 100)}%`,
-                  background: 'var(--primary, #FF6B00)',
-                  borderRadius: '3px 3px 0 0',
-                }}
-              />
-            ))}
-          </div>
+          <Kpi
+            label="Chegirmalar"
+            value={compactSom(sales.discountTotal)}
+            unit="soʻm"
+            Icon={IconCash}
+            tone="tone-warning"
+            foot={<span>Yetkazish: {compactSom(sales.deliveryFees)}</span>}
+          />
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
-        <Breakdown
-          title="Buyurtma turi"
-          rows={data.byType.map((row) => ({
-            label: ORDER_TYPE_LABEL[row.type] ?? row.type,
-            count: row.count,
-            amount: row.revenue,
-          }))}
-        />
-        <Breakdown
-          title="Kanal"
-          rows={data.bySource.map((row) => ({
-            label: SOURCE_LABEL[row.source] ?? row.source,
-            count: row.count,
-            amount: row.revenue,
-          }))}
-        />
-        <Breakdown
-          title="Toʻlov turi"
-          rows={data.byPayment.map((row) => ({
-            label: PAYMENT_LABEL[row.method] ?? row.method,
-            count: row.count,
-            amount: row.amount,
-            share: row.sharePercent,
-          }))}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ProductsTab({ range }: { range: Record<string, string> }) {
-  const report = useQuery({
-    queryKey: ['reports', 'products', range],
-    queryFn: () => api.reports.products({ ...range, limit: 100 }),
-  });
-
-  if (report.isLoading) return <Loading />;
-  if (report.isError) {
-    return <ErrorState error={report.error} onRetry={() => void report.refetch()} />;
-  }
-
-  const rows: TopProductRow[] = report.data ?? [];
-  if (rows.length === 0) {
-    return (
-      <div className="card">
-        <p className="muted" style={{ margin: 0 }}>Bu davrda sotilgan mahsulot yoʻq.</p>
-      </div>
-    );
-  }
-
-  const counts = { A: 0, B: 0, C: 0 };
-  for (const row of rows) if (row.abcClass) counts[row.abcClass] += 1;
-
-  return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      <div className="card">
-        <h3 style={{ fontSize: 15, margin: '0 0 6px' }}>ABC tahlil</h3>
-        <p className="muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
-          A — tushumning 80% i ({counts.A} ta): bular hech qachon tugamasligi kerak.
-          B — keyingi 15% ({counts.B} ta). C — qolgani ({counts.C} ta): menyudan
-          chiqarish mumkin boʻlganlar.
-        </p>
-      </div>
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Mahsulot</th>
-              <th>Sotildi</th>
-              <th>Tushum</th>
-              <th>Ulush</th>
-              <th>ABC</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={row.productId || row.name}>
-                <td className="muted">{index + 1}</td>
-                <td><strong>{row.name}</strong></td>
-                <td>{row.quantity}</td>
-                <td>{formatMoney(row.revenue)}</td>
-                <td className="muted">{row.revenueSharePercent}%</td>
-                <td>
-                  <span className="badge" style={ABC_TONE[row.abcClass ?? 'C']}>
-                    {row.abcClass}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function FinanceTab({ range }: { range: Record<string, string> }) {
-  const report = useQuery({
-    queryKey: ['reports', 'finance', range],
-    queryFn: () => api.reports.finance(range),
-  });
-
-  if (report.isLoading) return <Loading />;
-  if (report.isError) {
-    return <ErrorState error={report.error} onRetry={() => void report.refetch()} />;
-  }
-  if (!report.data) return null;
-
-  const data: FinanceReport = report.data;
-
-  return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={cardGrid}>
-        <Stat label="Smenalar" value={String(data.shiftsCount)} big />
-        <Stat label="Naqd savdo" value={formatMoney(data.cashSales)} big />
-        <Stat label="Karta" value={formatMoney(data.cardSales)} />
-        <Stat label="Onlayn" value={formatMoney(data.onlineSales)} />
-        <Stat label="Kuryerdan" value={formatMoney(data.courierHandovers)} />
-        <Stat
-          label="Umumiy farq"
-          value={formatMoney(data.difference)}
-          tone={data.difference < 0 ? 'bad' : data.difference > 0 ? 'warn' : undefined}
-        />
-      </div>
-
-      {/*
-        Spelled out because the three figures must visibly tie. The
-        reconciliation covers CLOSED shifts only; anything still in an open
-        drawer is shown separately rather than counted as a shortage.
-      */}
-      <div className="card">
-        <h3 style={{ fontSize: 15, margin: '0 0 12px' }}>Kassa solishtiruvi</h3>
-        <div style={{ display: 'grid', gap: 6, fontSize: 14, maxWidth: 420 }}>
-          <Line label="Yopilgan smenalarda kutilgan" value={data.expectedCash} />
-          <Line label="Sanab olingan" value={data.countedCash} />
-          <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-          <Line label="Farq" value={data.difference} strong />
-          {data.openShiftsCount > 0 && (
-            <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
-              Yana {data.openShiftsCount} ta smena ochiq — ularda{' '}
-              <strong>{formatMoney(data.cashInOpenShifts)}</strong> turibdi, hali
-              sanalmagani uchun solishtiruvga kirmadi.
-            </p>
+      <div className="grid-main-side">
+        <Card title="Daromad va sotuvlar dinamikasi" sub={prevSales ? 'Oldingi teng davr bilan taqqoslab' : undefined}>
+          {weekendInsight !== null && (
+            <div className="banner banner--info" style={{ marginBottom: 12 }}>
+              <IconTrendUp size={16} />
+              <span>
+                Dam olish kunlari (Shanba–Yakshanba) oʻrtacha kunlik savdo ish kunlaridan{' '}
+                <b>{weekendInsight > 0 ? '+' : ''}{percent(weekendInsight, 0)}</b> {weekendInsight > 0 ? 'yuqori' : 'past'}.
+              </span>
+            </div>
           )}
+          {sales.ordersCount === 0 && !prevSales?.ordersCount ? (
+            <p className="muted" style={{ textAlign: 'center', padding: '48px 0' }}>Bu davrda yakunlangan buyurtma yoʻq</p>
+          ) : (
+            <LineChart labels={chart.labels} series={series} format={som} height={240} xTickEvery={Math.max(1, Math.ceil(chart.labels.length / 9))} />
+          )}
+          <div className="soft-box" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginTop: 14 }}>
+            <div className="stat-mini">
+              <span className="stat-mini__label">Eng yuqori {granularity === 'hour' ? 'soat' : granularity === 'week' ? 'hafta' : 'kun'}</span>
+              <span className="stat-mini__value">{peak ? `${compactSom(peak.revenue)} (${chartLabel(peak.at, granularity, true)})` : '—'}</span>
+            </div>
+            {forecast !== null && (
+              <div className="stat-mini">
+                <span className="stat-mini__label">Oy oxirigacha prognoz</span>
+                <span className="stat-mini__value" style={{ color: 'var(--primary-ink)' }}>{compactSom(forecast)} soʻm</span>
+              </div>
+            )}
+            <div className="stat-mini">
+              <span className="stat-mini__label">Chegirmalar</span>
+              <span className="stat-mini__value">{som(sales.discountTotal)}</span>
+            </div>
+            <div className="stat-mini">
+              <span className="stat-mini__label">Yetkazish haqi</span>
+              <span className="stat-mini__value">{som(sales.deliveryFees)}</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Toʻlov usullari taqsimoti" actions={<IconCash size={18} style={{ color: 'var(--text-subtle)' }} />}>
+          {paymentTotal === 0 ? (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>Bu davrda toʻlov qayd etilmagan</p>
+          ) : (
+            <>
+              <div className="row" style={{ justifyContent: 'center' }}>
+                <Donut slices={slices} centerLabel="Jami" centerValue={compactSom(paymentTotal)} size={150} />
+              </div>
+              <div className="stack" style={{ gap: 8, marginTop: 14 }}>
+                {slices.map((s) => (
+                  <div key={s.key} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap', fontSize: 13 }}>
+                    <span className="legend__item"><span className="swatch" style={{ background: s.color }} />{s.label}</span>
+                    <span className="num">{som(s.value)} <b>({percent((s.value / paymentTotal) * 100, 0)})</b></span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          {sales.refunds > 0 && (
+            <div className="banner banner--danger" style={{ marginTop: 14 }}>
+              <span style={{ flex: 1 }}>Qaytarilgan toʻlovlar</span>
+              <b className="num">{som(sales.refunds)}</b>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid-3">
+        <Highlight title="Eng koʻp daromad keltirgan" product={byRevenue} line={byRevenue ? `${som(byRevenue.revenue)} · ${count(byRevenue.quantity)} dona` : null} />
+        <Highlight
+          title="Eng yuqori marjali taom"
+          product={byMargin}
+          line={byMargin ? `${percent(byMargin.marginPercent)} marja · tannarx ${som(byMargin.unitCost ?? 0)}` : 'Retsepti bor taom sotilmagan'}
+        />
+        <Highlight title="Eng koʻp sotilgan" product={byQuantity} line={byQuantity ? `${count(byQuantity.quantity)} dona · ${som(byQuantity.revenue)}` : null} />
+      </div>
+
+      <div className="grid-2">
+        <Card title="Manbalar boʻyicha">
+          <BarList
+            rows={[...sales.bySource].sort((a, b) => b.revenue - a.revenue).map((r) => ({
+              key: r.source,
+              label: SOURCE_LABELS[r.source] ?? r.source,
+              value: `${count(r.count)} ta · ${som(r.revenue)}`,
+              share: sales.revenue ? (r.revenue / sales.revenue) * 100 : 0,
+            }))}
+          />
+        </Card>
+        <Card title="Buyurtma turi boʻyicha">
+          <BarList
+            color="var(--series-2)"
+            rows={[...sales.byType].sort((a, b) => b.revenue - a.revenue).map((r) => ({
+              key: r.type,
+              label: ORDER_TYPE_LABELS[r.type] ?? r.type,
+              value: `${count(r.count)} ta · ${som(r.revenue)}`,
+              share: sales.revenue ? (r.revenue / sales.revenue) * 100 : 0,
+            }))}
+          />
+        </Card>
+      </div>
+    </>
+  );
+}
+
+function Highlight({ title, product, line }: { title: string; product: TopProductRow | undefined; line: string | null }) {
+  return (
+    <div className="card stack" style={{ gap: 4 }}>
+      <span className="muted" style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</span>
+      <b style={{ fontSize: 15 }}>{product?.name ?? '—'}</b>
+      {line && <span className="cell-sub">{line}</span>}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Products                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function ProductsTab({ rows }: { rows: TopProductRow[] }) {
+  const [abc, setAbc] = useState<'' | 'A' | 'B' | 'C'>('');
+  const [search, setSearch] = useState('');
+  const total = rows.reduce((s, r) => s + r.revenue, 0);
+  const classes = (['A', 'B', 'C'] as const).map((c) => {
+    const list = rows.filter((r) => r.abcClass === c);
+    return { c, count: list.length, revenue: list.reduce((s, r) => s + r.revenue, 0) };
+  });
+  const visible = rows.filter((r) => (!abc || r.abcClass === abc) && (!search || r.name.toLowerCase().includes(search.toLowerCase())));
+  const max = Math.max(...rows.map((r) => r.revenueSharePercent ?? 0), 1);
+
+  if (rows.length === 0) return <p className="card muted" style={{ textAlign: 'center' }}>Bu davrda sotuv yoʻq</p>;
+
+  return (
+    <>
+      <div className="grid-3">
+        {classes.map(({ c, count: n, revenue }) => (
+          <button key={c} type="button" className={`card abc-card abc-card--${c.toLowerCase()}${abc === c ? ' is-active' : ''}`} onClick={() => setAbc(abc === c ? '' : c)}>
+            <span className="abc-card__letter">{c}</span>
+            <span>
+              <b>{n} ta taom · {percent(total ? (revenue / total) * 100 : 0, 0)} tushum</b>
+              <span className="cell-sub" style={{ display: 'block' }}>
+                {c === 'A' ? 'Hech qachon tugamasligi kerak' : c === 'B' ? 'Barqaror, kuzatib boring' : 'Menyudan qisqartirish nomzodlari'}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="card card--flush">
+        <div className="card__head">
+          <div>
+            <h2 className="card__title">Mahsulotlar rentabelligi va ABC tahlili</h2>
+            <p className="card__sub">Tannarx — taom retseptidagi xomashyo narxi boʻyicha</p>
+          </div>
+          <div className="search-input" style={{ minWidth: 220 }}>
+            <IconSearch size={15} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Taom nomi…" aria-label="Qidiruv" />
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table style={{ minWidth: 780 }}>
+            <thead>
+              <tr>
+                <th>#</th><th>Taom</th><th>ABC</th><th className="td-right">Sotildi</th><th className="td-right">Tushum</th>
+                <th style={{ width: 160 }}>Ulush</th><th className="td-right">Tannarx / porsiya</th><th className="td-right">Marja</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((r) => (
+                <tr key={`${r.productId}-${r.name}`}>
+                  <td className="muted num">{rows.indexOf(r) + 1}</td>
+                  <td className="cell-main">{r.name}</td>
+                  <td><span className={`pill ${r.abcClass === 'A' ? 'tone-success' : r.abcClass === 'B' ? 'tone-info' : 'tone-neutral'}`}>{r.abcClass}</span></td>
+                  <td className="td-right num">{count(r.quantity)}</td>
+                  <td className="td-right num cell-main">{som(r.revenue)}</td>
+                  <td>
+                    <div className="progress" title={percent(r.revenueSharePercent)}>
+                      <div className="progress__bar" style={{ width: `${((r.revenueSharePercent ?? 0) / max) * 100}%` }} />
+                    </div>
+                  </td>
+                  <td className="td-right num">{r.unitCost === null || r.unitCost === undefined ? '—' : som(r.unitCost)}</td>
+                  <td className="td-right">
+                    {r.marginPercent === null || r.marginPercent === undefined ? (
+                      <span className="muted">—</span>
+                    ) : (
+                      <span className={`pill ${r.marginPercent < 30 ? 'tone-danger' : r.marginPercent < 55 ? 'tone-warning' : 'tone-success'}`}>{percent(r.marginPercent)}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+    </>
+  );
+}
 
-      <div className="card">
-        <h3 style={{ fontSize: 15, margin: '0 0 12px' }}>
-          Farq bilan yopilgan smenalar{' '}
-          <span className="muted">({data.discrepancies.length})</span>
-        </h3>
+/* -------------------------------------------------------------------------- */
+/* Finance                                                                    */
+/* -------------------------------------------------------------------------- */
 
-        {data.discrepancies.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>
-            Hamma smena farqsiz yopilgan.
-          </p>
+function FinanceTab({ report: f }: { report: FinanceReport }) {
+  const closed = f.shifts.filter((s) => s.closedAt);
+  const duration = (from: string, to: string | null) => {
+    if (!to) return 'ochiq';
+    const minutes = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60_000);
+    return `${Math.floor(minutes / 60)} soat ${minutes % 60} daq`;
+  };
+
+  return (
+    <>
+      <div className="kpi-grid">
+        <Kpi label="Naqd sotuv" value={compactSom(f.cashSales)} unit="soʻm" Icon={IconCash} tone="tone-primary" foot={<span>{f.shiftsCount} smena</span>} />
+        <Kpi label="Karta" value={compactSom(f.cardSales)} unit="soʻm" Icon={IconWallet} tone="tone-info" foot={<span>Terminal orqali</span>} />
+        <Kpi label="Onlayn" value={compactSom(f.onlineSales)} unit="soʻm" Icon={IconTrendUp} tone="tone-violet" foot={<span>Click, Payme va boshqalar</span>} />
+        <Kpi
+          label="Kassa farqi"
+          value={`${f.difference > 0 ? '+' : ''}${compactSom(f.difference)}`}
+          unit="soʻm"
+          Icon={f.difference === 0 ? IconCheckCircle : IconCash}
+          tone={f.difference < 0 ? 'tone-danger' : 'tone-success'}
+          alert={f.difference < 0}
+          foot={<span>{f.discrepancies.length} ta smenada tafovut</span>}
+        />
+      </div>
+
+      <div className="grid-2">
+        <Card title="Inkassatsiya solishtirmasi" sub="Faqat yopilgan smenalar — ochiq smenada hali sanalmagan">
+          <dl className="kv">
+            <dt>Kutilgan naqd</dt><dd className="num">{som(f.expectedCash)}</dd>
+            <dt>Sanalgan naqd</dt><dd className="num">{som(f.countedCash)}</dd>
+            <dt>Farq</dt><dd className="num" style={{ color: f.difference < 0 ? 'var(--danger)' : undefined }}>{f.difference > 0 ? '+' : ''}{som(f.difference)}</dd>
+            <dt>Ochiq smenalarda</dt><dd className="num">{som(f.cashInOpenShifts)}</dd>
+          </dl>
+        </Card>
+        <Card title="Kassa harakatlari">
+          <dl className="kv">
+            <dt>Boshlangʻich qoldiqlar</dt><dd className="num">{som(f.openingCash)}</dd>
+            <dt>Kassaga kiritildi</dt><dd className="num">{som(f.cashIn)}</dd>
+            <dt>Kassadan olindi</dt><dd className="num">{som(f.cashOut)}</dd>
+            <dt>Kuryerlardan qabul</dt><dd className="num">{som(f.courierHandovers)}</dd>
+            <dt>Qaytarishlar</dt><dd className="num">{som(f.refunds)}</dd>
+          </dl>
+        </Card>
+      </div>
+
+      <div className="card card--flush">
+        <div className="card__head">
+          <div>
+            <h2 className="card__title">Kassir smenalari va inkassatsiya (Z-hisobotlar)</h2>
+            <p className="card__sub">Har bir smena boʻyicha kutilgan va sanalgan naqd pul</p>
+          </div>
+          <span className="pill tone-neutral">{closed.length} ta yopilgan · jami naqd {compactSom(closed.reduce((s, x) => s + (x.actualCash ?? 0), 0))}</span>
+        </div>
+        {f.shifts.length === 0 ? (
+          <p className="muted" style={{ padding: 24, textAlign: 'center' }}>Bu davrda smena ochilmagan</p>
         ) : (
-          /*
-            This list is the point of the report. The totals tell an owner how
-            the month went; this tells them which evening to ask about.
-          */
           <div className="table-wrap">
-            <table>
+            <table style={{ minWidth: 900 }}>
               <thead>
                 <tr>
-                  <th>Yopilgan</th>
-                  <th>Kassir</th>
-                  <th>Kutilgan</th>
-                  <th>Sanalgan</th>
-                  <th>Farq</th>
-                  <th>Izoh</th>
+                  <th>Filial</th><th>Kassir</th><th>Smena vaqti</th><th className="td-right">Naqd (kutilgan)</th>
+                  <th className="td-right">Sanalgan</th><th className="td-right">Farq</th><th className="td-right">Karta va onlayn</th><th>Holat</th>
                 </tr>
               </thead>
               <tbody>
-                {data.discrepancies.map((row) => (
-                  <tr key={row.shiftId}>
-                    <td>
-                      {row.closedAt
-                        ? new Date(row.closedAt).toLocaleString('uz-UZ')
-                        : '—'}
+                {f.shifts.map((s) => (
+                  <tr key={s.shiftId}>
+                    <td className="cell-main">{s.branchName}<div className="cell-sub">{s.orderCount} ta chek</div></td>
+                    <td>{s.openedByName ?? '—'}{s.closedByName && s.closedByName !== s.openedByName && <div className="cell-sub">yopdi: {s.closedByName}</div>}</td>
+                    <td className="cell-sub" style={{ whiteSpace: 'nowrap' }}>
+                      {dateTimeOf(s.openedAt)}{s.closedAt ? ` – ${timeOf(s.closedAt)}` : ''}
+                      <div>{duration(s.openedAt, s.closedAt)}</div>
                     </td>
-                    <td>{row.closedByName ?? '—'}</td>
-                    <td>{formatMoney(row.expectedCash)}</td>
-                    <td>{formatMoney(row.actualCash ?? 0)}</td>
-                    <td>
-                      <strong style={{ color: row.difference < 0 ? '#991B1B' : '#B45309' }}>
-                        {row.difference > 0 ? '+' : ''}
-                        {formatMoney(row.difference)}
-                      </strong>
+                    <td className="td-right num">{som(s.expectedCash)}</td>
+                    <td className="td-right num">{s.actualCash === null ? '—' : som(s.actualCash)}</td>
+                    <td className="td-right num cell-main" style={{ color: (s.difference ?? 0) < 0 ? 'var(--danger)' : (s.difference ?? 0) > 0 ? 'var(--success)' : undefined }}>
+                      {s.difference === null ? '—' : `${s.difference > 0 ? '+' : ''}${som(s.difference)}`}
                     </td>
-                    <td className="muted">{row.comment ?? '—'}</td>
+                    <td className="td-right num">{som(s.cardTotal + s.onlineTotal)}</td>
+                    <td><span className={`pill ${s.closedAt ? 'tone-success' : 'tone-warning'}`}>{s.closedAt ? 'Yopilgan' : 'Ochiq'}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -365,142 +628,133 @@ function FinanceTab({ range }: { range: Record<string, string> }) {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
 /* -------------------------------------------------------------------------- */
+/* Branches                                                                   */
+/* -------------------------------------------------------------------------- */
 
-function Stat({
-  label,
-  value,
-  big,
-  tone,
-}: {
-  label: string;
-  value: string;
-  big?: boolean;
-  tone?: 'warn' | 'bad';
-}) {
-  const color = tone === 'bad' ? '#991B1B' : tone === 'warn' ? '#B45309' : undefined;
+function BranchesTab({ rows, days, highlight }: { rows: BranchReportRow[]; days: number; highlight: string | null }) {
+  const total = rows.reduce((s, r) => s + r.revenue, 0);
+  const best = rows[0];
+
+  if (rows.length === 0) return <p className="card muted" style={{ textAlign: 'center' }}>Filial yoʻq</p>;
+
   return (
-    <div className="card" style={{ padding: 16 }}>
-      <div className="muted" style={{ fontSize: 12 }}>{label}</div>
-      <div style={{ fontSize: big ? 24 : 18, fontWeight: 800, marginTop: 4, color }}>
-        {value}
+    <>
+      <div className="kpi-grid">
+        <Kpi label="Tarmoq tushumi" value={compactSom(total)} unit="soʻm" Icon={IconWallet} tone="tone-primary" foot={<span>{rows.length} ta filial</span>} />
+        <Kpi label="Yetakchi filial" value={best?.branchName ?? '—'} Icon={IconTrendUp} tone="tone-success" foot={<span>{best ? `${percent(total ? (best.revenue / total) * 100 : 0, 0)} ulush` : ''}</span>} />
+        <Kpi
+          label="Oʻrtacha chek (tarmoq)"
+          value={som(Math.round(total / Math.max(1, rows.reduce((s, r) => s + r.ordersCount, 0))))}
+          Icon={IconOrders}
+          tone="tone-info"
+          foot={<span>{count(rows.reduce((s, r) => s + r.ordersCount, 0))} ta chek</span>}
+        />
+        <Kpi
+          label="Bekor qilinganlar"
+          value={count(rows.reduce((s, r) => s + r.cancelledOrders, 0))}
+          unit="ta"
+          Icon={IconHistory}
+          tone="tone-warning"
+          foot={<span>Chegirmalar: {compactSom(rows.reduce((s, r) => s + r.discountTotal, 0))}</span>}
+        />
       </div>
-    </div>
-  );
-}
 
-function Line({
-  label,
-  value,
-  strong,
-}: {
-  label: string;
-  value: number;
-  strong?: boolean;
-}) {
-  return (
-    <div className="row" style={{ justifyContent: 'space-between' }}>
-      <span className={strong ? undefined : 'muted'}>{label}</span>
-      <span
-        style={{
-          fontWeight: strong ? 800 : 600,
-          color: strong && value < 0 ? '#991B1B' : strong && value > 0 ? '#B45309' : undefined,
-        }}
-      >
-        {strong && value > 0 ? '+' : ''}
-        {formatMoney(value)}
-      </span>
-    </div>
-  );
-}
-
-function Breakdown({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: Array<{ label: string; count: number; amount: number; share?: number }>;
-}) {
-  return (
-    <div className="card">
-      <h3 style={{ fontSize: 14, margin: '0 0 12px' }}>{title}</h3>
-      {rows.length === 0 ? (
-        <p className="muted" style={{ fontSize: 13, margin: 0 }}>—</p>
-      ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {rows.map((row) => (
-            <div key={row.label} className="row" style={{ justifyContent: 'space-between' }}>
-              <span style={{ fontSize: 13 }}>
-                {row.label} <span className="muted">({row.count})</span>
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {formatMoney(row.amount)}
-                {row.share !== undefined && (
-                  <span className="muted" style={{ fontWeight: 400 }}> · {row.share}%</span>
-                )}
-              </span>
-            </div>
-          ))}
+      <div className="card card--flush">
+        <div className="card__head">
+          <div>
+            <h2 className="card__title">Filiallar solishtirmasi</h2>
+            <p className="card__sub">Reja — filialning kunlik maqsadi × davrdagi {days} kun</p>
+          </div>
         </div>
-      )}
-    </div>
+        <div className="table-wrap">
+          <table style={{ minWidth: 860 }}>
+            <thead>
+              <tr>
+                <th>Filial</th><th className="td-right">Tushum</th><th style={{ width: 150 }}>Ulush</th><th className="td-right">Cheklar</th>
+                <th className="td-right">Oʻrtacha chek</th><th className="td-right">Bekor</th><th className="td-right">Chegirma</th><th style={{ width: 170 }}>Reja bajarilishi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const target = r.dailyRevenueTarget ? r.dailyRevenueTarget * days : null;
+                const done = target ? (r.revenue / target) * 100 : null;
+                return (
+                  <tr key={r.branchId} className={r.branchId === highlight ? 'row--selected' : undefined} style={{ opacity: r.isActive ? 1 : 0.6 }}>
+                    <td className="cell-main">{r.branchName}{!r.isActive && <span className="pill tone-neutral" style={{ marginLeft: 6 }}>nofaol</span>}</td>
+                    <td className="td-right num cell-main">{som(r.revenue)}</td>
+                    <td>
+                      <div className="progress"><div className="progress__bar" style={{ width: `${total ? (r.revenue / total) * 100 : 0}%` }} /></div>
+                    </td>
+                    <td className="td-right num">{count(r.ordersCount)}</td>
+                    <td className="td-right num">{som(r.averageCheck)}</td>
+                    <td className="td-right num">{count(r.cancelledOrders)}</td>
+                    <td className="td-right num">{som(r.discountTotal)}</td>
+                    <td>
+                      {done === null ? (
+                        <span className="muted">Reja belgilanmagan</span>
+                      ) : (
+                        <div className="bar-row">
+                          <div className="bar-row__head"><span className="cell-sub">{compactSom(target!)}</span><span className="bar-row__value">{percent(done, 0)}</span></div>
+                          <div className="progress"><div className={`progress__bar${done >= 100 ? ' progress__bar--ok' : ''}`} style={{ width: `${Math.min(100, done)}%` }} /></div>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
   );
 }
 
-const control = {
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '1px solid var(--border)',
-  fontSize: 14,
-} as const;
+/* -------------------------------------------------------------------------- */
+/* Export                                                                     */
+/* -------------------------------------------------------------------------- */
 
-const cardGrid = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-  gap: 12,
-} as const;
+function exportSales(s: SalesReport, stamp: string) {
+  downloadCsv(`savdo_${stamp}`, [
+    ['Koʻrsatkich', 'Qiymat'],
+    ['Sof tushum (soʻm)', s.revenue],
+    ['Qaytarilgan (soʻm)', s.refunds],
+    ['Cheklar', s.ordersCount],
+    ['Oʻrtacha chek (soʻm)', s.averageCheck],
+    ['Chegirmalar (soʻm)', s.discountTotal],
+    ['Yetkazish haqi (soʻm)', s.deliveryFees],
+    ['Tannarx (soʻm)', s.costOfGoods ?? ''],
+    [],
+    ['Davr', 'Tushum (soʻm)', 'Cheklar'],
+    ...s.timeline.map((p) => [p.at, p.revenue, p.orders]),
+    [],
+    ['Toʻlov usuli', 'Summa (soʻm)', 'Soni', 'Ulush %'],
+    ...s.byPayment.map((r) => [PAYMENT_METHOD_LABELS[r.method] ?? r.method, r.amount, r.count, r.sharePercent]),
+  ]);
+}
 
-const ABC_TONE: Record<'A' | 'B' | 'C', { background: string; color: string }> = {
-  A: { background: '#DCFCE7', color: '#166534' },
-  B: { background: '#FEF3C7', color: '#B45309' },
-  C: { background: '#F3F4F6', color: '#6B7280' },
-};
+function exportProducts(rows: TopProductRow[], stamp: string) {
+  downloadCsv(`mahsulotlar_${stamp}`, [
+    ['Taom', 'ABC', 'Sotildi', 'Tushum (soʻm)', 'Ulush %', 'Tannarx/porsiya (soʻm)', 'Marja %'],
+    ...rows.map((r) => [r.name, r.abcClass, r.quantity, r.revenue, r.revenueSharePercent, r.unitCost ?? '', r.marginPercent ?? '']),
+  ]);
+}
 
-const ORDER_TYPE_LABEL: Record<string, string> = {
-  [OrderType.DELIVERY]: 'Yetkazish',
-  [OrderType.PICKUP]: 'Olib ketish',
-  [OrderType.DINE_IN]: 'Zalda',
-  [OrderType.TABLE]: 'Stolda',
-};
+function exportFinance(f: FinanceReport, stamp: string) {
+  downloadCsv(`kassa_${stamp}`, [
+    ['Filial', 'Kassir', 'Ochildi', 'Yopildi', 'Kutilgan naqd', 'Sanalgan', 'Farq', 'Karta', 'Onlayn', 'Cheklar'],
+    ...f.shifts.map((s) => [s.branchName, s.openedByName, s.openedAt, s.closedAt, s.expectedCash, s.actualCash, s.difference, s.cardTotal, s.onlineTotal, s.orderCount]),
+  ]);
+}
 
-const SOURCE_LABEL: Record<string, string> = {
-  [OrderSource.POS]: 'Kassa',
-  [OrderSource.WEB]: 'Sayt',
-  [OrderSource.TELEGRAM_BOT]: 'Telegram bot',
-  [OrderSource.TELEGRAM_MINI_APP]: 'Mini App',
-  [OrderSource.QR_TABLE]: 'Stol QR',
-  [OrderSource.CALL_CENTER]: 'Call-markaz',
-  [OrderSource.ADMIN]: 'Admin',
-};
-
-const PAYMENT_LABEL: Record<string, string> = {
-  [PaymentMethod.CASH]: 'Naqd',
-  [PaymentMethod.CARD]: 'Karta',
-  [PaymentMethod.TERMINAL]: 'Terminal',
-  [PaymentMethod.SUBO]: 'Onlayn (Subo)',
-  [PaymentMethod.CLICK]: 'Click',
-  [PaymentMethod.PAYME]: 'Payme',
-  [PaymentMethod.QR]: 'QR',
-  [PaymentMethod.BONUS]: 'Bonus',
-};
-
-/** `YYYY-MM-DD` for a date N days back, in the browser's own zone. */
-function isoDaysAgo(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
+function exportBranches(rows: BranchReportRow[], days: number, stamp: string) {
+  downloadCsv(`filiallar_${stamp}`, [
+    ['Filial', 'Tushum (soʻm)', 'Cheklar', 'Oʻrtacha chek', 'Bekor', 'Chegirma', 'Reja (soʻm)'],
+    ...rows.map((r) => [r.branchName, r.revenue, r.ordersCount, r.averageCheck, r.cancelledOrders, r.discountTotal, r.dailyRevenueTarget ? r.dailyRevenueTarget * days : '']),
+  ]);
 }

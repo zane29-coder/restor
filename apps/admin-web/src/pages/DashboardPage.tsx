@@ -63,6 +63,7 @@ import {
 import { StatusBadge } from '../components/StatusBadge';
 import { ErrorState, Loading } from '../components/States';
 import { ACTIVE_STATUSES, itemsSummary } from '../lib/orders';
+import { buildChart, chartLabel } from '../lib/timeline';
 
 /**
  * Company dashboard (TZ §7).
@@ -410,7 +411,7 @@ function SalesCard({
   change: number | null;
 }) {
   const chart = useMemo(
-    () => buildChart(sales.timeline, prevSales?.timeline ?? [], metric, singleDay, period),
+    () => buildChart(sales.timeline, prevSales?.timeline ?? [], metric, singleDay ? 'hour' : 'day', period),
     [sales.timeline, prevSales?.timeline, metric, singleDay, period],
   );
 
@@ -461,7 +462,7 @@ function SalesCard({
         <div className="stat-mini">
           <span className="stat-mini__label">{singleDay ? 'Eng faol soat' : 'Eng faol kun'}</span>
           <span className="stat-mini__value">
-            {peak ? chartLabel(peak.at, singleDay, true) : '—'}
+            {peak ? chartLabel(peak.at, singleDay ? 'hour' : 'day', true) : '—'}
           </span>
         </div>
         <div className="stat-mini">
@@ -515,71 +516,6 @@ function SalesCard({
       </div>
     </Card>
   );
-}
-
-/**
- * Lines the two periods up bucket by bucket.
- *
- * Hours for a single day (from 06:00, earlier only if there was trade), days
- * otherwise — the previous period is aligned by position, so "day 3" of this
- * week sits over "day 3" of last week.
- */
-function buildChart(
-  current: RevenuePoint[],
-  previous: RevenuePoint[],
-  metric: 'revenue' | 'orders',
-  singleDay: boolean,
-  period: Period,
-) {
-  const value = (p: RevenuePoint | undefined) => (p ? (metric === 'revenue' ? p.revenue : p.orders) : 0);
-
-  if (singleDay) {
-    const hourOf = (p: RevenuePoint) => Number(p.at.slice(11, 13));
-    const all = [...current, ...previous];
-    const first = Math.min(6, ...all.map(hourOf));
-    const isToday = period.key === 'today';
-    const nowHour = new Date().getHours();
-    const labels: string[] = [];
-    const cur: Array<number | null> = [];
-    const prev: Array<number | null> = [];
-    for (let h = first; h <= 23; h++) {
-      labels.push(`${String(h).padStart(2, '0')}:00`);
-      // Hours still to come today are a gap, not a zero.
-      cur.push(isToday && h > nowHour ? null : value(current.find((p) => hourOf(p) === h)));
-      prev.push(value(previous.find((p) => hourOf(p) === h)));
-    }
-    return { labels, current: cur, previous: prev };
-  }
-
-  const days: string[] = [];
-  const start = new Date(`${period.dateFrom}T00:00:00`);
-  const end = new Date(`${period.dateTo}T00:00:00`);
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    days.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
-  }
-  const prevSorted = [...previous].sort((a, b) => a.at.localeCompare(b.at));
-  const prevStart = new Date(start);
-  prevStart.setDate(prevStart.getDate() - days.length);
-
-  return {
-    labels: days.map((d) => chartLabel(d, false)),
-    current: days.map((d) => value(current.find((p) => p.at === d))),
-    previous: days.map((_, i) => {
-      const day = new Date(prevStart);
-      day.setDate(day.getDate() + i);
-      const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-      return value(prevSorted.find((p) => p.at === key));
-    }),
-  };
-}
-
-function chartLabel(at: string, singleDay: boolean, range = false): string {
-  if (singleDay) {
-    const h = Number(at.slice(11, 13));
-    const hh = String(h).padStart(2, '0');
-    return range ? `${hh}:00 – ${String((h + 1) % 24).padStart(2, '0')}:00` : `${hh}:00`;
-  }
-  return `${at.slice(8, 10)}.${at.slice(5, 7)}`;
 }
 
 /* ------------------------------------------------------------------ */
