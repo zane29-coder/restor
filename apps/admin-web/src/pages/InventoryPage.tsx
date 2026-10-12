@@ -1,759 +1,650 @@
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Permission,
   StockMovementType,
-  StockUnit,
   type StockItem,
+  type Supplier,
+  type SupplierOrder,
 } from '@restor/shared-types';
-import { formatMoney } from '@restor/shared-utils';
-import { IconPlus } from '@restor/ui';
+import {
+  IconAlert,
+  IconBox,
+  IconCheck,
+  IconClock,
+  IconDownload,
+  IconEdit,
+  IconHistory,
+  IconLayers,
+  IconMinus,
+  IconPlus,
+  IconSearch,
+  IconTelegram,
+  IconTrash,
+  IconTruck,
+  IconWallet,
+} from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useBranch } from '../lib/branch';
+import { compactSom, count, dateOf, dateTimeOf, percent, phone, qty, som } from '../lib/format';
+import {
+  amountOf,
+  daysLeftLabel,
+  LEVEL_LABELS,
+  LEVEL_TONES,
+  levelOf,
+  MOVEMENT_LABELS,
+  MOVEMENT_TONES,
+  unitOf,
+  type StockLevel,
+} from '../lib/inventory';
 import { ErrorState, Loading, Notice } from '../components/States';
+import { ItemForm, MovementForm, SupplierForm, type MovementKind } from '../components/inventory/StockForms';
+import { StockItemPanel } from '../components/inventory/StockItemPanel';
+import { OrderForm, SupplierOrdersTab } from '../components/inventory/SupplierOrders';
+import { StockTakeForm, StockTakesTab } from '../components/inventory/StockTakes';
+import { Kpi, PageHeader, Pager, Seg, Tabs, downloadCsv } from '../components/ui';
 
-type Tab = 'stock' | 'movements' | 'suppliers';
+type Tab = 'stock' | 'movements' | 'orders' | 'suppliers' | 'expiry' | 'takes';
+type Form =
+  | { kind: 'item'; item: StockItem | null }
+  | { kind: 'movement'; movement: MovementKind; itemId?: string; quantity?: string; comment?: string }
+  | { kind: 'supplier'; supplier: Supplier | null }
+  | { kind: 'order'; preset?: { supplierId?: string | null; stockItemId: string; quantity: string } }
+  | { kind: 'take' };
+
+const PAGE = 25;
 
 /**
- * Inventory (TZ §29-§31).
+ * Inventory (TZ 29-31).
  *
- * The shape of this screen follows the one rule the module is built on: a
- * level moves only through a movement. There is no editable quantity field
- * anywhere here — correcting a count is an adjustment with a reason, which is
- * the honest way to record that the shelf disagreed with the books.
+ * One rule shapes the screen: a level moves only through a movement. There
+ * is no editable quantity anywhere — a delivery is a receipt, a loss is a
+ * write-off, and a count that disagrees with the books is a stock-take whose
+ * differences are written as adjustments and kept as a signed act.
  */
 export function InventoryPage() {
   const { can } = useAuth();
+  const { branches, branchId } = useBranch();
   const [tab, setTab] = useState<Tab>('stock');
-  const [branchId, setBranchId] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState<'' | 'attention' | StockLevel>('');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [form, setForm] = useState<Form | null>(null);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const branches = useQuery({
-    queryKey: ['branches', 'summary'],
-    queryFn: () => api.branches.summaries(),
-  });
-
-  const summary = useQuery({
-    queryKey: ['stock', 'summary', branchId],
-    queryFn: () => api.inventory.summary(branchId || undefined),
-  });
-
   const canManage = can(Permission.INVENTORY_MANAGE);
+  const branchKey = branchId || undefined;
+  const actionBranch = branchId || (branches.length === 1 ? branches[0]!.id : '');
+  const actionBranchName = branches.find((b) => b.id === actionBranch)?.name ?? '';
+
+  const summary = useQuery({ queryKey: ['stock', 'summary', branchId], queryFn: () => api.inventory.summary(branchKey) });
+  const items = useQuery({ queryKey: ['stock', 'items', branchId], queryFn: () => api.inventory.listItems({ branchId: branchKey }) });
+  const suppliers = useQuery({ queryKey: ['suppliers'], queryFn: () => api.inventory.listSuppliers() });
+
+  const all = items.data ?? [];
+  const categories = useMemo(() => [...new Set(all.map((i) => i.category).filter((c): c is string => Boolean(c)))].sort(), [all]);
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return all.filter((i) => {
+      if (category && i.category !== category) return false;
+      const level = levelOf(i);
+      if (status === 'attention' && level === 'ok') return false;
+      if (status && status !== 'attention' && level !== status) return false;
+      return !needle || i.name.toLowerCase().includes(needle) || (i.sku ?? '').toLowerCase().includes(needle);
+    });
+  }, [all, category, status, search]);
+  const levels = useMemo(() => {
+    const counts = { critical: 0, low: 0, ok: 0 };
+    for (const i of all) counts[levelOf(i)]++;
+    return counts;
+  }, [all]);
+
+  const opened = all.find((i) => i.id === openId) ?? null;
+  const s = summary.data;
+  const lossShare = s && s.wasteValue + s.consumptionValue > 0 ? (s.wasteValue / (s.wasteValue + s.consumptionValue)) * 100 : null;
+
+  const needBranch = (then: () => void) => {
+    if (!actionBranch) return setNotice({ ok: false, text: 'Avval yuqoridagi menyudan filialni tanlang' });
+    then();
+  };
+
+  const ordered = (order: SupplierOrder) => {
+    setForm(null);
+    setNotice({
+      ok: true,
+      text:
+        order.telegramStatus === 'QUEUED'
+          ? `Buyurtma №${order.number} ${order.supplierName}ga Telegram orqali yuborildi`
+          : `Buyurtma №${order.number} saqlandi — ${
+              order.telegramStatus === 'NO_BOT' ? 'Telegram bot sozlanmagan' : 'taʼminotchining Telegram chati kiritilmagan'
+            }, matnini “Buyurtmalar”dan nusxalang`,
+    });
+    setTab('orders');
+  };
+
+  if (items.isLoading) return <Loading />;
+  if (items.isError) return <ErrorState error={items.error} onRetry={() => void items.refetch()} />;
+
+  const pageItems = filtered.slice((page - 1) * PAGE, page * PAGE);
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="page">
       {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
+      <PageHeader
+        crumb="Ombor va taʼminot"
+        title="Ombor va taʼminot nazorati"
+        subtitle="Xomashyo qoldiqlari, partiyalar, kam qolgan zaxiralar va taʼminotchilar"
+        actions={
+          canManage && (
+            <>
+              <button type="button" className="btn btn--ghost" onClick={() => needBranch(() => setForm({ kind: 'take' }))}>
+                <IconCheck size={16} /> Inventarizatsiya
+              </button>
+              <button type="button" className="btn btn--ghost" disabled={all.length === 0} onClick={() => setForm({ kind: 'movement', movement: 'WASTE' })}>
+                <IconMinus size={16} /> Hisobdan chiqarish
+              </button>
+              <button type="button" className="btn btn--ghost" onClick={() => setForm({ kind: 'item', item: null })}>
+                <IconPlus size={16} /> Xomashyo qoʻshish
+              </button>
+              <button type="button" className="btn" disabled={all.length === 0} onClick={() => setForm({ kind: 'movement', movement: 'RECEIPT' })}>
+                <IconTruck size={16} /> Yangi kirim
+              </button>
+            </>
+          )
+        }
+      />
 
-      {summary.data && (
-        <div style={cardGrid}>
-          <Stat label="Mahsulotlar" value={String(summary.data.itemsCount)} />
-          <Stat
-            label="Tugayapti"
-            value={String(summary.data.lowCount)}
-            tone={summary.data.lowCount > 0 ? 'warn' : undefined}
-          />
-          <Stat label="Ombor qiymati" value={formatMoney(summary.data.totalValue)} />
-          <Stat
-            label="30 kunlik yaroqsiz"
-            value={formatMoney(summary.data.wasteValue)}
-            tone={summary.data.wasteValue > 0 ? 'bad' : undefined}
-          />
-        </div>
-      )}
-
-      {summary.data && summary.data.lowItems.length > 0 && (
-        <div className="card" style={{ borderColor: '#FDE68A', background: '#FFFBEB' }}>
-          <h3 style={{ fontSize: 14, margin: '0 0 10px' }}>
-            Buyurtma berish kerak <span className="muted">({summary.data.lowCount})</span>
-          </h3>
-          <div className="row" style={{ gap: 14, flexWrap: 'wrap' }}>
-            {summary.data.lowItems.slice(0, 12).map((item) => (
-              <span key={item.id} style={{ fontSize: 13 }}>
-                <strong>{item.name}</strong>{' '}
-                <span style={{ color: '#B45309' }}>
-                  {item.quantity} {UNIT_LABEL[item.unit]}
-                </span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-        <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={control}>
-          <option value="">Barcha filiallar</option>
-          {branches.data?.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
-
-        <div className="spacer" />
-
-        {(
-          [
-            ['stock', 'Ombor'],
-            ['movements', 'Harakatlar'],
-            ['suppliers', 'Yetkazib beruvchilar'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            className={tab === key ? 'btn' : 'btn btn--ghost'}
-            onClick={() => setTab(key)}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="kpi-grid">
+        <Kpi
+          label="Ombor umumiy qiymati"
+          value={s ? compactSom(s.totalValue) : '…'}
+          unit="soʻm"
+          Icon={IconWallet}
+          tone="tone-primary"
+          foot={<span>{branchId ? branches.find((b) => b.id === branchId)?.name : `${branches.length} ta filial ombori`}</span>}
+        />
+        <Kpi
+          label="Xomashyo turlari"
+          value={count(all.length)}
+          unit="ta"
+          Icon={IconBox}
+          tone="tone-info"
+          foot={<span>{categories.length} ta toifada{all.length - all.filter((i) => i.sku).length > 0 ? '' : ' · hammasi kodlangan'}</span>}
+        />
+        <Kpi
+          label="Kritik kam qolganlar"
+          value={levels.critical + levels.low}
+          unit="ta"
+          Icon={IconAlert}
+          tone={levels.critical > 0 ? 'tone-danger' : levels.low > 0 ? 'tone-warning' : 'tone-success'}
+          alert={levels.critical > 0}
+          foot={
+            <span className="kpi__foot-text" title={s?.lowItems.map((i) => i.name).join(', ')}>
+              {s && s.lowItems.length > 0 ? s.lowItems.slice(0, 3).map((i) => i.name).join(', ') : 'Hammasi yetarli'}
+            </span>
+          }
+        />
+        <Kpi
+          label="Oylik hisobdan chiqarish"
+          value={s ? compactSom(s.wasteValue) : '…'}
+          unit="soʻm"
+          Icon={IconTrash}
+          tone={lossShare !== null && lossShare > 2 ? 'tone-danger' : 'tone-success'}
+          foot={<span>{lossShare === null ? '30 kun' : `${percent(lossShare)} yoʻqotish · meʼyor 2% gacha`}</span>}
+        />
       </div>
 
+      {s && (s.expiredBatches > 0 || s.expiringBatches > 0) && (
+        <div className={`banner ${s.expiredBatches > 0 ? 'banner--danger' : 'banner--warning'}`}>
+          <IconClock size={18} />
+          <span style={{ flex: 1 }}>
+            {s.expiredBatches > 0 && <b>{s.expiredBatches} ta partiyaning muddati oʻtgan. </b>}
+            {s.expiringBatches > 0 && `${s.expiringBatches} ta partiya 3 kun ichida yaroqsiz boʻladi.`}
+          </span>
+          <button type="button" className="btn btn--sm btn--ghost" onClick={() => setTab('expiry')}>Koʻrish</button>
+        </div>
+      )}
+
+      <Tabs
+        value={tab}
+        onChange={(t) => {
+          setTab(t);
+          setOpenId(null);
+        }}
+        options={[
+          { value: 'stock', label: 'Ombor qoldiqlari', count: all.length, Icon: IconBox },
+          { value: 'movements', label: 'Kirim va chiqim', Icon: IconHistory },
+          { value: 'orders', label: 'Buyurtmalar', Icon: IconTelegram },
+          { value: 'suppliers', label: 'Taʼminotchilar', count: suppliers.data?.length, Icon: IconTruck },
+          { value: 'expiry', label: 'Yaroqlilik muddati', count: s ? s.expiredBatches + s.expiringBatches || undefined : undefined, Icon: IconClock },
+          { value: 'takes', label: 'Inventarizatsiyalar', Icon: IconLayers },
+        ]}
+      />
+
       {tab === 'stock' && (
-        <StockTab
+        <>
+          <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+            <div className="category-pills" role="group" aria-label="Toifa">
+              <button type="button" aria-pressed={!category} onClick={() => { setCategory(''); setPage(1); }}>Barchasi</button>
+              {categories.map((c) => (
+                <button key={c} type="button" aria-pressed={category === c} onClick={() => { setCategory(c); setPage(1); }}>{c}</button>
+              ))}
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <select aria-label="Zaxira holati" value={status} onChange={(e) => { setStatus(e.target.value as typeof status); setPage(1); }}>
+                <option value="">Barcha holatlar</option>
+                <option value="attention">Kam qolganlar ({levels.critical + levels.low})</option>
+                <option value="critical">Shoshilinch ({levels.critical})</option>
+                <option value="ok">Yetarli ({levels.ok})</option>
+              </select>
+              <div className="search-input" style={{ minWidth: 220 }}>
+                <IconSearch size={15} />
+                <input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Nomi yoki SKU kodi…" aria-label="Qidiruv" />
+              </div>
+              <button type="button" className="btn btn--ghost" onClick={() => exportItems(filtered)}>
+                <IconDownload size={15} /> Eksport
+              </button>
+            </div>
+          </div>
+
+          <div className={`split${opened ? '' : ' split--single'}`}>
+            <div className="card card--flush">
+              <div className="card__head">
+                <div>
+                  <h2 className="card__title">Ombordagi xomashyolar</h2>
+                  <p className="card__sub">{filtered.length} ta saralangan</p>
+                </div>
+                <div className="row" style={{ gap: 6 }}>
+                  <span className="pill tone-danger">Kritik: {levels.critical}</span>
+                  <span className="pill tone-warning">Kam: {levels.low}</span>
+                  <span className="pill tone-success">Yetarli: {levels.ok}</span>
+                </div>
+              </div>
+              {all.length === 0 ? (
+                <p className="muted" style={{ padding: 24, textAlign: 'center' }}>
+                  Ombor boʻsh. Xomashyo qoʻshing va menyu taomlariga retsept bering — sotuvda sarf avtomatik yoziladi.
+                </p>
+              ) : (
+                <div className="table-wrap">
+                  <table style={{ minWidth: 760 }}>
+                    <thead>
+                      <tr>
+                        <th>Xomashyo</th>
+                        <th className="td-right">Joriy qoldiq</th>
+                        <th className="td-right">Min. chegara</th>
+                        <th className="td-right">Narx</th>
+                        <th className="td-right">Umumiy qiymat</th>
+                        <th>Holat</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageItems.map((i) => {
+                        const level = levelOf(i);
+                        return (
+                          <tr key={i.id} className={`row--clickable${i.id === openId ? ' row--selected' : ''}`} onClick={() => setOpenId(i.id === openId ? null : i.id)}>
+                            <td>
+                              <div className="cell-main">{i.name}</div>
+                              <div className="cell-sub">{[i.sku, i.category, !branchId ? i.branchName : null].filter(Boolean).join(' · ') || '—'}</div>
+                            </td>
+                            <td className="td-right num cell-main" style={{ color: level === 'critical' ? 'var(--danger)' : undefined }}>{amountOf(i.quantity, i.unit)}</td>
+                            <td className="td-right num">{i.minQuantity ? amountOf(i.minQuantity, i.unit) : '—'}</td>
+                            <td className="td-right num">{som(i.costPerUnit)}</td>
+                            <td className="td-right num">{som(i.stockValue)}</td>
+                            <td><span className={`pill ${LEVEL_TONES[level]}`}>{LEVEL_LABELS[level]}</span></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div className="card__foot">
+                <Pager page={page} totalPages={Math.ceil(filtered.length / PAGE)} onChange={setPage} />
+              </div>
+            </div>
+
+            {opened && (
+              <StockItemPanel
+                key={opened.id}
+                item={opened}
+                suppliers={suppliers.data ?? []}
+                canManage={canManage}
+                onClose={() => setOpenId(null)}
+                onEdit={() => setForm({ kind: 'item', item: opened })}
+                onMove={(movement) => setForm({ kind: 'movement', movement, itemId: opened.id })}
+                onOrdered={ordered}
+                onNotice={setNotice}
+              />
+            )}
+          </div>
+        </>
+      )}
+
+      {tab === 'movements' && <MovementsTab branchId={branchId} />}
+
+      {tab === 'orders' && (
+        <SupplierOrdersTab
           branchId={branchId}
-          branches={branches.data ?? []}
+          items={all}
+          suppliers={suppliers.data ?? []}
           canManage={canManage}
+          onNew={() => needBranch(() => setForm({ kind: 'order' }))}
           onNotice={setNotice}
         />
       )}
-      {tab === 'movements' && <MovementsTab branchId={branchId} />}
-      {tab === 'suppliers' && <SuppliersTab canManage={canManage} onNotice={setNotice} />}
+
+      {tab === 'suppliers' && (
+        <SuppliersTab
+          suppliers={suppliers.data ?? []}
+          canManage={canManage}
+          onEdit={(supplier) => setForm({ kind: 'supplier', supplier })}
+          onNotice={setNotice}
+        />
+      )}
+
+      {tab === 'expiry' && (
+        <ExpiryTab
+          branchId={branchId}
+          canManage={canManage}
+          onWriteOff={(itemId, quantity, comment) => setForm({ kind: 'movement', movement: 'WASTE', itemId, quantity, comment })}
+        />
+      )}
+
+      {tab === 'takes' && <StockTakesTab branchId={branchId} onNotice={setNotice} />}
+
+      {form?.kind === 'item' && (
+        <ItemForm
+          item={form.item}
+          branches={branches}
+          branchId={branchId}
+          categories={categories}
+          onClose={() => setForm(null)}
+          onSaved={(text) => { setForm(null); setNotice({ ok: true, text }); }}
+        />
+      )}
+      {form?.kind === 'movement' && (
+        <MovementForm
+          items={all.filter((i) => i.isActive)}
+          kind={form.movement}
+          itemId={form.itemId}
+          presetQuantity={form.quantity}
+          presetComment={form.comment}
+          onClose={() => setForm(null)}
+          onSaved={(text) => { setForm(null); setNotice({ ok: true, text }); }}
+        />
+      )}
+      {form?.kind === 'supplier' && (
+        <SupplierForm
+          supplier={form.supplier}
+          onClose={() => setForm(null)}
+          onSaved={(text) => { setForm(null); setNotice({ ok: true, text }); }}
+        />
+      )}
+      {form?.kind === 'order' && (
+        <OrderForm
+          branchId={actionBranch}
+          branchName={actionBranchName}
+          items={all}
+          suppliers={suppliers.data ?? []}
+          preset={form.preset}
+          onClose={() => setForm(null)}
+          onSaved={ordered}
+        />
+      )}
+      {form?.kind === 'take' && (
+        <StockTakeForm
+          branchId={actionBranch}
+          branchName={actionBranchName}
+          items={all}
+          onClose={() => setForm(null)}
+          onSaved={(take) => {
+            setForm(null);
+            setTab('takes');
+            setNotice({
+              ok: true,
+              text: `Inventarizatsiya saqlandi: ${take.itemsCount} pozitsiya, ${take.matchedCount} tasi mos${take.shortageValue ? `, kamomad ${som(take.shortageValue)}` : ''}`,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
 
 /* -------------------------------------------------------------------------- */
 
-function StockTab({
-  branchId,
-  branches,
-  canManage,
-  onNotice,
-}: {
-  branchId: string;
-  branches: Array<{ id: string; name: string }>;
-  canManage: boolean;
-  onNotice: (n: { ok: boolean; text: string }) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [isCreating, setIsCreating] = useState(false);
-  const [moving, setMoving] = useState<StockItem | null>(null);
-
-  const items = useQuery({
-    queryKey: ['stock', 'items', branchId],
-    queryFn: () => api.inventory.listItems({ branchId: branchId || undefined }),
-  });
-
-  if (items.isLoading) return <Loading />;
-  if (items.isError) {
-    return <ErrorState error={items.error} onRetry={() => void items.refetch()} />;
-  }
-
-  const rows = items.data ?? [];
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ['stock'] });
-  };
-
-  return (
-    <div style={{ display: 'grid', gap: 14 }}>
-      {canManage && !isCreating && (
-        <button type="button" className="btn" style={{ justifySelf: 'start' }} onClick={() => setIsCreating(true)}>
-          <IconPlus size={16} /> Mahsulot qoʻshish
-        </button>
-      )}
-
-      {isCreating && (
-        <CreateItemForm
-          branches={branches}
-          defaultBranchId={branchId}
-          onCancel={() => setIsCreating(false)}
-          onSaved={(text) => {
-            setIsCreating(false);
-            onNotice({ ok: true, text });
-            refresh();
-          }}
-          onError={(text) => onNotice({ ok: false, text })}
-        />
-      )}
-
-      {moving && (
-        <MovementForm
-          item={moving}
-          onClose={() => setMoving(null)}
-          onSaved={(text) => {
-            setMoving(null);
-            onNotice({ ok: true, text });
-            refresh();
-          }}
-          onError={(text) => onNotice({ ok: false, text })}
-        />
-      )}
-
-      {rows.length === 0 ? (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            Ombor boʻsh. Mahsulot qoʻshing — keyin uni taomlar retseptiga
-            ulasangiz, sotuvdan avtomatik hisobdan chiqadi.
-          </p>
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Nomi</th>
-                <th>Filial</th>
-                <th>Qoldiq</th>
-                <th>Chegara</th>
-                <th>Narxi</th>
-                <th>Qiymati</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((item) => (
-                <tr key={item.id} style={item.isLow ? { background: '#FFFBEB' } : undefined}>
-                  <td>
-                    <strong>{item.name}</strong>
-                    {item.isLow && (
-                      <span
-                        className="badge"
-                        style={{ background: '#FEF3C7', color: '#B45309', marginLeft: 8 }}
-                      >
-                        tugayapti
-                      </span>
-                    )}
-                  </td>
-                  <td className="muted">{item.branchName ?? '—'}</td>
-                  <td>
-                    <strong>{item.quantity}</strong>{' '}
-                    <span className="muted">{UNIT_LABEL[item.unit]}</span>
-                  </td>
-                  <td className="muted">{item.minQuantity ?? '—'}</td>
-                  <td>{formatMoney(item.costPerUnit)}</td>
-                  <td>{formatMoney(item.stockValue)}</td>
-                  <td>
-                    {canManage && (
-                      <button
-                        type="button"
-                        className="btn btn--ghost"
-                        style={smallBtn}
-                        onClick={() => setMoving(item)}
-                      >
-                        Harakat
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Recording a movement.
- *
- * Consumption is absent from the list on purpose: it is written when an order
- * completes, and a button for it here would let anyone make stock disappear
- * with no sale behind it.
- */
-function MovementForm({
-  item,
-  onClose,
-  onSaved,
-  onError,
-}: {
-  item: StockItem;
-  onClose: () => void;
-  onSaved: (message: string) => void;
-  onError: (message: string) => void;
-}) {
-  const [type, setType] = useState<StockMovementType>(StockMovementType.RECEIPT);
-  const [quantity, setQuantity] = useState('');
-  const [costPerUnit, setCostPerUnit] = useState(String(item.costPerUnit));
-  const [supplierId, setSupplierId] = useState('');
-  const [comment, setComment] = useState('');
-
-  const suppliers = useQuery({
-    queryKey: ['suppliers'],
-    queryFn: () => api.inventory.listSuppliers(),
-  });
-
-  const amount = Number(quantity.replace(',', '.')) || 0;
-  const isAdjustment = type === StockMovementType.ADJUSTMENT;
-  const isReceipt = type === StockMovementType.RECEIPT;
-
-  const error =
-    amount === 0
-      ? 'Miqdor kiriting'
-      : !isAdjustment && amount < 0
-        ? 'Miqdor musbat boʻlishi kerak'
-        : isAdjustment && comment.trim().length === 0
-          ? 'Tuzatish sababini yozing'
-          : null;
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.inventory.addMovement({
-        stockItemId: item.id,
-        type,
-        quantity: amount,
-        ...(isReceipt && costPerUnit ? { costPerUnit: digits(costPerUnit) } : {}),
-        ...(isReceipt && supplierId ? { supplierId } : {}),
-        ...(comment.trim() ? { comment: comment.trim() } : {}),
-      }),
-    onSuccess: () => onSaved(`${item.name}: ${MOVEMENT_LABEL[type]} yozildi`),
-    onError: (caught) =>
-      onError(caught instanceof RestorApiError ? caught.message : 'Saqlanmadi'),
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (error) return;
-    save.mutate();
-  }
-
-  return (
-    <form className="card" onSubmit={submit}>
-      <div className="row" style={{ marginBottom: 4 }}>
-        <h3 style={{ fontSize: 15, margin: 0 }}>{item.name}</h3>
-        <div className="spacer" />
-        <button type="button" className="btn btn--ghost" onClick={onClose}>
-          Yopish
-        </button>
-      </div>
-      <p className="muted" style={{ fontSize: 13, margin: '0 0 14px' }}>
-        Hozirgi qoldiq: <strong>{item.quantity} {UNIT_LABEL[item.unit]}</strong>
-      </p>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14 }}>
-        <Labelled label="Turi">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as StockMovementType)}
-            style={field}
-          >
-            {MANUAL_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {MOVEMENT_LABEL[value]}
-              </option>
-            ))}
-          </select>
-        </Labelled>
-
-        <Labelled
-          label={`Miqdor (${UNIT_LABEL[item.unit]})`}
-          hint={isAdjustment ? 'Kamaytirish uchun minus bilan: -3' : undefined}
-          error={error && error.includes('Miqdor') ? error : null}
-        >
-          <input
-            inputMode="decimal"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            placeholder={isAdjustment ? '-3' : '5'}
-            style={field}
-          />
-        </Labelled>
-
-        {isReceipt && (
-          <>
-            <Labelled label="1 birlik narxi" hint="Ombor qiymati shu boʻyicha hisoblanadi">
-              <input
-                inputMode="numeric"
-                value={costPerUnit}
-                onChange={(e) => setCostPerUnit(e.target.value)}
-                style={field}
-              />
-            </Labelled>
-            <Labelled label="Yetkazib beruvchi" hint="Ixtiyoriy">
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} style={field}>
-                <option value="">—</option>
-                {(suppliers.data ?? []).filter((s) => s.isActive).map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
-            </Labelled>
-          </>
-        )}
-
-        <Labelled
-          label="Izoh"
-          hint={isAdjustment ? 'Majburiy — nega farq chiqdi' : 'Ixtiyoriy'}
-          error={error && error.includes('sabab') ? error : null}
-        >
-          <input
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder={isAdjustment ? 'Inventarizatsiya' : '—'}
-            style={field}
-          />
-        </Labelled>
-      </div>
-
-      <button type="submit" className="btn" style={{ marginTop: 16 }} disabled={Boolean(error) || save.isPending}>
-        {save.isPending ? 'Saqlanmoqda…' : 'Yozish'}
-      </button>
-    </form>
-  );
-}
-
-function CreateItemForm({
-  branches,
-  defaultBranchId,
-  onCancel,
-  onSaved,
-  onError,
-}: {
-  branches: Array<{ id: string; name: string }>;
-  defaultBranchId: string;
-  onCancel: () => void;
-  onSaved: (message: string) => void;
-  onError: (message: string) => void;
-}) {
-  const [branchId, setBranchId] = useState(defaultBranchId || branches[0]?.id || '');
-  const [name, setName] = useState('');
-  const [unit, setUnit] = useState<StockUnit>(StockUnit.KG);
-  const [quantity, setQuantity] = useState('0');
-  const [minQuantity, setMinQuantity] = useState('');
-  const [costPerUnit, setCostPerUnit] = useState('');
-
-  const save = useMutation({
-    mutationFn: () =>
-      api.inventory.createItem({
-        branchId,
-        name: name.trim(),
-        unit,
-        quantity: Number(quantity.replace(',', '.')) || 0,
-        minQuantity: minQuantity.trim() ? Number(minQuantity.replace(',', '.')) : null,
-        costPerUnit: digits(costPerUnit),
-      }),
-    onSuccess: () => onSaved(`${name.trim()} omborga qoʻshildi`),
-    onError: (caught) =>
-      onError(caught instanceof RestorApiError ? caught.message : 'Saqlanmadi'),
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!branchId || name.trim().length < 2) return;
-    save.mutate();
-  }
-
-  return (
-    <form className="card" onSubmit={submit}>
-      <div className="row" style={{ marginBottom: 14 }}>
-        <h3 style={{ fontSize: 15, margin: 0 }}>Yangi ombor mahsuloti</h3>
-        <div className="spacer" />
-        <button type="button" className="btn btn--ghost" onClick={onCancel}>Yopish</button>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14 }}>
-        <Labelled label="Filial" hint="Ombor har bir filialda alohida">
-          <select value={branchId} onChange={(e) => setBranchId(e.target.value)} style={field}>
-            {branches.map((branch) => (
-              <option key={branch.id} value={branch.id}>{branch.name}</option>
-            ))}
-          </select>
-        </Labelled>
-
-        <Labelled label="Nomi">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Pishloq" style={field} />
-        </Labelled>
-
-        <Labelled label="Oʻlchov birligi">
-          <select value={unit} onChange={(e) => setUnit(e.target.value as StockUnit)} style={field}>
-            {Object.values(StockUnit).map((value) => (
-              <option key={value} value={value}>{UNIT_LABEL[value]}</option>
-            ))}
-          </select>
-        </Labelled>
-
-        <Labelled label="Boshlangʻich qoldiq">
-          <input inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value)} style={field} />
-        </Labelled>
-
-        <Labelled label="Chegara" hint="Shunga tushganda ogohlantiradi">
-          <input inputMode="decimal" value={minQuantity} onChange={(e) => setMinQuantity(e.target.value)} placeholder="—" style={field} />
-        </Labelled>
-
-        <Labelled label="1 birlik narxi">
-          <input inputMode="numeric" value={costPerUnit} onChange={(e) => setCostPerUnit(e.target.value)} placeholder="50000" style={field} />
-        </Labelled>
-      </div>
-
-      <button type="submit" className="btn" style={{ marginTop: 16 }} disabled={save.isPending}>
-        {save.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-      </button>
-    </form>
-  );
-}
-
 function MovementsTab({ branchId }: { branchId: string }) {
+  const [type, setType] = useState<StockMovementType | ''>('');
+  const [page, setPage] = useState(1);
   const movements = useQuery({
-    queryKey: ['stock', 'movements', branchId],
-    queryFn: () =>
-      api.inventory.listMovements({ branchId: branchId || undefined, limit: 100 }),
+    queryKey: ['stock', 'movements', branchId, type, page],
+    queryFn: () => api.inventory.listMovements({ branchId: branchId || undefined, type: type || undefined, page, limit: 30 }),
   });
 
-  if (movements.isLoading) return <Loading />;
-  const rows = movements.data?.items ?? [];
-
-  if (rows.length === 0) {
-    return (
-      <div className="card">
-        <p className="muted" style={{ margin: 0 }}>Harakat yoʻq.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Vaqt</th>
-            <th>Mahsulot</th>
-            <th>Turi</th>
-            <th>Miqdor</th>
-            <th>Kim / nima</th>
-            <th>Izoh</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => {
-            const value = Number(row.quantity);
-            return (
-              <tr key={row.id}>
-                <td className="muted" style={{ fontSize: 13 }}>
-                  {new Date(row.createdAt).toLocaleString('uz-UZ')}
-                </td>
-                <td>{row.stockItemName ?? '—'}</td>
-                <td>
-                  <span className="badge" style={MOVEMENT_TONE[row.type]}>
-                    {MOVEMENT_LABEL[row.type]}
-                  </span>
-                </td>
-                <td>
-                  {/* The sign is the direction, so it is shown as stored. */}
-                  <strong style={{ color: value < 0 ? '#991B1B' : '#166534' }}>
-                    {value > 0 ? '+' : ''}
-                    {row.quantity}
-                  </strong>{' '}
-                  <span className="muted">{row.unit ? UNIT_LABEL[row.unit] : ''}</span>
-                </td>
-                <td className="muted" style={{ fontSize: 13 }}>
-                  {row.orderNumber ?? row.supplierName ?? row.createdByName ?? '—'}
-                </td>
-                <td className="muted" style={{ fontSize: 13 }}>{row.comment ?? '—'}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <section className="stack" style={{ gap: 12 }}>
+      <Seg
+        label="Harakat turi"
+        quiet
+        options={[
+          { value: '' as const, label: 'Barchasi' },
+          ...[StockMovementType.RECEIPT, StockMovementType.CONSUMPTION, StockMovementType.WASTE, StockMovementType.ADJUSTMENT].map((t) => ({
+            value: t,
+            label: MOVEMENT_LABELS[t],
+          })),
+        ]}
+        value={type}
+        onChange={(t) => { setType(t); setPage(1); }}
+      />
+      {movements.isLoading ? (
+        <Loading />
+      ) : movements.isError ? (
+        <ErrorState error={movements.error} onRetry={() => void movements.refetch()} />
+      ) : (
+        <div className="card card--flush">
+          <div className="table-wrap">
+            <table style={{ minWidth: 760 }}>
+              <thead>
+                <tr><th>Vaqt</th><th>Xomashyo</th><th>Turi</th><th className="td-right">Miqdor</th><th>Manba</th><th>Kim</th></tr>
+              </thead>
+              <tbody>
+                {movements.data!.items.length === 0 ? (
+                  <tr><td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>Harakat yoʻq</td></tr>
+                ) : (
+                  movements.data!.items.map((m) => {
+                    const n = Number(m.quantity);
+                    return (
+                      <tr key={m.id}>
+                        <td className="cell-sub" style={{ whiteSpace: 'nowrap' }}>{dateTimeOf(m.createdAt)}</td>
+                        <td className="cell-main">{m.stockItemName}</td>
+                        <td><span className={`pill ${MOVEMENT_TONES[m.type]}`}>{MOVEMENT_LABELS[m.type]}</span></td>
+                        <td className="td-right num cell-main" style={{ color: n < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                          {n > 0 ? '+' : ''}{qty(m.quantity)} {unitOf(m.unit ?? '')}
+                        </td>
+                        <td className="cell-sub">
+                          {[
+                            m.orderNumber ? `#${m.orderNumber}` : null,
+                            m.supplierName,
+                            m.costPerUnit ? `${som(m.costPerUnit)}/${unitOf(m.unit ?? '')}` : null,
+                            m.expiresAt ? `muddat ${dateOf(m.expiresAt)}` : null,
+                            m.batchCode ? `partiya ${m.batchCode}` : null,
+                            m.type !== StockMovementType.CONSUMPTION ? m.comment : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
+                        </td>
+                        <td className="cell-sub">{m.createdByName ?? (m.type === StockMovementType.CONSUMPTION ? 'Tizim' : '—')}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="card__foot">
+            <Pager page={page} totalPages={movements.data!.pagination.totalPages} onChange={setPage} />
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
 function SuppliersTab({
+  suppliers,
   canManage,
+  onEdit,
   onNotice,
 }: {
+  suppliers: Supplier[];
   canManage: boolean;
+  onEdit: (supplier: Supplier | null) => void;
   onNotice: (n: { ok: boolean; text: string }) => void;
 }) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-
-  const suppliers = useQuery({
-    queryKey: ['suppliers'],
-    queryFn: () => api.inventory.listSuppliers(),
-  });
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.inventory.createSupplier({
-        name: name.trim(),
-        phone: phone.trim() || null,
-      }),
-    onSuccess: () => {
-      setName('');
-      setPhone('');
-      onNotice({ ok: true, text: 'Yetkazib beruvchi qoʻshildi' });
-      void queryClient.invalidateQueries({ queryKey: ['suppliers'] });
-    },
-    onError: (caught) =>
-      onNotice({
-        ok: false,
-        text: caught instanceof RestorApiError ? caught.message : 'Saqlanmadi',
-      }),
-  });
-
   const toggle = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      api.inventory.updateSupplier(id, { isActive }),
+    mutationFn: (s: Supplier) => api.inventory.updateSupplier(s.id, { isActive: !s.isActive }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['suppliers'] }),
+    onError: (e) => onNotice({ ok: false, text: e instanceof RestorApiError ? e.message : 'Oʻzgartirilmadi' }),
   });
 
-  if (suppliers.isLoading) return <Loading />;
-  const rows = suppliers.data ?? [];
-
   return (
-    <div style={{ display: 'grid', gap: 14 }}>
+    <section className="stack" style={{ gap: 12 }}>
       {canManage && (
-        <div className="card row" style={{ gap: 10, flexWrap: 'wrap' }}>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Yetkazib beruvchi nomi"
-            style={{ ...field, flex: 1, minWidth: 180 }}
-          />
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="+998 90 123 45 67"
-            style={{ ...field, width: 190 }}
-          />
-          <button
-            type="button"
-            className="btn"
-            disabled={name.trim().length < 2 || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            <IconPlus size={16} /> Qoʻshish
-          </button>
+        <div className="toolbar" style={{ justifyContent: 'flex-end' }}>
+          <button type="button" className="btn" onClick={() => onEdit(null)}><IconPlus size={16} /> Taʼminotchi qoʻshish</button>
         </div>
       )}
-
-      {rows.length === 0 ? (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>Yetkazib beruvchi yoʻq.</p>
-        </div>
+      {suppliers.length === 0 ? (
+        <p className="card muted" style={{ textAlign: 'center' }}>Taʼminotchi yoʻq</p>
       ) : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {rows.map((supplier) => (
-            <div key={supplier.id} className="card row" style={{ gap: 12 }}>
-              <strong style={{ fontSize: 14 }}>{supplier.name}</strong>
-              <span className="muted" style={{ fontSize: 13 }}>{supplier.phone ?? '—'}</span>
-              <div className="spacer" />
-              {canManage && (
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  style={smallBtn}
-                  disabled={toggle.isPending}
-                  onClick={() => toggle.mutate({ id: supplier.id, isActive: !supplier.isActive })}
-                >
-                  {supplier.isActive ? 'Oʻchirish' : 'Yoqish'}
-                </button>
-              )}
-              <span
-                className="badge"
-                style={{
-                  background: supplier.isActive ? '#DCFCE7' : '#F3F4F6',
-                  color: supplier.isActive ? '#166534' : '#6B7280',
-                }}
-              >
-                {supplier.isActive ? 'Faol' : 'Oʻchiq'}
-              </span>
-            </div>
-          ))}
+        <div className="card card--flush">
+          <div className="table-wrap">
+            <table style={{ minWidth: 640 }}>
+              <thead><tr><th>Nomi</th><th>Telefon</th><th>Telegram</th><th>Izoh</th><th /></tr></thead>
+              <tbody>
+                {suppliers.map((sup) => (
+                  <tr key={sup.id} style={{ opacity: sup.isActive ? 1 : 0.55 }}>
+                    <td><div className="cell-main">{sup.name}</div><div className="cell-sub">{sup.contact ?? ''}</div></td>
+                    <td className="num">{sup.phone ? phone(sup.phone) : '—'}</td>
+                    <td>{sup.telegramChatId ? <span className="pill tone-success"><IconTelegram size={12} /> ulangan</span> : <span className="pill tone-neutral">yoʻq</span>}</td>
+                    <td className="cell-sub">{sup.comment ?? ''}</td>
+                    <td className="td-right">
+                      {canManage && (
+                        <span className="row" style={{ gap: 4, justifyContent: 'flex-end' }}>
+                          <button type="button" className="btn btn--sm btn--ghost" onClick={() => onEdit(sup)}><IconEdit size={13} /> Tahrirlash</button>
+                          <button type="button" className="btn btn--sm btn--ghost" disabled={toggle.isPending} onClick={() => toggle.mutate(sup)}>
+                            {sup.isActive ? 'Oʻchirish' : 'Yoqish'}
+                          </button>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'warn' | 'bad' }) {
-  const color = tone === 'bad' ? '#991B1B' : tone === 'warn' ? '#B45309' : undefined;
-  return (
-    <div className="card" style={{ padding: 16 }}>
-      <div className="muted" style={{ fontSize: 12 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, color }}>{value}</div>
-    </div>
-  );
-}
-
-function Labelled({
-  label,
-  hint,
-  error,
-  children,
+/**
+ * Batches by use-by date. "Left" is a first-in first-out estimate from the
+ * current level, which is why writing one off asks for the quantity again.
+ */
+function ExpiryTab({
+  branchId,
+  canManage,
+  onWriteOff,
 }: {
-  label: string;
-  hint?: string;
-  error?: string | null;
-  children: React.ReactNode;
+  branchId: string;
+  canManage: boolean;
+  onWriteOff: (itemId: string, quantity: string, comment: string) => void;
 }) {
+  const batches = useQuery({
+    queryKey: ['stock', 'batches', branchId],
+    queryFn: () => api.inventory.listBatches({ branchId: branchId || undefined }),
+  });
+
+  if (batches.isLoading) return <Loading />;
+  if (batches.isError) return <ErrorState error={batches.error} onRetry={() => void batches.refetch()} />;
+  const list = batches.data ?? [];
+  if (list.length === 0) {
+    return (
+      <p className="card muted" style={{ textAlign: 'center' }}>
+        Muddatli partiya yoʻq. Kirim qilishda yaroqlilik muddatini kiriting — shu yerda kuzatiladi.
+      </p>
+    );
+  }
+
+  const atRisk = list.filter((b) => b.daysLeft <= 3).reduce((sum, b) => sum + b.value, 0);
+
   return (
-    <label style={{ display: 'grid', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-      {children}
-      {(error ?? hint) && (
-        <span className="muted" style={{ fontSize: 12, color: error ? '#991B1B' : undefined }}>
-          {error ?? hint}
-        </span>
-      )}
-    </label>
+    <div className="card card--flush">
+      <div className="card__head">
+        <div>
+          <h2 className="card__title">Yaroqlilik muddati nazorati</h2>
+          <p className="card__sub">Qoldiq FIFO boʻyicha hisoblangan: avval eski partiya ishlatiladi deb olinadi</p>
+        </div>
+        {atRisk > 0 && <span className="pill pill--lg tone-danger">Xavf ostida: {som(atRisk)}</span>}
+      </div>
+      <div className="table-wrap">
+        <table style={{ minWidth: 720 }}>
+          <thead>
+            <tr><th>Xomashyo</th><th>Partiya</th><th>Kirim</th><th className="td-right">Qoldiq</th><th className="td-right">Qiymat</th><th>Muddat</th><th /></tr>
+          </thead>
+          <tbody>
+            {list.map((b) => (
+              <tr key={b.movementId}>
+                <td className="cell-main">{b.stockItemName}<div className="cell-sub">{b.supplierName ?? ''}</div></td>
+                <td className="num">{b.batchCode ?? '—'}</td>
+                <td className="cell-sub">{dateOf(b.receivedAt)} · {amountOf(b.received, b.unit)}</td>
+                <td className="td-right num cell-main">{amountOf(b.remaining, b.unit)}</td>
+                <td className="td-right num">{som(b.value)}</td>
+                <td>
+                  <span className={`pill ${b.daysLeft < 0 ? 'tone-danger' : b.daysLeft <= 3 ? 'tone-warning' : 'tone-success'}`}>{daysLeftLabel(b.daysLeft)}</span>
+                  <div className="cell-sub">{dateOf(b.expiresAt)}</div>
+                </td>
+                <td className="td-right">
+                  {canManage && b.daysLeft <= 3 && (
+                    <button
+                      type="button"
+                      className="btn btn--sm btn--danger-soft"
+                      onClick={() => onWriteOff(b.stockItemId, qty(b.remaining), `Muddati ${b.daysLeft < 0 ? 'oʻtgan' : 'tugayotgan'} partiya${b.batchCode ? ` ${b.batchCode}` : ''} (${dateOf(b.expiresAt)})`)}
+                    >
+                      <IconTrash size={13} /> Hisobdan chiqarish
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
-/** Consumption is absent: it is written by the system, never by a person. */
-const MANUAL_TYPES: StockMovementType[] = [
-  StockMovementType.RECEIPT,
-  StockMovementType.WASTE,
-  StockMovementType.ADJUSTMENT,
-  StockMovementType.TRANSFER_OUT,
-  StockMovementType.TRANSFER_IN,
-];
-
-const MOVEMENT_LABEL: Record<string, string> = {
-  [StockMovementType.RECEIPT]: 'Kirim',
-  [StockMovementType.CONSUMPTION]: 'Sarflandi',
-  [StockMovementType.WASTE]: 'Yaroqsiz',
-  [StockMovementType.ADJUSTMENT]: 'Tuzatish',
-  [StockMovementType.TRANSFER_OUT]: 'Chiqdi',
-  [StockMovementType.TRANSFER_IN]: 'Keldi',
-};
-
-const MOVEMENT_TONE: Record<string, { background: string; color: string }> = {
-  [StockMovementType.RECEIPT]: { background: '#DCFCE7', color: '#166534' },
-  [StockMovementType.CONSUMPTION]: { background: '#E0F2FE', color: '#075985' },
-  [StockMovementType.WASTE]: { background: '#FEE2E2', color: '#991B1B' },
-  [StockMovementType.ADJUSTMENT]: { background: '#FEF3C7', color: '#B45309' },
-  [StockMovementType.TRANSFER_OUT]: { background: '#F3F4F6', color: '#6B7280' },
-  [StockMovementType.TRANSFER_IN]: { background: '#F3F4F6', color: '#6B7280' },
-};
-
-const UNIT_LABEL: Record<string, string> = {
-  [StockUnit.KG]: 'kg',
-  [StockUnit.G]: 'g',
-  [StockUnit.L]: 'l',
-  [StockUnit.ML]: 'ml',
-  [StockUnit.PCS]: 'dona',
-};
-
-const control = {
-  padding: '8px 12px',
-  borderRadius: 8,
-  border: '1px solid var(--border)',
-  fontSize: 14,
-} as const;
-
-const field = { ...control, padding: '9px 12px' } as const;
-const smallBtn = { padding: '5px 10px', minHeight: 30, fontSize: 12 } as const;
-const cardGrid = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-  gap: 12,
-} as const;
-
-function digits(value: string): number {
-  return Number(value.replace(/\D/g, '')) || 0;
+function exportItems(items: StockItem[]) {
+  downloadCsv(`ombor_${new Date().toISOString().slice(0, 10)}`, [
+    ['Xomashyo', 'SKU', 'Toifa', 'Filial', 'Birlik', 'Qoldiq', 'Min. chegara', 'Narx (soʻm)', 'Qiymat (soʻm)', 'Holat'],
+    ...items.map((i) => [
+      i.name,
+      i.sku,
+      i.category,
+      i.branchName,
+      unitOf(i.unit),
+      qty(i.quantity),
+      i.minQuantity ? qty(i.minQuantity) : '',
+      i.costPerUnit,
+      i.stockValue,
+      LEVEL_LABELS[levelOf(i)],
+    ]),
+  ]);
 }

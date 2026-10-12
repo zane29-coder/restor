@@ -99,3 +99,34 @@ export function isLow(quantity: number, minQuantity: number | null): boolean {
 export function roundQuantity(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
+
+/**
+ * What is left of each receipt, assuming the oldest stock is used first.
+ *
+ * Consumption is written by the system per order, without knowing which
+ * batch the cook took from, so per-batch balances cannot be recorded — only
+ * estimated. The estimate a kitchen actually works by is first-in first-out:
+ * the current level belongs to the newest receipts, and anything older than
+ * what the level covers has been used.
+ *
+ * `receipts` may be in any order; the result follows the input's order.
+ */
+export function remainingByReceipt(
+  level: number,
+  receipts: Array<{ id: string; quantity: number; receivedAt: Date }>,
+): Map<string, number> {
+  const result = new Map<string, number>();
+  let left = Math.max(0, level);
+  const newestFirst = [...receipts].sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime());
+  for (const receipt of newestFirst) {
+    const take = Math.min(left, Math.max(0, receipt.quantity));
+    result.set(receipt.id, roundQuantity(take));
+    left = roundQuantity(left - take);
+  }
+  return result;
+}
+
+/** Whole days from `now` to `date`, rounded down; negative once passed. */
+export function daysUntil(date: Date, now: Date = new Date()): number {
+  return Math.floor((date.getTime() - now.getTime()) / 86_400_000);
+}

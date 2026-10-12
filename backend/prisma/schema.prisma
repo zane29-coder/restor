@@ -242,6 +242,12 @@ enum WaiterCallStatus {
   CANCELLED
 }
 
+enum SupplierOrderStatus {
+  SENT
+  RECEIVED
+  CANCELLED
+}
+
 enum ReservationStatus {
   BOOKED
   SEATED
@@ -394,6 +400,8 @@ model Tenant {
   suppliers        Supplier[]
   stockItems       StockItem[]
   stockMovements   StockMovement[]
+  supplierOrders   SupplierOrder[]
+  stockTakes       StockTake[]
   deliveryZones    DeliveryZone[]
   tables          RestaurantTable[]
   waiterCalls     WaiterCall[]
@@ -514,6 +522,8 @@ model User {
   handoversConfirmed  CashHandover[]        @relation("HandoverCashier")
   waiterCallsHandled  WaiterCall[]
   reservationsTaken   TableReservation[]
+  supplierOrders      SupplierOrder[]
+  stockTakes          StockTake[]
   auditLogs           AuditLog[]
   filesUploaded       FileAsset[]
   campaignsCreated    MarketingCampaign[]
@@ -702,6 +712,8 @@ model Branch {
   telegramConfigs  TelegramConfig[]
   telegramRoutes   TelegramRoute[]
   stockItems       StockItem[]
+  supplierOrders   SupplierOrder[]
+  stockTakes       StockTake[]
   tables           RestaurantTable[]
   waiterCalls      WaiterCall[]
   reservations     TableReservation[]
@@ -2403,6 +2415,9 @@ model Supplier {
   phone   String? @db.VarChar(20)
   contact String? @db.VarChar(200)
   comment String? @db.VarChar(500)
+  /// A chat the restaurant's bot shares with the supplier — usually a group
+  /// with both in it. Purchase orders are posted there.
+  telegramChatId String? @db.VarChar(64)
 
   isActive Boolean @default(true)
 
@@ -2412,6 +2427,7 @@ model Supplier {
 
   tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   movements StockMovement[]
+  orders    SupplierOrder[]
 
   @@unique([tenantId, name])
   @@index([tenantId, isActive])
@@ -2428,8 +2444,12 @@ model StockItem {
   tenantId String @db.Uuid
   branchId String @db.Uuid
 
-  name String    @db.VarChar(200)
-  unit StockUnit @default(PCS)
+  name     String    @db.VarChar(200)
+  unit     StockUnit @default(PCS)
+  /// Free text grouping for the list: "Goʻsht", "Sabzavot", "Qadoqlash".
+  category String?   @db.VarChar(60)
+  /// The restaurant's own code for the item, if it keeps one.
+  sku      String?   @db.VarChar(40)
 
   /// On hand. Decimal, not Float: 0.1 kg three hundred times must come to
   /// exactly 30 kg, and binary floats do not.
@@ -2478,14 +2498,23 @@ model StockMovement {
   orderId    String? @db.Uuid
   comment    String? @db.VarChar(500)
 
+  /// On a RECEIPT: the batch's use-by date and the supplier's batch number.
+  /// What is left of a batch is not stored; it is estimated first-in
+  /// first-out from the current level (see `batchesFor`).
+  expiresAt       DateTime?
+  batchCode       String?   @db.VarChar(40)
+  /// On a RECEIPT made by receiving a purchase order.
+  supplierOrderId String?   @db.Uuid
+
   createdByUserId String?  @db.Uuid
   createdAt       DateTime @default(now())
 
-  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  stockItem StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
-  supplier  Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  order     Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  createdBy User?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stockItem     StockItem      @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  supplier      Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  order         Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  supplierOrder SupplierOrder? @relation(fields: [supplierOrderId], references: [id], onDelete: SetNull)
+  createdBy     User?          @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
 
   @@index([stockItemId, createdAt])
   @@index([tenantId, createdAt])
@@ -2515,4 +2544,69 @@ model ProductIngredient {
   @@unique([productId, stockItemId])
   @@index([stockItemId])
   @@map("product_ingredients")
+}
+
+/// A purchase order sent to a supplier. Lines are a snapshot (item name,
+/// unit, quantity, estimated cost) because the order is a document: renaming
+/// an item later must not rewrite what was asked for.
+model SupplierOrder {
+  id         String @id @default(uuid()) @db.Uuid
+  tenantId   String @db.Uuid
+  branchId   String @db.Uuid
+  supplierId String @db.Uuid
+  /// Sequential per tenant — what staff and the supplier quote.
+  number     Int
+
+  status SupplierOrderStatus @default(SENT)
+  lines  Json
+  /// Estimate at the time of ordering, in minor units.
+  total  Int                 @default(0)
+  note   String?             @db.VarChar(500)
+
+  expectedAt DateTime?
+  /// QUEUED, NO_CHAT or NO_BOT — whether the message went out.
+  telegramStatus String @default("NO_CHAT") @db.VarChar(20)
+
+  receivedAt  DateTime?
+  cancelledAt DateTime?
+
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant    Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  supplier  Supplier        @relation(fields: [supplierId], references: [id])
+  createdBy User?           @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  receipts  StockMovement[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, branchId, createdAt])
+  @@map("supplier_orders")
+}
+
+/// A completed stock-take: the counted figures against the books, kept as the
+/// signed act. The adjustments it caused are ordinary ADJUSTMENT movements.
+model StockTake {
+  id       String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  branchId String @db.Uuid
+
+  note          String? @db.VarChar(500)
+  lines         Json
+  itemsCount    Int
+  /// Lines where the count agreed with the books.
+  matchedCount  Int
+  shortageValue Int     @default(0)
+  surplusValue  Int     @default(0)
+
+  createdByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now())
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  createdBy User?  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, branchId, createdAt])
+  @@map("stock_takes")
 }

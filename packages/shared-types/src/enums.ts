@@ -516,3 +516,11 @@ export const StockMovementType = {
 } as const;
 export type StockMovementType =
   (typeof StockMovementType)[keyof typeof StockMovementType];
+
+/** A purchase order: sent, then received into stock or cancelled. */
+export const SupplierOrderStatus = {
+  SENT: 'SENT',
+  RECEIVED: 'RECEIVED',
+  CANCELLED: 'CANCELLED',
+} as const;
+export type SupplierOrderStatus = (typeof SupplierOrderStatus)[keyof typeof SupplierOrderStatus];

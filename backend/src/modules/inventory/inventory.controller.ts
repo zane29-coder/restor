@@ -4,35 +4,116 @@ import {
   Permission,
   type Paginated,
   type ProductRecipe,
+  type StockBatch,
   type StockItem,
+  type StockItemInsight,
   type StockMovement,
   type StockMovementType,
   type StockSummary,
+  type StockTake,
   type Supplier,
+  type SupplierOrder,
+  type SupplierOrderStatus,
 } from '@restor/shared-types';
 import {
   createStockItemSchema,
+  createSupplierOrderSchema,
   createSupplierSchema,
+  receiveSupplierOrderSchema,
   setRecipeSchema,
   stockMovementSchema,
+  stockTakeSchema,
   updateStockItemSchema,
   updateSupplierSchema,
   type CreateStockItemInput,
   type CreateSupplierInput,
+  type CreateSupplierOrderInput,
+  type ReceiveSupplierOrderInput,
   type SetRecipeInput,
   type StockMovementInput,
+  type StockTakeInput,
   type UpdateStockItemInput,
   type UpdateSupplierInput,
 } from '@restor/validation';
 import { RequirePermissions } from '../../common/decorators';
 import { zodBody } from '../../common/pipes/zod-validation.pipe';
 import { InventoryService } from './inventory.service';
+import { ProcurementService } from './procurement.service';
 
 /** Inventory (TZ §29-§31). */
 @ApiTags('inventory')
 @Controller()
 export class InventoryController {
-  constructor(private readonly inventory: InventoryService) {}
+  constructor(
+    private readonly inventory: InventoryService,
+    private readonly procurement: ProcurementService,
+  ) {}
+
+  /* --------------------------- Purchase orders ---------------------- */
+
+  @Get('supplier-orders')
+  @RequirePermissions(Permission.INVENTORY_VIEW)
+  listOrders(@Query() query: { branchId?: string; status?: SupplierOrderStatus }): Promise<SupplierOrder[]> {
+    return this.procurement.listOrders(query);
+  }
+
+  @Post('supplier-orders')
+  @RequirePermissions(Permission.INVENTORY_MANAGE)
+  @ApiOperation({ summary: 'Order from a supplier; posted to their Telegram chat when one is on file' })
+  createOrder(@Body(zodBody(createSupplierOrderSchema)) body: CreateSupplierOrderInput): Promise<SupplierOrder> {
+    return this.procurement.createOrder(body);
+  }
+
+  @Post('supplier-orders/:id/receive')
+  @RequirePermissions(Permission.INVENTORY_MANAGE)
+  @ApiOperation({ summary: 'Book what arrived as receipts, with costs, use-by dates and batches' })
+  receiveOrder(
+    @Param('id') id: string,
+    @Body(zodBody(receiveSupplierOrderSchema)) body: ReceiveSupplierOrderInput,
+  ): Promise<SupplierOrder> {
+    return this.procurement.receiveOrder(id, body);
+  }
+
+  @Post('supplier-orders/:id/cancel')
+  @RequirePermissions(Permission.INVENTORY_MANAGE)
+  cancelOrder(@Param('id') id: string): Promise<SupplierOrder> {
+    return this.procurement.cancelOrder(id);
+  }
+
+  @Post('supplier-orders/:id/resend')
+  @RequirePermissions(Permission.INVENTORY_MANAGE)
+  resendOrder(@Param('id') id: string): Promise<SupplierOrder> {
+    return this.procurement.resendOrder(id);
+  }
+
+  /* ----------------------------- Stock-takes ------------------------ */
+
+  @Get('stock/takes')
+  @RequirePermissions(Permission.INVENTORY_VIEW)
+  listTakes(@Query('branchId') branchId?: string): Promise<StockTake[]> {
+    return this.procurement.listTakes(branchId);
+  }
+
+  @Post('stock/takes')
+  @RequirePermissions(Permission.INVENTORY_MANAGE)
+  @ApiOperation({ summary: 'Save a count; differences become adjustments, the act is kept' })
+  createTake(@Body(zodBody(stockTakeSchema)) body: StockTakeInput): Promise<StockTake> {
+    return this.procurement.createTake(body);
+  }
+
+  /** Batches with stock estimated left, soonest use-by date first. */
+  @Get('stock/batches')
+  @RequirePermissions(Permission.INVENTORY_VIEW)
+  listBatches(@Query() query: { branchId?: string; stockItemId?: string }): Promise<StockBatch[]> {
+    return this.inventory.listBatches(query);
+  }
+
+  @Get('stock/items/:id/insight')
+  @RequirePermissions(Permission.INVENTORY_VIEW)
+  @ApiOperation({ summary: 'Seven-day usage, days of stock left, dishes using it, last supplier' })
+  insight(@Param('id') id: string): Promise<StockItemInsight> {
+    return this.procurement.insight(id);
+  }
 
   /* ------------------------------ Suppliers ------------------------- */
 

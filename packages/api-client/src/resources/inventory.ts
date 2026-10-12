@@ -2,12 +2,17 @@ import type {
   Paginated,
   PaginationQuery,
   ProductRecipe,
+  StockBatch,
   StockItem,
+  StockItemInsight,
   StockMovement,
   StockMovementType,
   StockSummary,
+  StockTake,
   StockUnit,
   Supplier,
+  SupplierOrder,
+  SupplierOrderStatus,
 } from '@restor/shared-types';
 import type { HttpClient } from '../http-client';
 
@@ -33,15 +38,86 @@ export class InventoryResource {
     phone?: string | null;
     contact?: string | null;
     comment?: string | null;
+    telegramChatId?: string | null;
   }): Promise<Supplier> {
     return this.http.post<Supplier>('suppliers', payload);
   }
 
   updateSupplier(
     id: string,
-    payload: { name?: string; phone?: string | null; isActive?: boolean },
+    payload: {
+      name?: string;
+      phone?: string | null;
+      contact?: string | null;
+      comment?: string | null;
+      telegramChatId?: string | null;
+      isActive?: boolean;
+    },
   ): Promise<Supplier> {
     return this.http.patch<Supplier>(`suppliers/${id}`, payload);
+  }
+
+  /* --------------------------- Purchase orders ---------------------- */
+
+  listOrders(query?: { branchId?: string; status?: SupplierOrderStatus }): Promise<SupplierOrder[]> {
+    return this.http.get<SupplierOrder[]>('supplier-orders', { query });
+  }
+
+  /** Prices are the server's estimate; send what is wanted, not what it costs. */
+  createOrder(payload: {
+    branchId: string;
+    supplierId: string;
+    lines: Array<{ stockItemId: string; quantity: number | string }>;
+    note?: string | null;
+    expectedAt?: string | null;
+  }): Promise<SupplierOrder> {
+    return this.http.post<SupplierOrder>('supplier-orders', payload);
+  }
+
+  /** What actually arrived, with invoice costs, use-by dates and batches. */
+  receiveOrder(
+    id: string,
+    lines: Array<{
+      stockItemId: string;
+      quantity: number | string;
+      costPerUnit?: number;
+      expiresAt?: string | null;
+      batchCode?: string | null;
+    }>,
+  ): Promise<SupplierOrder> {
+    return this.http.post<SupplierOrder>(`supplier-orders/${id}/receive`, { lines });
+  }
+
+  cancelOrder(id: string): Promise<SupplierOrder> {
+    return this.http.post<SupplierOrder>(`supplier-orders/${id}/cancel`);
+  }
+
+  resendOrder(id: string): Promise<SupplierOrder> {
+    return this.http.post<SupplierOrder>(`supplier-orders/${id}/resend`);
+  }
+
+  /* ----------------------------- Stock-takes ------------------------ */
+
+  listTakes(branchId?: string): Promise<StockTake[]> {
+    return this.http.get<StockTake[]>('stock/takes', { query: { branchId } });
+  }
+
+  /** Counted figures; the server compares them with the books and corrects. */
+  createTake(payload: {
+    branchId: string;
+    note?: string | null;
+    lines: Array<{ stockItemId: string; counted: number | string }>;
+  }): Promise<StockTake> {
+    return this.http.post<StockTake>('stock/takes', payload);
+  }
+
+  /** Batches with stock estimated left, soonest use-by first. */
+  listBatches(query?: { branchId?: string; stockItemId?: string }): Promise<StockBatch[]> {
+    return this.http.get<StockBatch[]>('stock/batches', { query });
+  }
+
+  insight(stockItemId: string): Promise<StockItemInsight> {
+    return this.http.get<StockItemInsight>(`stock/items/${stockItemId}/insight`);
   }
 
   /* -------------------------------- Stock --------------------------- */
@@ -67,6 +143,8 @@ export class InventoryResource {
     branchId: string;
     name: string;
     unit: StockUnit;
+    category?: string | null;
+    sku?: string | null;
     quantity?: number;
     minQuantity?: number | null;
     costPerUnit?: number;
@@ -85,6 +163,8 @@ export class InventoryResource {
     payload: {
       name?: string;
       unit?: StockUnit;
+      category?: string | null;
+      sku?: string | null;
       minQuantity?: number | null;
       costPerUnit?: number;
       isActive?: boolean;
@@ -115,6 +195,8 @@ export class InventoryResource {
     costPerUnit?: number;
     supplierId?: string;
     comment?: string;
+    expiresAt?: string | null;
+    batchCode?: string | null;
   }): Promise<StockMovement> {
     return this.http.post<StockMovement>('stock/movements', payload);
   }

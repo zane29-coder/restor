@@ -1,4 +1,4 @@
-import type { Order, RestaurantTable } from '@restor/shared-types';
+import type { Order, RestaurantTable, StockTake } from '@restor/shared-types';
 import { dateTimeOf, som } from './format';
 import { ORDER_TYPE_LABELS, PAYMENT_METHOD_LABELS, PAYMENT_STATUS_LABELS } from './labels';
 
@@ -50,6 +50,64 @@ export function printQrSheet(tables: RestaurantTable[], restaurantName: string, 
   .hint { font-size: 10px; color: #777; margin-top: 2mm; }
 </style></head><body>
   <div class="grid">${cards}</div>
+  <script>window.onload = function () { window.print(); };</script>
+</body></html>`);
+  win.document.close();
+  return true;
+}
+
+const UNITS: Record<string, string> = { KG: 'kg', G: 'g', L: 'l', ML: 'ml', PCS: 'dona' };
+const num = (value: string) => {
+  const trimmed = value.includes('.') ? value.replace(/0+$/, '').replace(/\.$/, '') : value;
+  return trimmed.replace('.', ',');
+};
+
+/**
+ * Prints the stock-take act on A4: every counted line against the books,
+ * the value of each difference, and lines for the people who sign it.
+ */
+export function printStockTake(take: StockTake, restaurantName: string) {
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) return false;
+
+  const rows = take.lines
+    .map((l, i) => {
+      const diff = Number(l.difference);
+      return `<tr${diff !== 0 ? ' class="d"' : ''}><td>${i + 1}</td><td>${escape(l.name)}</td><td>${UNITS[l.unit] ?? escape(l.unit)}</td>
+<td class="r">${num(l.expected)}</td><td class="r">${num(l.counted)}</td><td class="r">${diff > 0 ? '+' : ''}${num(l.difference)}</td>
+<td class="r">${som(l.costPerUnit)}</td><td class="r">${l.value > 0 ? '+' : ''}${som(l.value)}</td></tr>`;
+    })
+    .join('');
+
+  win.document.write(`<!doctype html><html lang="uz"><head><meta charset="utf-8"><title>Inventarizatsiya akti</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  body { font: 12px/1.4 system-ui, sans-serif; color: #000; margin: 0; }
+  h1 { font-size: 17px; text-align: center; margin: 0 0 4px; }
+  .c { text-align: center; } .r { text-align: right; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { border: 1px solid #999; padding: 4px 6px; vertical-align: top; }
+  th { background: #eee; font-size: 11px; }
+  tr.d td { font-weight: 600; }
+  .sum { margin-top: 12px; display: grid; grid-template-columns: 1fr auto; gap: 2px 16px; max-width: 360px; margin-left: auto; }
+  .sign { margin-top: 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .sign div { border-top: 1px solid #000; padding-top: 4px; font-size: 11px; }
+</style></head><body>
+  <h1>INVENTARIZATSIYA AKTI</h1>
+  <div class="c">${escape(restaurantName)} · ${escape(take.branchName ?? '')}</div>
+  <div class="c">${dateTimeOf(take.createdAt)}${take.createdByName ? ` · Oʻtkazdi: ${escape(take.createdByName)}` : ''}</div>
+  ${take.note ? `<p>Izoh: ${escape(take.note)}</p>` : ''}
+  <table>
+    <thead><tr><th>№</th><th>Xomashyo</th><th>Birlik</th><th>Hisobda</th><th>Sanaldi</th><th>Farq</th><th>Narx</th><th>Farq summasi</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="sum">
+    <span>Sanalgan pozitsiyalar:</span><b class="r">${take.itemsCount}</b>
+    <span>Mos kelgan:</span><b class="r">${take.matchedCount}</b>
+    <span>Kamomad:</span><b class="r">−${som(take.shortageValue)}</b>
+    <span>Ortiqcha:</span><b class="r">+${som(take.surplusValue)}</b>
+  </div>
+  <div class="sign"><div>Omborchi (F.I.Sh., imzo)</div><div>Masʼul rahbar (F.I.Sh., imzo)</div></div>
   <script>window.onload = function () { window.print(); };</script>
 </body></html>`);
   win.document.close();

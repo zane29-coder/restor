@@ -9,6 +9,7 @@ import {
   type Paginated,
   type ProductIngredient,
   type ProductRecipe,
+  type StockBatch,
   type StockItem,
   type StockMovement,
   type StockSummary,
@@ -17,17 +18,30 @@ import {
 import { normalizePagination, paginated } from '@restor/shared-utils';
 import { AppException } from '../../common/errors/app-exception';
 import { getContext, runUnscoped } from '../../common/context/request-context';
+import { BranchScope } from '../../common/guards/branch-scope.guard';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import {
   consumptionFor,
+  daysUntil,
   isLow,
+  remainingByReceipt,
   roundQuantity,
   signedQuantity,
   type RecipeLine,
 } from './stock.math';
 
 const ITEM_INCLUDE = { branch: { select: { name: true } } } as const;
+
+export const MOVEMENT_INCLUDE = {
+  stockItem: { select: { name: true, unit: true } },
+  supplier: { select: { name: true } },
+  order: { select: { displayNumber: true } },
+  createdBy: { select: { fullName: true } },
+} as const;
+
+/** How far back receipts are read when estimating what is left of a batch. */
+const BATCH_LOOKBACK_MS = 365 * 86_400_000;
 
 /**
  * Inventory (TZ §29-§31).
@@ -55,6 +69,7 @@ export class InventoryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly branchScope: BranchScope,
   ) {}
 
   /* ------------------------------------------------------------------ */
@@ -74,6 +89,7 @@ export class InventoryService {
     phone?: string | null;
     contact?: string | null;
     comment?: string | null;
+    telegramChatId?: string | null;
   }): Promise<Supplier> {
     const tenantId = this.requireTenant();
 
@@ -90,6 +106,7 @@ export class InventoryService {
         phone: input.phone ?? null,
         contact: input.contact ?? null,
         comment: input.comment ?? null,
+        telegramChatId: input.telegramChatId ?? null,
       },
     });
 
@@ -110,6 +127,7 @@ export class InventoryService {
       phone?: string | null;
       contact?: string | null;
       comment?: string | null;
+      telegramChatId?: string | null;
       isActive?: boolean;
     },
   ): Promise<Supplier> {
@@ -125,6 +143,7 @@ export class InventoryService {
         ...(input.phone !== undefined ? { phone: input.phone ?? null } : {}),
         ...(input.contact !== undefined ? { contact: input.contact ?? null } : {}),
         ...(input.comment !== undefined ? { comment: input.comment ?? null } : {}),
+        ...(input.telegramChatId !== undefined ? { telegramChatId: input.telegramChatId ?? null } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     });
@@ -144,9 +163,14 @@ export class InventoryService {
     const rows = await this.prisma.db.stockItem.findMany({
       where: {
         deletedAt: null,
-        ...(query.branchId ? { branchId: query.branchId } : {}),
+        branchId: this.branchScope.filterFor(query.branchId),
         ...(query.search
-          ? { name: { contains: query.search, mode: 'insensitive' as const } }
+          ? {
+              OR: [
+                { name: { contains: query.search, mode: 'insensitive' as const } },
+                { sku: { contains: query.search, mode: 'insensitive' as const } },
+              ],
+            }
           : {}),
       },
       include: ITEM_INCLUDE,
@@ -165,6 +189,7 @@ export class InventoryService {
       include: ITEM_INCLUDE,
     });
     if (!row) throw AppException.notFound('StockItem');
+    this.branchScope.assertCanAccess(row.branchId);
     return toItem(row);
   }
 
@@ -172,10 +197,13 @@ export class InventoryService {
     branchId: string;
     name: string;
     unit: StockUnit;
+    category?: string | null;
+    sku?: string | null;
     quantity?: number;
     minQuantity?: number | null;
     costPerUnit?: number;
   }): Promise<StockItem> {
+    this.branchScope.assertCanAccess(input.branchId);
     const tenantId = this.requireTenant();
 
     const duplicate = await this.prisma.db.stockItem.findFirst({
@@ -195,6 +223,8 @@ export class InventoryService {
           branchId: input.branchId,
           name: input.name,
           unit: input.unit,
+          category: input.category || null,
+          sku: input.sku || null,
           quantity: new Prisma.Decimal(opening),
           minQuantity:
             input.minQuantity != null
@@ -239,6 +269,8 @@ export class InventoryService {
     input: {
       name?: string;
       unit?: StockUnit;
+      category?: string | null;
+      sku?: string | null;
       minQuantity?: number | null;
       costPerUnit?: number;
       isActive?: boolean;
@@ -251,6 +283,8 @@ export class InventoryService {
       data: {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.unit !== undefined ? { unit: input.unit } : {}),
+        ...(input.category !== undefined ? { category: input.category || null } : {}),
+        ...(input.sku !== undefined ? { sku: input.sku || null } : {}),
         ...(input.minQuantity !== undefined
           ? {
               minQuantity:
@@ -304,22 +338,18 @@ export class InventoryService {
     limit?: number;
   }): Promise<Paginated<StockMovement>> {
     const page = normalizePagination(query);
+    const branchFilter = this.branchScope.filterFor(query.branchId);
 
     const where = {
       ...(query.stockItemId ? { stockItemId: query.stockItemId } : {}),
       ...(query.type ? { type: query.type } : {}),
-      ...(query.branchId ? { stockItem: { branchId: query.branchId } } : {}),
+      ...(branchFilter ? { stockItem: { branchId: branchFilter } } : {}),
     };
 
     const [rows, total] = await Promise.all([
       this.prisma.db.stockMovement.findMany({
         where,
-        include: {
-          stockItem: { select: { name: true, unit: true } },
-          supplier: { select: { name: true } },
-          order: { select: { displayNumber: true } },
-          createdBy: { select: { fullName: true } },
-        },
+        include: MOVEMENT_INCLUDE,
         orderBy: { createdAt: 'desc' },
         skip: page.skip,
         take: page.take,
@@ -344,6 +374,8 @@ export class InventoryService {
     costPerUnit?: number;
     supplierId?: string;
     comment?: string;
+    expiresAt?: string | null;
+    batchCode?: string | null;
   }): Promise<StockMovement> {
     const item = await this.getItem(input.stockItemId);
 
@@ -351,6 +383,7 @@ export class InventoryService {
     if (signed === 0) {
       throw AppException.badRequest('Miqdor noldan farq qilishi kerak');
     }
+    const isReceipt = input.type === StockMovementType.RECEIPT;
 
     const row = await this.prisma.transaction(async (tx) => {
       const movement = await tx.stockMovement.create({
@@ -359,17 +392,16 @@ export class InventoryService {
           stockItemId: item.id,
           type: input.type,
           quantity: new Prisma.Decimal(signed),
-          costPerUnit: input.type === StockMovementType.RECEIPT ? (input.costPerUnit ?? null) : null,
+          costPerUnit: isReceipt ? (input.costPerUnit ?? null) : null,
           supplierId: input.supplierId ?? null,
           comment: input.comment ?? null,
+          // A use-by date belongs to a delivery; on anything else it would
+          // describe nothing.
+          expiresAt: isReceipt && input.expiresAt ? new Date(input.expiresAt) : null,
+          batchCode: isReceipt ? input.batchCode || null : null,
           createdByUserId: getContext()?.userId ?? null,
         },
-        include: {
-          stockItem: { select: { name: true, unit: true } },
-          supplier: { select: { name: true } },
-          order: { select: { displayNumber: true } },
-          createdBy: { select: { fullName: true } },
-        },
+        include: MOVEMENT_INCLUDE,
       });
 
       await tx.stockItem.update({
@@ -502,22 +534,30 @@ export class InventoryService {
 
   async summary(branchId?: string, days = 30): Promise<StockSummary> {
     const since = new Date(Date.now() - days * 86_400_000);
+    const branchFilter = this.branchScope.filterFor(branchId);
 
-    const [items, waste] = await Promise.all([
+    const [items, outflow, batches] = await Promise.all([
       this.listItems({ branchId }),
       this.prisma.db.stockMovement.findMany({
         where: {
-          type: StockMovementType.WASTE,
+          type: { in: [StockMovementType.WASTE, StockMovementType.CONSUMPTION] },
           createdAt: { gte: since },
-          ...(branchId ? { stockItem: { branchId } } : {}),
+          ...(branchFilter ? { stockItem: { branchId: branchFilter } } : {}),
         },
-        include: { stockItem: { select: { costPerUnit: true } } },
+        select: { type: true, quantity: true, stockItem: { select: { costPerUnit: true } } },
       }),
+      this.listBatches({ branchId }),
     ]);
 
     const lowItems = items
       .filter((item) => item.isLow)
       .sort((a, b) => Number(a.quantity) - Number(b.quantity));
+
+    // Both are stored negative, so their absolute value is what left the shelf.
+    const valueOf = (type: StockMovementType) =>
+      outflow
+        .filter((row) => row.type === type)
+        .reduce((sum, row) => sum + Math.round(Math.abs(row.quantity.toNumber()) * row.stockItem.costPerUnit), 0);
 
     return {
       branchId: branchId ?? null,
@@ -525,13 +565,86 @@ export class InventoryService {
       lowCount: lowItems.length,
       totalValue: items.reduce((sum, item) => sum + item.stockValue, 0),
       lowItems,
-      // Waste is stored negative, so its absolute value is what was lost.
-      wasteValue: waste.reduce(
-        (sum, row) =>
-          sum + Math.round(Math.abs(row.quantity.toNumber()) * row.stockItem.costPerUnit),
-        0,
-      ),
+      wasteValue: valueOf(StockMovementType.WASTE),
+      consumptionValue: valueOf(StockMovementType.CONSUMPTION),
+      expiredBatches: batches.filter((b) => b.daysLeft < 0).length,
+      expiringBatches: batches.filter((b) => b.daysLeft >= 0 && b.daysLeft <= 3).length,
     };
+  }
+
+  /**
+   * Received batches with a use-by date and stock estimated left, soonest
+   * first. See `remainingByReceipt` for why "left" is an estimate.
+   */
+  async listBatches(query: { branchId?: string; stockItemId?: string }): Promise<StockBatch[]> {
+    const branchFilter = this.branchScope.filterFor(query.branchId);
+    const since = new Date(Date.now() - BATCH_LOOKBACK_MS);
+
+    // Only items that have ever had a dated receipt need the FIFO walk.
+    const dated = await this.prisma.db.stockMovement.findMany({
+      where: {
+        type: StockMovementType.RECEIPT,
+        expiresAt: { not: null },
+        createdAt: { gte: since },
+        ...(query.stockItemId ? { stockItemId: query.stockItemId } : {}),
+        stockItem: { deletedAt: null, ...(branchFilter ? { branchId: branchFilter } : {}) },
+      },
+      select: { stockItemId: true },
+      distinct: ['stockItemId'],
+    });
+    if (dated.length === 0) return [];
+
+    const itemIds = dated.map((row) => row.stockItemId);
+    const [items, receipts] = await Promise.all([
+      this.prisma.db.stockItem.findMany({
+        where: { id: { in: itemIds } },
+        select: { id: true, name: true, unit: true, branchId: true, quantity: true, costPerUnit: true },
+      }),
+      this.prisma.db.stockMovement.findMany({
+        where: { stockItemId: { in: itemIds }, type: StockMovementType.RECEIPT, createdAt: { gte: since } },
+        select: {
+          id: true,
+          stockItemId: true,
+          quantity: true,
+          costPerUnit: true,
+          expiresAt: true,
+          batchCode: true,
+          createdAt: true,
+          supplier: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    const now = new Date();
+    const batches: StockBatch[] = [];
+    for (const item of items) {
+      const own = receipts.filter((r) => r.stockItemId === item.id);
+      const left = remainingByReceipt(
+        item.quantity.toNumber(),
+        own.map((r) => ({ id: r.id, quantity: r.quantity.toNumber(), receivedAt: r.createdAt })),
+      );
+      for (const receipt of own) {
+        const remaining = left.get(receipt.id) ?? 0;
+        if (!receipt.expiresAt || remaining <= 0) continue;
+        batches.push({
+          movementId: receipt.id,
+          stockItemId: item.id,
+          stockItemName: item.name,
+          unit: item.unit as StockUnit,
+          branchId: item.branchId,
+          supplierName: receipt.supplier?.name ?? null,
+          batchCode: receipt.batchCode,
+          receivedAt: receipt.createdAt.toISOString(),
+          expiresAt: receipt.expiresAt.toISOString(),
+          received: receipt.quantity.toFixed(3),
+          remaining: remaining.toFixed(3),
+          value: Math.round(remaining * (receipt.costPerUnit ?? item.costPerUnit)),
+          daysLeft: daysUntil(receipt.expiresAt, now),
+        });
+      }
+    }
+
+    return batches.sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
   }
 
   /* ------------------------------------------------------------------ */
@@ -662,6 +775,7 @@ function toSupplier(row: {
   phone: string | null;
   contact: string | null;
   comment: string | null;
+  telegramChatId: string | null;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -673,6 +787,7 @@ function toSupplier(row: {
     phone: row.phone,
     contact: row.contact,
     comment: row.comment,
+    telegramChatId: row.telegramChatId,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -686,6 +801,8 @@ function toItem(row: {
   branch?: { name: string };
   name: string;
   unit: string;
+  category: string | null;
+  sku: string | null;
   quantity: Prisma.Decimal;
   minQuantity: Prisma.Decimal | null;
   costPerUnit: number;
@@ -703,6 +820,8 @@ function toItem(row: {
     ...(row.branch ? { branchName: row.branch.name } : {}),
     name: row.name,
     unit: row.unit as StockUnit,
+    category: row.category,
+    sku: row.sku,
     // Strings on the wire: these are NUMERIC in Postgres, and routing them
     // through a JSON number reintroduces the float drift the column avoids.
     quantity: row.quantity.toFixed(3),
@@ -716,7 +835,7 @@ function toItem(row: {
   };
 }
 
-function toMovement(row: {
+export function toMovement(row: {
   id: string;
   tenantId: string;
   stockItemId: string;
@@ -729,6 +848,9 @@ function toMovement(row: {
   orderId: string | null;
   order?: { displayNumber: string } | null;
   comment: string | null;
+  expiresAt: Date | null;
+  batchCode: string | null;
+  supplierOrderId: string | null;
   createdByUserId: string | null;
   createdBy?: { fullName: string } | null;
   createdAt: Date;
@@ -748,6 +870,9 @@ function toMovement(row: {
     orderId: row.orderId,
     orderNumber: row.order?.displayNumber ?? null,
     comment: row.comment,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    batchCode: row.batchCode,
+    supplierOrderId: row.supplierOrderId,
     createdByUserId: row.createdByUserId,
     createdByName: row.createdBy?.fullName ?? null,
     createdAt: row.createdAt.toISOString(),

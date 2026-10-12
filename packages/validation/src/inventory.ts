@@ -28,11 +28,26 @@ const positiveQuantity = quantitySchema.refine((value) => value > 0, {
   message: 'Miqdor noldan katta boʻlishi kerak',
 });
 
+/**
+ * What Telegram's `sendMessage` accepts as a chat: a numeric id (groups are
+ * negative) or a public `@username`.
+ */
+const telegramChatSchema = z
+  .string()
+  .trim()
+  .regex(/^(-?\d{5,20}|@[A-Za-z0-9_]{5,32})$/, 'Chat ID raqam (masalan -1001234567890) yoki @username boʻlsin');
+
+const categorySchema = z.string().trim().max(60).nullish();
+const skuSchema = z.string().trim().max(40).nullish();
+const useByDateSchema = z.string().datetime({ offset: true }).nullish();
+const batchCodeSchema = z.string().trim().max(40).nullish();
+
 export const createSupplierSchema = z.object({
   name: z.string().trim().min(2, 'Nomi juda qisqa').max(200),
   phone: phoneSchema.nullish(),
   contact: z.string().trim().max(200).nullish(),
   comment: z.string().trim().max(500).nullish(),
+  telegramChatId: telegramChatSchema.nullish(),
 });
 
 export const updateSupplierSchema = createSupplierSchema.partial().extend({
@@ -44,6 +59,8 @@ export const createStockItemSchema = z.object({
   branchId: uuidSchema,
   name: z.string().trim().min(2, 'Nomi juda qisqa').max(200),
   unit: z.nativeEnum(StockUnit),
+  category: categorySchema,
+  sku: skuSchema,
   /** Opening balance; recorded as an ADJUSTMENT so the ledger explains it. */
   quantity: quantitySchema.optional(),
   /** Reorder threshold. `null` means never flagged as low. */
@@ -62,6 +79,8 @@ export const createStockItemSchema = z.object({
 export const updateStockItemSchema = z.object({
   name: z.string().trim().min(2).max(200).optional(),
   unit: z.nativeEnum(StockUnit).optional(),
+  category: categorySchema,
+  sku: skuSchema,
   minQuantity: quantitySchema.nullish(),
   costPerUnit: moneySchema.optional(),
   isActive: z.boolean().optional(),
@@ -87,6 +106,9 @@ export const stockMovementSchema = z
     costPerUnit: moneySchema.optional(),
     supplierId: uuidSchema.optional(),
     comment: z.string().trim().max(500).optional(),
+    /** A RECEIPT's use-by date and batch number; ignored on other types. */
+    expiresAt: useByDateSchema,
+    batchCode: batchCodeSchema,
   })
   .refine(
     (v) => v.type === StockMovementType.ADJUSTMENT || v.quantity !== 0,
@@ -117,6 +139,72 @@ export const setRecipeSchema = z.object({
     ),
 });
 
+/* -------------------------------------------------------------------------- */
+/* Purchase orders and stock-takes                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A purchase order.
+ *
+ * Note what is absent: prices. The estimate is the server's, from each item's
+ * last known cost; what was actually paid is entered on receipt, from the
+ * supplier's invoice.
+ */
+export const createSupplierOrderSchema = z.object({
+  branchId: uuidSchema,
+  supplierId: uuidSchema,
+  lines: z
+    .array(z.object({ stockItemId: uuidSchema, quantity: positiveQuantity }))
+    .min(1, 'Kamida bitta mahsulot qoʻshing')
+    .max(100)
+    .refine((lines) => new Set(lines.map((l) => l.stockItemId)).size === lines.length, {
+      message: 'Bir mahsulot ikki marta kiritilgan',
+    }),
+  note: z.string().trim().max(500).nullish(),
+  expectedAt: z.string().datetime({ offset: true }).nullish(),
+});
+
+/** What actually arrived; lines left out were not delivered. */
+export const receiveSupplierOrderSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        stockItemId: uuidSchema,
+        quantity: positiveQuantity,
+        /** From the supplier's invoice. */
+        costPerUnit: moneySchema.optional(),
+        expiresAt: useByDateSchema,
+        batchCode: batchCodeSchema,
+      }),
+    )
+    .min(1, 'Kamida bitta mahsulot qabul qilinishi kerak')
+    .max(100),
+});
+
+/**
+ * A stock-take: what was counted on the shelf. The server compares it with
+ * the books at the moment of saving and writes the differences.
+ */
+export const stockTakeSchema = z.object({
+  branchId: uuidSchema,
+  note: z.string().trim().max(500).nullish(),
+  lines: z
+    .array(
+      z.object({
+        stockItemId: uuidSchema,
+        counted: quantitySchema.refine((v) => v >= 0, { message: 'Sanoq manfiy boʻlmaydi' }),
+      }),
+    )
+    .min(1, 'Kamida bitta mahsulot sanalishi kerak')
+    .max(1000)
+    .refine((lines) => new Set(lines.map((l) => l.stockItemId)).size === lines.length, {
+      message: 'Bir mahsulot ikki marta sanalgan',
+    }),
+});
+
+export type CreateSupplierOrderInput = z.infer<typeof createSupplierOrderSchema>;
+export type ReceiveSupplierOrderInput = z.infer<typeof receiveSupplierOrderSchema>;
+export type StockTakeInput = z.infer<typeof stockTakeSchema>;
 export type CreateSupplierInput = z.infer<typeof createSupplierSchema>;
 export type UpdateSupplierInput = z.infer<typeof updateSupplierSchema>;
 export type CreateStockItemInput = z.infer<typeof createStockItemSchema>;
