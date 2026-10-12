@@ -104,6 +104,9 @@ export const orderListQuerySchema = z.object({
   source: orderSourceSchema.optional(),
   courierId: uuidSchema.optional(),
   customerId: uuidSchema.optional(),
+  paymentStatus: z
+    .enum(['UNPAID', 'PARTIALLY_PAID', 'PAID', 'REFUNDED', 'PARTIALLY_REFUNDED'])
+    .optional(),
   dateFrom: z.string().datetime({ offset: true }).optional(),
   dateTo: z.string().datetime({ offset: true }).optional(),
   search: z.string().trim().max(120).optional(),

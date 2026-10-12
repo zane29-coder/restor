@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
+  type OrderStatus,
   type Order,
   type OrderPricePreview,
   type OrderStatusHistoryEntry,
@@ -32,6 +33,16 @@ export class OrdersController {
     @Query(zodBody(orderListQuerySchema)) query: OrderListQueryInput,
   ): Promise<Paginated<Order>> {
     return this.orders.list(query);
+  }
+
+  /** Declared before `:id`, or Nest would route "counts" as an order id. */
+  @Get('counts')
+  @RequirePermissions(Permission.ORDERS_VIEW)
+  @ApiOperation({ summary: 'Orders per status under the list filters' })
+  counts(
+    @Query(zodBody(orderListQuerySchema)) query: OrderListQueryInput,
+  ): Promise<Record<OrderStatus, number>> {
+    return this.orders.counts(query);
   }
 
   @Get(':id')

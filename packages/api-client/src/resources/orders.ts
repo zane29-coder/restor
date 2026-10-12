@@ -10,6 +10,7 @@ import type {
   Order,
   OrderListQuery,
   OrderPricePreview,
+  OrderStatus,
   OrderStatusHistoryEntry,
   Paginated,
   Payment,
@@ -25,6 +26,11 @@ export class OrdersResource {
 
   list(query?: OrderListQuery): Promise<Paginated<Order>> {
     return this.http.getPaginated<Order>('orders', { query });
+  }
+
+  /** Orders per status under the same filters as `list` (status ignored). */
+  counts(query?: Omit<OrderListQuery, 'status' | 'page' | 'limit'>): Promise<Record<OrderStatus, number>> {
+    return this.http.get<Record<OrderStatus, number>>('orders/counts', { query });
   }
 
   get(id: string): Promise<Order> {

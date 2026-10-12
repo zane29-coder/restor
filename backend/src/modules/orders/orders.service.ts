@@ -8,6 +8,7 @@ import {
   OrderSource,
   OrderStatus,
   OrderType,
+  PaymentStatus,
   canTransitionOrderStatus,
   type Order,
   type OrderPricePreview,
@@ -35,6 +36,20 @@ export interface CreateOrderOptions {
   customerId?: string;
 }
 
+/** Filters accepted by the order list and the per-status counts. */
+export interface OrderFilter {
+  branchId?: string;
+  status?: OrderStatus | OrderStatus[];
+  type?: OrderType;
+  source?: OrderSource;
+  paymentStatus?: PaymentStatus;
+  courierId?: string;
+  customerId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  search?: string;
+}
+
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
@@ -52,21 +67,8 @@ export class OrdersService {
   /* Reads                                                              */
   /* ------------------------------------------------------------------ */
 
-  async list(query: {
-    page?: number;
-    limit?: number;
-    branchId?: string;
-    status?: OrderStatus | OrderStatus[];
-    type?: OrderType;
-    source?: OrderSource;
-    courierId?: string;
-    customerId?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    search?: string;
-  }): Promise<Paginated<Order>> {
+  async list(query: OrderFilter & { page?: number; limit?: number }): Promise<Paginated<Order>> {
     const page = normalizePagination(query);
-    const branchFilter = this.branchScope.filterFor(query.branchId);
 
     const statuses = query.status
       ? Array.isArray(query.status)
@@ -75,10 +77,55 @@ export class OrdersService {
       : undefined;
 
     const where: Prisma.OrderWhereInput = {
-      ...(branchFilter ? { branchId: branchFilter as Prisma.OrderWhereInput['branchId'] } : {}),
+      ...this.whereFor(query),
       ...(statuses ? { status: { in: statuses } } : {}),
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.db.order.findMany({
+        where,
+        include: ORDER_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        skip: page.skip,
+        take: page.take,
+      }),
+      this.prisma.db.order.count({ where }),
+    ]);
+
+    return paginated(rows.map(toOrder), total, page);
+  }
+
+  /**
+   * How many orders sit in each status, under the same filters as `list`
+   * minus the status itself — the counter strip above the orders board.
+   *
+   * One grouped query, so the strip does not cost a request per status.
+   * Every status is present, zero included, so the client never has to guess
+   * whether a missing key means "none" or "not loaded".
+   */
+  async counts(query: OrderFilter): Promise<Record<OrderStatus, number>> {
+    const rows = await this.prisma.db.order.groupBy({
+      by: ['status'],
+      where: this.whereFor(query),
+      _count: { _all: true },
+    });
+
+    const result = Object.fromEntries(
+      Object.values(OrderStatus).map((status) => [status, 0]),
+    ) as Record<OrderStatus, number>;
+    for (const row of rows) result[row.status as OrderStatus] = row._count._all;
+    return result;
+  }
+
+  /** The filters shared by `list` and `counts`; status is applied by the caller. */
+  private whereFor(query: OrderFilter): Prisma.OrderWhereInput {
+    const branchFilter = this.branchScope.filterFor(query.branchId);
+
+    return {
+      ...(branchFilter ? { branchId: branchFilter as Prisma.OrderWhereInput['branchId'] } : {}),
       ...(query.type ? { type: query.type } : {}),
       ...(query.source ? { source: query.source } : {}),
+      ...(query.paymentStatus ? { paymentStatus: query.paymentStatus } : {}),
       ...(query.courierId ? { courierId: query.courierId } : {}),
       ...(query.customerId ? { customerId: query.customerId } : {}),
       ...(query.dateFrom || query.dateTo
@@ -99,19 +146,6 @@ export class OrdersService {
           }
         : {}),
     };
-
-    const [rows, total] = await Promise.all([
-      this.prisma.db.order.findMany({
-        where,
-        include: ORDER_INCLUDE,
-        orderBy: { createdAt: 'desc' },
-        skip: page.skip,
-        take: page.take,
-      }),
-      this.prisma.db.order.count({ where }),
-    ]);
-
-    return paginated(rows.map(toOrder), total, page);
   }
 
   async get(id: string): Promise<Order> {

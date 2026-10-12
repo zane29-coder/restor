@@ -1,4 +1,9 @@
-import { formatMoney } from '@restor/shared-utils';
+import { formatMoney, formatPhone } from '@restor/shared-utils';
+
+/** `+998 90 123 45 67`; `—` when there is no number. */
+export function phone(value: string | null | undefined): string {
+  return value ? formatPhone(value) : '—';
+}
 
 /**
  * Display helpers for the admin screens.

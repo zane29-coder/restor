@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
-  OrderStatus,
   Permission,
   type BranchReportRow,
   type DashboardStats,
@@ -63,17 +62,7 @@ import {
 } from '../components/ui';
 import { StatusBadge } from '../components/StatusBadge';
 import { ErrorState, Loading } from '../components/States';
-
-/** Statuses where an order still needs someone to do something. */
-const ACTIVE_STATUSES = [
-  OrderStatus.NEW,
-  OrderStatus.ACCEPTED,
-  OrderStatus.PREPARING,
-  OrderStatus.READY,
-  OrderStatus.WAITING_COURIER,
-  OrderStatus.COURIER_ASSIGNED,
-  OrderStatus.ON_DELIVERY,
-];
+import { ACTIVE_STATUSES, itemsSummary } from '../lib/orders';
 
 /**
  * Company dashboard (TZ §7).
@@ -717,13 +706,6 @@ function ActiveOrdersCard({ query }: { query: UseQueryResult<Paginated<Order>> }
       )}
     </Card>
   );
-}
-
-export function itemsSummary(order: Pick<Order, 'items'>): string {
-  if (!order.items?.length) return '—';
-  return order.items
-    .map((item) => `${item.name}${item.quantity > 1 ? ` ×${item.quantity}` : ''}`)
-    .join(', ');
 }
 
 /* ------------------------------------------------------------------ */
