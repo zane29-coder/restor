@@ -93,6 +93,8 @@ export interface AuthenticatedUser {
   id: string;
   tenantId: string | null;
   tenantSlug: string | null;
+  /** The restaurant's display name, for the admin shell. Staff sessions only. */
+  tenantName?: string | null;
   phone: string;
   email: string | null;
   fullName: string;

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { Logo } from '../components/Logo';
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -36,8 +37,8 @@ export function LoginPage() {
   return (
     <div className="login">
       <form className="login__card" onSubmit={handleSubmit}>
-        <h1 className="login__brand">
-          RES<span>TOR</span>
+        <h1 style={{ margin: 0, color: 'var(--text)' }}>
+          <Logo height={34} className="login__logo" />
         </h1>
         <p className="login__sub">Boshqaruv paneli</p>
 

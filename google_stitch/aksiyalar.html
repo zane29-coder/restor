@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+
+<html lang="uz"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"tertiary-fixed":"#d8e2ff","error":"#ba1a1a","surface-variant":"#d3e4fe","primary-fixed-dim":"#ffb693","primary-fixed":"#ffdbcc","error-container":"#ffdad6","on-background":"#0b1c30","on-primary":"#ffffff","secondary":"#565e74","on-primary-fixed":"#351000","on-tertiary-fixed":"#001a42","on-error-container":"#93000a","on-primary-fixed-variant":"#7a3000","on-tertiary":"#ffffff","surface-dim":"#cbdbf5","surface-container-high":"#dce9ff","secondary-fixed":"#dae2fd","surface-bright":"#f8f9ff","inverse-surface":"#213145","on-tertiary-container":"#002f6b","outline":"#8e7164","surface-container-lowest":"#ffffff","on-surface-variant":"#5a4136","on-secondary-fixed":"#131b2e","surface-container-low":"#eff4ff","on-secondary":"#ffffff","on-tertiary-fixed-variant":"#004395","on-primary-container":"#572000","surface-container-highest":"#d3e4fe","inverse-primary":"#ffb693","secondary-fixed-dim":"#bec6e0","on-surface":"#0b1c30","tertiary":"#005ac2","surface-tint":"#a04100","primary":"#a04100","tertiary-fixed-dim":"#adc6ff","outline-variant":"#e2bfb0","background":"#f8f9ff","tertiary-container":"#5f97ff","on-error":"#ffffff","primary-container":"#ff6b00","surface-container":"#e5eeff","inverse-on-surface":"#eaf1ff","secondary-container":"#dae2fd","on-secondary-container":"#5c647a","on-secondary-fixed-variant":"#3f465c","surface":"#f8f9ff"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"margin":"1.5rem","space-xl":"2rem","gutter":"1rem","space-sm":"0.5rem","margin-mobile":"1rem","gutter-mobile":"0.75rem","space-lg":"1.25rem","space-md":"0.75rem","space-xs":"0.25rem"},"fontFamily":{"headline-sm":["Inter"],"display-lg-mobile":["Inter"],"body-sm":["Inter"],"display-lg":["Inter"],"body-lg":["Inter"],"headline-md":["Inter"],"metric-display":["Inter"],"body-md":["Inter"],"label-lg":["Inter"],"headline-lg":["Inter"],"label-sm":["Inter"],"label-md":["Inter"]},"fontSize":{"headline-sm":["18px",{"lineHeight":"24px","fontWeight":"600"}],"display-lg-mobile":["28px",{"lineHeight":"36px","fontWeight":"700"}],"body-sm":["13px",{"lineHeight":"18px","fontWeight":"400"}],"display-lg":["36px",{"lineHeight":"44px","fontWeight":"700"}],"body-lg":["16px",{"lineHeight":"24px","fontWeight":"400"}],"headline-md":["22px",{"lineHeight":"28px","fontWeight":"600"}],"metric-display":["24px",{"lineHeight":"32px","fontWeight":"700"}],"body-md":["14px",{"lineHeight":"20px","fontWeight":"400"}],"label-lg":["14px",{"lineHeight":"20px","fontWeight":"600"}],"headline-lg":["28px",{"lineHeight":"36px","fontWeight":"600"}],"label-sm":["11px",{"lineHeight":"14px","fontWeight":"700"}],"label-md":["12px",{"lineHeight":"16px","fontWeight":"600"}]}}}};</script></head><body class="bg-surface font-body-md text-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-64 bg-inverse-surface text-inverse-on-surface z-50 flex flex-col justify-between shadow-[0_1px_8px_rgba(0,0,0,0.08)]"><div class="flex flex-col h-full overflow-hidden"><div class="p-space-md pb-space-sm"><div class="flex items-center gap-space-sm px-space-xs"><div class="w-9 h-9 rounded-xl bg-primary-container flex items-center justify-center text-on-primary shadow-sm"><span class="material-symbols-outlined text-[22px]">restaurant</span></div><div class="flex flex-col"><span class="font-headline-sm text-headline-sm tracking-wider font-bold text-inverse-on-surface uppercase">RESTOR</span><span class="font-label-sm text-label-sm text-secondary-fixed-dim uppercase tracking-widest">Enterprise POS</span></div></div><div class="mt-space-md p-space-sm rounded-lg bg-on-background/25 flex items-center justify-between cursor-pointer"><div class="flex items-center gap-space-xs truncate"><span class="material-symbols-outlined text-[18px] text-primary-fixed-dim">store</span><div class="truncate"><p class="font-label-md text-label-md text-inverse-on-surface truncate">Chustiy Foods LLC</p><p class="font-label-sm text-label-sm text-secondary-fixed-dim">5 ta filial</p></div></div><span class="material-symbols-outlined text-[18px] text-secondary-fixed-dim">unfold_more</span></div></div><nav class="flex-1 overflow-y-auto px-space-sm py-space-xs space-y-space-md" data-active-classes="bg-primary-container text-on-primary font-label-lg shadow-sm"><div class="space-y-space-xs"><span class="px-space-sm font-label-sm text-label-sm uppercase tracking-wider text-secondary-fixed-dim block font-bold">Asosiy</span><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="dashboard" href="#"><span class="material-symbols-outlined text-[20px]">space_dashboard</span><span class="font-label-lg text-label-lg">Dashboard</span></a><a class="flex items-center justify-between px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="buyurtmalar" href="#"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[20px]">receipt_long</span><span class="font-label-lg text-label-lg">Buyurtmalar</span></div><span class="px-space-xs py-0.5 rounded-full bg-primary-container text-on-primary font-label-sm text-label-sm font-bold">18</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="menyu" href="#"><span class="material-symbols-outlined text-[20px]">menu_book</span><span class="font-label-lg text-label-lg">Menyu</span></a></div><div class="space-y-space-xs"><span class="px-space-sm font-label-sm text-label-sm uppercase tracking-wider text-secondary-fixed-dim block font-bold">Boshqaruv</span><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="filiallar" href="#"><span class="material-symbols-outlined text-[20px]">apartment</span><span class="font-label-lg text-label-lg">Filiallar</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="xodimlar" href="#"><span class="material-symbols-outlined text-[20px]">badge</span><span class="font-label-lg text-label-lg">Xodimlar</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="kuryerlar" href="#"><span class="material-symbols-outlined text-[20px]">two_wheeler</span><span class="font-label-lg text-label-lg">Kuryerlar</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="mijozlar-crm" href="#"><span class="material-symbols-outlined text-[20px]">group</span><span class="font-label-lg text-label-lg">Mijozlar CRM</span></a><a aria-current="page" class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg transition-colors bg-primary-container text-on-primary font-label-lg shadow-sm" data-path="aksiyalar" href="#"><span class="material-symbols-outlined text-[20px]">loyalty</span><span class="font-label-lg text-label-lg">Aksiyalar</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="stollar-qr" href="#"><span class="material-symbols-outlined text-[20px]">qr_code_2</span><span class="font-label-lg text-label-lg">Stollar & QR</span></a></div><div class="space-y-space-xs"><span class="px-space-sm font-label-sm text-label-sm uppercase tracking-wider text-secondary-fixed-dim block font-bold">Tizim va Moliya</span><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="ombor-taminot" href="#"><span class="material-symbols-outlined text-[20px]">inventory_2</span><span class="font-label-lg text-label-lg">Ombor & Ta'minot</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="hisobotlar" href="#"><span class="material-symbols-outlined text-[20px]">bar_chart</span><span class="font-label-lg text-label-lg">Hisobotlar</span></a><a class="flex items-center gap-space-sm px-space-sm py-space-xs rounded-lg text-secondary-fixed hover:bg-on-background/20 hover:text-inverse-on-surface transition-colors" data-path="telegram-bot" href="#"><span class="material-symbols-outlined text-[20px]">smart_toy</span><span class="font-label-lg text-label-lg">Telegram Bot</span></a></div></nav><div class="p-space-sm mt-auto bg-on-background/15"><div class="flex items-center justify-between p-space-xs rounded-lg hover:bg-on-background/25 transition-colors cursor-pointer"><div class="flex items-center gap-space-sm truncate"><div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div><div class="truncate"><p class="font-label-md text-label-md text-inverse-on-surface truncate font-semibold">Nargiza Alimova</p><p class="font-label-sm text-label-sm text-secondary-fixed-dim truncate">Kompaniya Rahbari</p></div></div><span class="material-symbols-outlined text-[18px] text-secondary-fixed-dim">more_vert</span></div></div></div></aside><div class="pl-64"><header class="fixed top-0 left-64 right-0 h-16 bg-surface/90 backdrop-blur-xl z-40 shadow-[0_1px_8px_rgba(0,0,0,0.04)]"><div class="w-full h-16 px-space-lg flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md"><div class="flex items-center gap-space-xs px-space-sm py-1.5 rounded-lg bg-surface-container-low text-on-surface"><span class="material-symbols-outlined text-[18px] text-primary">pin_drop</span><div class="flex items-center gap-space-xs"><span class="font-label-md text-label-md font-semibold text-on-surface">Chilonzor filiali</span><span class="inline-flex items-center px-1.5 py-0.5 rounded-full font-label-sm text-label-sm bg-surface-container-highest text-primary font-bold">Ochiq</span></div><span class="material-symbols-outlined text-[16px] text-secondary">arrow_drop_down</span></div><div class="hidden lg:flex items-center gap-space-xs px-space-sm py-1.5 rounded-lg bg-surface-container-lowest text-secondary"><span class="material-symbols-outlined text-[18px] text-secondary">schedule</span><span class="font-label-md text-label-md text-on-surface">Smena: 08:30 - 23:00</span></div></div><div class="flex-1 max-w-md hidden md:block"><div class="relative flex items-center"><span class="material-symbols-outlined absolute left-3 text-[18px] text-secondary">search</span><input class="w-full h-10 pl-9 pr-12 rounded-lg bg-surface-container-low text-on-surface placeholder:text-secondary font-body-sm text-body-sm outline-none focus:bg-surface-container-lowest" placeholder="Qidiruv (Buyurtma, mijoz, mahsulot)..." type="text"/><kbd class="absolute right-2.5 px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-label-sm text-label-sm font-semibold">Ctrl+K</kbd></div></div><div class="flex items-center gap-space-sm"><button class="flex items-center gap-space-xs h-10 px-space-md rounded-lg bg-primary-container text-on-primary font-label-lg text-label-lg shadow-sm hover:opacity-95 transition-opacity" type="button"><span class="material-symbols-outlined text-[20px]">add</span><span class="hidden sm:inline">Yangi buyurtma</span></button><button class="relative w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">notifications</span><span class="absolute top-2 right-2 w-2 h-2 rounded-full bg-error"></span></button><button class="w-10 h-10 rounded-lg bg-surface-container-low flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">light_mode</span></button><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="w-full pt-16 bg-surface min-h-screen"><div class="flex flex-col w-full">
+<!-- Top Command & Breadcrumb Section -->
+<div class="w-full px-space-lg py-space-md bg-surface-bright flex flex-col gap-space-sm shadow-sm">
+<div class="flex items-center gap-space-xs text-secondary font-label-md text-label-md">
+<span class="hover:text-primary cursor-pointer transition-colors">Asosiy</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="hover:text-primary cursor-pointer transition-colors">Aksiyalar</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-on-surface font-semibold">Marketing va Chegirmalar</span>
+</div>
+<div class="flex flex-col xl:flex-row xl:items-center justify-between gap-space-md pt-space-xs">
+<div>
+<div class="flex items-center gap-space-sm">
+<div class="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+<span class="material-symbols-outlined text-[24px]">loyalty</span>
+</div>
+<div>
+<h1 class="font-headline-lg text-headline-lg text-on-surface tracking-tight">Aksiyalar va Promokodlar</h1>
+<p class="font-body-sm text-body-sm text-secondary">Restoran tarmog'i uchun marketing kampaniyalari, promokodlar va avtomatik chegirmalar tizimi.</p>
+</div>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex flex-wrap items-center gap-space-xs">
+<button class="h-10 px-space-md rounded-lg bg-surface-container text-on-surface hover:bg-surface-container-high transition-colors font-label-lg text-label-lg flex items-center gap-space-xs" id="btnStatistika" type="button">
+<span class="material-symbols-outlined text-[18px] text-tertiary">query_stats</span>
+<span>Statistika tahlili</span>
+</button>
+<button class="h-10 px-space-md rounded-lg bg-surface-container-highest text-primary hover:bg-surface-variant transition-colors font-label-lg text-label-lg flex items-center gap-space-xs" id="openPromoDrawerBtn" type="button">
+<span class="material-symbols-outlined text-[18px]">confirmation_number</span>
+<span>+ Yangi promokod</span>
+</button>
+<button class="h-10 px-space-md rounded-lg bg-primary-container text-on-primary hover:opacity-95 shadow-sm active:scale-[0.99] transition-all font-label-lg text-label-lg flex items-center gap-space-xs" id="openNewActionBtn" type="button">
+<span class="material-symbols-outlined text-[18px]">add_circle</span>
+<span>+ Yangi aksiya yaratish</span>
+</button>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<div class="flex items-center gap-space-xs overflow-x-auto pt-space-sm no-scrollbar">
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-primary text-on-primary font-label-md text-label-md shadow-sm transition-all whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">campaign</span>
+<span>Faol Aksiyalar</span>
+<span class="px-1.5 py-0.2 rounded-full bg-on-primary/20 text-on-primary font-label-sm text-label-sm font-bold ml-1">6</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container text-secondary hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md transition-all whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">sell</span>
+<span>Promokodlar</span>
+<span class="px-1.5 py-0.2 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-bold ml-1">18</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container text-secondary hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md transition-all whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">timer</span>
+<span>Avtomatik Chegirmalar (Happy Hour)</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-space-xs rounded-full bg-surface-container text-secondary hover:text-on-surface hover:bg-surface-container-high font-label-md text-label-md transition-all whitespace-nowrap">
+<span class="material-symbols-outlined text-[16px]">archive</span>
+<span>Arxiv va Nofaol</span>
+</button>
+</div>
+</div>
+<div class="p-space-lg space-y-space-lg">
+<!-- Top 4 KPI Metrics -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-md">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">Faol Kampaniyalar</span>
+<div class="w-8 h-8 rounded-lg bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">campaign</span>
+</div>
+</div>
+<div class="my-space-xs">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-metric-display text-metric-display text-on-surface">6 ta</span>
+<span class="font-body-sm text-body-sm text-secondary">aksiya</span>
+</div>
+<p class="font-label-sm text-label-sm text-primary font-bold mt-1">3 ta filialda faol holatda</p>
+</div>
+<div class="flex items-center justify-between pt-space-xs bg-surface-container-low px-space-xs py-1 rounded-lg">
+<span class="font-label-sm text-label-sm text-secondary">Filial qamrovi: 60%</span>
+<span class="flex items-center text-primary font-label-sm text-label-sm font-bold">
+<span class="material-symbols-outlined text-[14px]">storefront</span> 5 dan 3
+          </span>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">Promokod orqali tushum</span>
+<div class="w-8 h-8 rounded-lg bg-tertiary-fixed text-on-tertiary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">payments</span>
+</div>
+</div>
+<div class="my-space-xs">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-metric-display text-metric-display text-on-surface">64,800,000</span>
+<span class="font-body-sm text-body-sm text-secondary">so'm</span>
+</div>
+<div class="flex items-center gap-space-xs mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded-full font-label-sm text-label-sm bg-surface-container-highest text-tertiary font-bold">
+              +18.4%
+            </span>
+<span class="font-body-sm text-body-sm text-secondary">o'tgan oyga nisbatan</span>
+</div>
+</div>
+<div class="w-full h-1.5 bg-surface-container-low rounded-full overflow-hidden mt-space-xs">
+<div class="bg-tertiary h-full rounded-full" style="width: 74%"></div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">O'rtacha chegirma</span>
+<div class="w-8 h-8 rounded-lg bg-primary-fixed text-on-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">percent</span>
+</div>
+</div>
+<div class="my-space-xs">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-metric-display text-metric-display text-on-surface">12.5%</span>
+<span class="font-body-sm text-body-sm text-secondary">chek bo'yicha</span>
+</div>
+<p class="font-label-sm text-label-sm text-secondary-fixed-variant font-bold mt-1">Marjani xavfsiz saqlagan holda</p>
+</div>
+<div class="flex items-center justify-between pt-space-xs bg-surface-container-low px-space-xs py-1 rounded-lg">
+<span class="font-label-sm text-label-sm text-secondary">Reja: ≤ 15%</span>
+<span class="text-on-surface font-label-sm text-label-sm font-bold">Xavfsiz hudud</span>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container-lowest p-space-md rounded-xl shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-secondary">Yangi buyurtmalar</span>
+<div class="w-8 h-8 rounded-lg bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">trending_up</span>
+</div>
+</div>
+<div class="my-space-xs">
+<div class="flex items-baseline gap-space-xs">
+<span class="font-metric-display text-metric-display text-on-surface">842 ta</span>
+<span class="font-body-sm text-body-sm text-secondary">mijoz</span>
+</div>
+<div class="flex items-center gap-space-xs mt-1">
+<span class="inline-flex items-center px-1.5 py-0.5 rounded-full font-label-sm text-label-sm bg-surface-container-highest text-primary font-bold">
+              +32%
+            </span>
+<span class="font-body-sm text-body-sm text-secondary">organik o'sish</span>
+</div>
+</div>
+<div class="w-full h-1.5 bg-surface-container-low rounded-full overflow-hidden mt-space-xs">
+<div class="bg-primary-container h-full rounded-full" style="width: 86%"></div>
+</div>
+</div>
+</div>
+<!-- Layout Grid: Promotions Left (8 Cols) & Fast Config Promo / Drawer Right (4 Cols) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-start">
+<!-- Left Column: Active Promotions Grid -->
+<div class="lg:col-span-8 flex flex-col gap-space-md">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-space-xs">
+<div>
+<h2 class="font-headline-md text-headline-md text-on-surface">Faol Marketing Kampaniyalari</h2>
+<p class="font-body-sm text-body-sm text-secondary">Restoran zallari, yetkazib berish va ilovada ishlayotgan shartlar</p>
+</div>
+<div class="flex items-center gap-space-xs">
+<div class="flex items-center bg-surface-container-lowest px-space-sm py-1 rounded-lg shadow-sm">
+<span class="material-symbols-outlined text-[16px] text-secondary mr-1">filter_list</span>
+<span class="font-label-sm text-label-sm text-secondary">Saralash:</span>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold ml-1 cursor-pointer">Tushum bo'yicha</span>
+</div>
+</div>
+</div>
+<!-- Cards Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-md">
+<!-- Card 1: Kuzgi Super Lavash Combo -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden">
+<div class="relative h-36 bg-surface-container-high overflow-hidden">
+<div class="bg-cover bg-center w-full h-full" data-alt="Delicious gourmet lavash wraps cut in half on a restaurant rustic wooden serving board, vibrant ingredients, appetizing food photography, warm amber lighting" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuABmtZbi2Jp_P2Tp9V9o_AMv1X_l17rc-vwzLYOiE35jxmFRuzPgg0nvtzd8HfTjWQo05_rucXbjJQDsp4BlrR2-lVJpDqFerOfIaJZYKrDPHQYixeN_Ye1i7cSN4b7RZZ7ZIA-0U0DCQ7zCLeN9MIv7Ek5lhTORvvqJiA0nc7VLuljAzZuMe4-OvqKu_mY7fzksqjODGNrE4IoGnwrboUPD-bWcASaRShVfN64yuwzeHyJJjEAVAGkHA')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-inverse-surface/80 via-inverse-surface/20 to-transparent"></div>
+<div class="absolute top-space-sm left-space-sm flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded-full bg-primary-container text-on-primary font-label-sm text-label-sm font-bold shadow-sm">-15% Chegirma</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-bright text-primary font-label-sm text-label-sm font-bold">Faol</span>
+</div>
+<div class="absolute bottom-space-xs left-space-sm right-space-sm flex items-center justify-between text-inverse-on-surface">
+<span class="font-label-sm text-label-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">timer</span> 18 kun qoldi
+                </span>
+<span class="font-label-sm text-label-sm text-secondary-fixed-dim">15.10 - 15.11.2024</span>
+</div>
+</div>
+<div class="p-space-md flex flex-col flex-1 justify-between gap-space-sm">
+<div>
+<div class="flex items-start justify-between gap-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Kuzgi Super Lavash Combo</h3>
+<button class="text-secondary hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</div>
+<p class="font-body-sm text-body-sm text-secondary mt-1">Har qanday lavash va ichimlik birgalikda buyurtma qilinganda avtomatik chegirma.</p>
+</div>
+<!-- Conditions List -->
+<div class="bg-surface-container-low p-space-sm rounded-lg space-y-1">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Min. buyurtma:</span>
+<span class="text-on-surface font-semibold">80,000 so'm</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Cheklov qoidasi:</span>
+<span class="text-on-surface font-semibold">Barcha mijozlar</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Filiallar:</span>
+<span class="text-primary font-semibold">Barcha filiallar (5 ta)</span>
+</div>
+</div>
+<!-- Stats & Performance -->
+<div class="flex items-center justify-between pt-1">
+<div>
+<span class="font-label-sm text-label-sm text-secondary block">Qo'llanish soni</span>
+<span class="font-label-lg text-label-lg text-on-surface font-bold">312 marta</span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-label-sm text-secondary block">Keltirilgan tushum</span>
+<span class="font-label-lg text-label-lg text-tertiary font-bold">28,400,000 so'm</span>
+</div>
+</div>
+<!-- Footer Controls -->
+<div class="flex items-center justify-between pt-space-xs mt-space-xs bg-surface-bright p-space-xs rounded-lg">
+<div class="flex items-center gap-space-xs">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+</label>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Holat: Faol</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-label-sm" type="button">Tahrirlash</button>
+<button class="p-1 rounded text-secondary hover:text-error hover:bg-surface-container-low" type="button"><span class="material-symbols-outlined text-[18px]">pause</span></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 2: Tushlik Happy Hour -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden">
+<div class="relative h-36 bg-surface-container-high overflow-hidden">
+<div class="bg-cover bg-center w-full h-full" data-alt="Cozy upscale restaurant dining table during lunchtime with gourmet bowls, fresh salads, and refreshing drinks, midday sun casting soft bright patterns" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAb3-0XXx22m9XV_-0-BV8d0QZv01UDgfBKDaTgnIgm8Iffl2-02i4O5_uPXuQ7HI_Bz-TdGa38rQ0PAHj1QY2oX9hVBfpq0b3DaZARmvqJ1HBvb6TpfMZzMbKGYkFdZ4JIxubRVZBQX-cUzS-F1oUlarvU0fVacNDCSXL7L7NEm0ketAbA2XV9O71ospxDk4GsVVNw7vgSKBAs1yoH2gAD_mTF13WcY3U4HmyYFuF6X9pyIlwrG5xS_w')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-inverse-surface/80 via-inverse-surface/20 to-transparent"></div>
+<div class="absolute top-space-sm left-space-sm flex items-center gap-space-xs">
+<span class="px-2 py-0.5 rounded-full bg-tertiary text-on-tertiary font-label-sm text-label-sm font-bold shadow-sm">-15,000 so'm</span>
+<span class="px-2 py-0.5 rounded-full bg-surface-bright text-tertiary font-label-sm text-label-sm font-bold">12:00 - 15:00</span>
+</div>
+<div class="absolute bottom-space-xs left-space-sm right-space-sm flex items-center justify-between text-inverse-on-surface">
+<span class="font-label-sm text-label-sm font-semibold flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">schedule</span> Har kuni takrorlanadi
+                </span>
+<span class="font-label-sm text-label-sm text-secondary-fixed-dim">Dush - Juma</span>
+</div>
+</div>
+<div class="p-space-md flex flex-col flex-1 justify-between gap-space-sm">
+<div>
+<div class="flex items-start justify-between gap-space-xs">
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Tushlik Happy Hour</h3>
+<button class="text-secondary hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</div>
+<p class="font-body-sm text-body-sm text-secondary mt-1">Tushlik vaqtida zalda ovqatlanuvchi va olib ketish buyurtmalari uchun o'zgarmas chegirma.</p>
+</div>
+<!-- Conditions List -->
+<div class="bg-surface-container-low p-space-sm rounded-lg space-y-1">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Xizmat turi:</span>
+<span class="text-on-surface font-semibold">Zalda & Olib ketish</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Min. buyurtma:</span>
+<span class="text-on-surface font-semibold">60,000 so'm</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Filiallar:</span>
+<span class="text-tertiary font-semibold">Chilonzor, Yunusobod</span>
+</div>
+</div>
+<!-- Stats & Performance -->
+<div class="flex items-center justify-between pt-1">
+<div>
+<span class="font-label-sm text-label-sm text-secondary block">Qo'llanish soni</span>
+<span class="font-label-lg text-label-lg text-on-surface font-bold">185 marta</span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-label-sm text-secondary block">Keltirilgan tushum</span>
+<span class="font-label-lg text-label-lg text-tertiary font-bold">14,200,000 so'm</span>
+</div>
+</div>
+<!-- Footer Controls -->
+<div class="flex items-center justify-between pt-space-xs mt-space-xs bg-surface-bright p-space-xs rounded-lg">
+<div class="flex items-center gap-space-xs">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+</label>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Holat: Faol</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-label-sm" type="button">Tahrirlash</button>
+<button class="p-1 rounded text-secondary hover:text-error hover:bg-surface-container-low" type="button"><span class="material-symbols-outlined text-[18px]">pause</span></button>
+</div>
+</div>
+</div>
+</div>
+<!-- Card 3: Bepul Yetkazib Berish -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between p-space-md">
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[22px]">two_wheeler</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Bepul Yetkazib Berish</h3>
+<span class="font-label-sm text-label-sm text-primary font-bold">Free Delivery Promo</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary font-label-sm text-label-sm font-bold">Faol</span>
+</div>
+<p class="font-body-sm text-body-sm text-secondary">Katta oilaviy yoki ofis buyurtmalari uchun transport to'lovini to'liq bekor qilish aksiyasi.</p>
+<div class="bg-surface-container-low p-space-sm rounded-lg space-y-1">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Shart:</span>
+<span class="text-on-surface font-semibold">> 150,000 so'm bo'lganda 0 so'm</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Filiallar:</span>
+<span class="text-on-surface font-semibold">Chilonzor, Yunusobod, Sergeli</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Amal qilish turi:</span>
+<span class="text-primary font-semibold">Avtomatik savatchada</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div>
+<span class="font-label-sm text-label-sm text-secondary block">Qo'llanish soni</span>
+<span class="font-label-lg text-label-lg text-on-surface font-bold">420 marta</span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-label-sm text-secondary block">Mijoz tejami</span>
+<span class="font-label-lg text-label-lg text-tertiary font-bold">6,300,000 so'm</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-space-xs mt-space-md bg-surface-bright p-space-xs rounded-lg">
+<div class="flex items-center gap-space-xs">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+</label>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Avtomatik</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-label-sm" type="button">Sozlamalar</button>
+</div>
+</div>
+</div>
+<!-- Card 4: Birinchi Buyurtmaga 20% Chegirma -->
+<div class="bg-surface-container-lowest rounded-xl shadow-sm hover:shadow-md transition-all flex flex-col justify-between p-space-md">
+<div class="flex flex-col gap-space-sm">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-space-xs">
+<div class="w-10 h-10 rounded-lg bg-surface-container-high text-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[22px]">person_add</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Birinchi Buyurtmaga 20%</h3>
+<span class="font-label-sm text-label-sm text-tertiary font-bold">Onboarding Promo</span>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-highest text-primary font-label-sm text-label-sm font-bold">Yangi mijozlar</span>
+</div>
+<div class="p-space-sm bg-surface-container-high/60 rounded-lg flex items-center justify-between">
+<div>
+<span class="font-label-sm text-label-sm text-secondary block">Promokod kodi:</span>
+<span class="font-metric-display text-metric-display tracking-widest text-primary font-bold">RESTORNEW</span>
+</div>
+<button class="h-8 px-space-xs rounded bg-surface-container-lowest text-secondary hover:text-on-surface font-label-sm text-label-sm flex items-center gap-1 shadow-sm" type="button">
+<span class="material-symbols-outlined text-[16px]">content_copy</span> Nusxa
+                </button>
+</div>
+<div class="bg-surface-container-low p-space-sm rounded-lg space-y-1">
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Platformalar:</span>
+<span class="text-on-surface font-semibold">Mobil ilova & Telegram bot</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Foydalanish cheklovi:</span>
+<span class="text-on-surface font-semibold">1 marta har bir raqamga</span>
+</div>
+<div class="flex items-center justify-between font-label-sm text-label-sm">
+<span class="text-secondary">Yangi mijozlar:</span>
+<span class="text-tertiary font-bold">512 ta jalb qilindi</span>
+</div>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div>
+<span class="font-label-sm text-label-sm text-secondary block">Konversiya darajasi</span>
+<span class="font-label-lg text-label-lg text-on-surface font-bold">41.8%</span>
+</div>
+<div class="text-right">
+<span class="font-label-sm text-label-sm text-secondary block">Mijozlar sadoqati</span>
+<span class="font-label-lg text-label-lg text-primary font-bold">+28% takroriy</span>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-space-xs mt-space-md bg-surface-bright p-space-xs rounded-lg">
+<div class="flex items-center gap-space-xs">
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-9 h-5 bg-surface-container-highest peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-on-primary after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-container"></div>
+</label>
+<span class="font-label-sm text-label-sm text-on-surface font-semibold">Holat: Faol</span>
+</div>
+<div class="flex items-center gap-1">
+<button class="px-space-sm py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-label-sm" type="button">Tahrirlash</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Performance Ledger Section -->
+<div class="bg-surface-container-lowest rounded-xl p-space-md shadow-sm">
+<div class="flex items-center justify-between mb-space-sm">
+<div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface">Filiallar bo'yicha aksiya taqsimoti</h3>
+<p class="font-body-sm text-body-sm text-secondary">Qaysi filialda qaysi aksiya ko'proq foyda keltirmoqda</p>
+</div>
+<span class="font-label-sm text-label-sm text-primary font-bold cursor-pointer hover:underline">To'liq hisobot</span>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="bg-surface-container-low text-secondary font-label-sm text-label-sm uppercase">
+<th class="py-2.5 px-space-sm rounded-l-lg">Filial nomi</th>
+<th class="py-2.5 px-space-sm">Faol aksiyalar</th>
+<th class="py-2.5 px-space-sm">Qo'llangan cheklar</th>
+<th class="py-2.5 px-space-sm text-right">Chegirma summasi</th>
+<th class="py-2.5 px-space-sm text-right rounded-r-lg">Sof tushum</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low font-body-sm text-body-sm text-on-surface">
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="py-space-xs px-space-sm font-semibold flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span> Chilonzor filiali
+                  </td>
+<td class="py-space-xs px-space-sm text-secondary">4 ta aksiya</td>
+<td class="py-space-xs px-space-sm font-semibold">482 ta</td>
+<td class="py-space-xs px-space-sm text-right text-secondary">4,820,000 so'm</td>
+<td class="py-space-xs px-space-sm text-right font-bold text-on-surface">38,500,000 so'm</td>
+</tr>
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="py-space-xs px-space-sm font-semibold flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span> Yunusobod filiali
+                  </td>
+<td class="py-space-xs px-space-sm text-secondary">4 ta aksiya</td>
+<td class="py-space-xs px-space-sm font-semibold">310 ta</td>
+<td class="py-space-xs px-space-sm text-right text-secondary">3,140,000 so'm</td>
+<td class="py-space-xs px-space-sm text-right font-bold text-on-surface">26,300,000 so'm</td>
+</tr>
+<tr class="hover:bg-surface-bright transition-colors">
+<td class="py-space-xs px-space-sm font-semibold flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-secondary"></span> Sergeli filiali
+                  </td>
+<td class="py-space-xs px-space-sm text-secondary">2 ta aksiya</td>
+<td class="py-space-xs px-space-sm font-semibold">145 ta</td>
+<td class="py-space-xs px-space-sm text-right text-secondary">1,450,000 so'm</td>
+<td class="py-space-xs px-space-sm text-right font-bold text-on-surface">11,200,000 so'm</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+<!-- Right Column: Interactive Promo Code Builder / Fast Creation Drawer Component -->
+<div class="lg:col-span-4 bg-surface-container-lowest rounded-xl p-space-md shadow-sm sticky top-20 flex flex-col gap-space-md">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<div class="w-8 h-8 rounded-lg bg-primary-container text-on-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">build</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Yangi Promokod Yaratish</h2>
+<p class="font-body-sm text-body-sm text-secondary">Tezkor promo konfiguratori</p>
+</div>
+</div>
+<span class="px-2 py-0.5 rounded-full bg-surface-container-high text-primary font-label-sm text-label-sm font-bold">POS & Bot</span>
+</div>
+<form class="space-y-space-md" id="promoForm" onsubmit="event.preventDefault();">
+<!-- Promo Code Code Name -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface font-semibold mb-1">Promokod Kodi</label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-secondary text-[18px]">tag</span>
+<input class="w-full h-10 pl-9 pr-24 rounded-lg bg-surface-container-low text-on-surface font-metric-display text-[15px] font-bold tracking-wider uppercase outline-none focus:bg-surface-container-lowest focus:ring-2 focus:ring-primary-container transition-all" id="promoCodeInput" type="text" uppercase="" value="KUZGI2024"/>
+<button class="absolute right-2 px-2 py-1 rounded bg-surface-container text-secondary hover:text-on-surface font-label-sm text-label-sm" onclick="generateRandomCode()" type="button">
+                Generatsiya
+              </button>
+</div>
+<p class="font-label-sm text-label-sm text-secondary mt-1">Mijozlar buyurtma vaqtida kiritadigan maxsus so'z</p>
+</div>
+<!-- Promotion Type Radio Group -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface font-semibold mb-2">Chegirma Turi</label>
+<div class="grid grid-cols-3 gap-space-xs">
+<label class="flex flex-col items-center justify-center p-space-xs rounded-lg bg-primary/10 text-primary cursor-pointer hover:bg-primary/20 transition-colors text-center">
+<input checked="" class="hidden" name="promo_type" type="radio" value="percent"/>
+<span class="material-symbols-outlined text-[20px] mb-1">percent</span>
+<span class="font-label-sm text-label-sm font-bold">Foiz (%)</span>
+</label>
+<label class="flex flex-col items-center justify-center p-space-xs rounded-lg bg-surface-container-low text-secondary cursor-pointer hover:bg-surface-container-high transition-colors text-center">
+<input class="hidden" name="promo_type" type="radio" value="fixed"/>
+<span class="material-symbols-outlined text-[20px] mb-1">attach_money</span>
+<span class="font-label-sm text-label-sm font-semibold">Aniq summa</span>
+</label>
+<label class="flex flex-col items-center justify-center p-space-xs rounded-lg bg-surface-container-low text-secondary cursor-pointer hover:bg-surface-container-high transition-colors text-center">
+<input class="hidden" name="promo_type" type="radio" value="delivery"/>
+<span class="material-symbols-outlined text-[20px] mb-1">local_shipping</span>
+<span class="font-label-sm text-label-sm font-semibold">Bepul yetkazish</span>
+</label>
+</div>
+</div>
+<!-- Value and Cap -->
+<div class="grid grid-cols-2 gap-space-sm">
+<div>
+<label class="block font-label-sm text-label-sm text-secondary mb-1">Chegirma Miqdori</label>
+<div class="relative flex items-center">
+<input class="w-full h-10 px-3 pr-8 rounded-lg bg-surface-container-low text-on-surface font-label-lg text-label-lg font-bold outline-none focus:bg-surface-container-lowest" type="number" value="15"/>
+<span class="absolute right-3 text-secondary font-label-md text-label-md font-bold">%</span>
+</div>
+</div>
+<div>
+<label class="block font-label-sm text-label-sm text-secondary mb-1">Maks. chegirma</label>
+<div class="relative flex items-center">
+<input class="w-full h-10 px-3 pr-12 rounded-lg bg-surface-container-low text-on-surface font-label-lg text-label-lg outline-none focus:bg-surface-container-lowest" type="text" value="30 000"/>
+<span class="absolute right-2 text-secondary font-label-sm text-label-sm">so'm</span>
+</div>
+</div>
+</div>
+<!-- Minimum Order Sum -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface font-semibold mb-1">Minimal buyurtma summasi</label>
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-3 text-secondary text-[18px]">shopping_bag</span>
+<input class="w-full h-10 pl-9 pr-14 rounded-lg bg-surface-container-low text-on-surface font-label-lg text-label-lg outline-none focus:bg-surface-container-lowest" type="text" value="70 000"/>
+<span class="absolute right-3 text-secondary font-label-sm text-label-sm font-semibold">so'm</span>
+</div>
+</div>
+<!-- Date Validity Range -->
+<div>
+<label class="block font-label-md text-label-md text-on-surface font-semibold mb-1">Amal qilish muddati</label>
+<div class="grid grid-cols-2 gap-space-xs">
+<div class="relative flex items-center">
+<input class="w-full h-10 px-3 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm outline-none focus:bg-surface-container-lowest" type="text" value="25.10.2024"/>
+</div>
+<div class="relative flex items-center">
+<input class="w-full h-10 px-3 rounded-lg bg-surface-container-low text-on-surface font-body-sm text-body-sm outline-none focus:bg-surface-container-lowest" type="text" value="10.11.2024"/>
+</div>
+</div>
+<p class="font-label-sm text-label-sm text-secondary mt-1">Avtomatik belgilangan sanada yakunlanadi</p>
+</div>
+<!-- Exclusivity Checkbox -->
+<div class="p-space-sm rounded-lg bg-surface-container-low flex items-start gap-space-xs cursor-pointer">
+<input checked="" class="mt-1 h-4 w-4 rounded accent-primary text-primary focus:ring-0 cursor-pointer" id="exclusiveCheck" type="checkbox"/>
+<label class="font-body-sm text-body-sm text-on-surface cursor-pointer select-none" for="exclusiveCheck">
+<span class="font-semibold block">Boshqa aksiyalar bilan birga qo'llash taqiqlanadi</span>
+<span class="text-secondary font-label-sm text-label-sm">Chegirmalar kaskadini oldini olish va marjani himoya qilish.</span>
+</label>
+</div>
+<!-- Audience / Branch Segment -->
+<div class="space-y-1">
+<label class="block font-label-md text-label-md text-on-surface font-semibold">Qo'llanish doirasi</label>
+<div class="flex flex-wrap gap-1">
+<span class="px-2 py-1 rounded bg-surface-container text-on-surface font-label-sm text-label-sm">Barcha filiallar</span>
+<span class="px-2 py-1 rounded bg-surface-container text-on-surface font-label-sm text-label-sm">Mobil ilova</span>
+<span class="px-2 py-1 rounded bg-surface-container text-on-surface font-label-sm text-label-sm">Telegram Bot</span>
+<span class="px-2 py-1 rounded bg-primary/10 text-primary font-label-sm text-label-sm font-semibold">+ Qo'shish</span>
+</div>
+</div>
+<!-- Action Submission -->
+<div class="pt-space-xs">
+<button class="w-full h-11 rounded-lg bg-primary-container text-on-primary hover:opacity-95 active:scale-[0.99] font-label-lg text-label-lg font-bold shadow-md transition-all flex items-center justify-center gap-space-xs" id="submitPromoBtn" type="button">
+<span class="material-symbols-outlined text-[20px]">rocket_launch</span>
+<span>Aksiyani e'lon qilish</span>
+</button>
+<p class="text-center font-label-sm text-label-sm text-secondary mt-2">Barcha kassa terminallari va botlarga 3 soniyada yetkaziladi</p>
+</div>
+</form>
+</div>
+</div>
+</div>
+<!-- Notification Toast (Hidden by default, triggered on actions) -->
+<div class="fixed bottom-6 right-6 bg-inverse-surface text-inverse-on-surface px-space-md py-space-sm rounded-xl shadow-xl flex items-center gap-space-sm transition-all duration-300 translate-y-24 opacity-0 pointer-events-none z-50" id="toastNotification">
+<div class="w-8 h-8 rounded-full bg-primary-container text-on-primary flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">check</span>
+</div>
+<div>
+<h4 class="font-label-md text-label-md font-bold">Muvaffaqiyatli saqlandi!</h4>
+<p class="font-body-sm text-body-sm text-secondary-fixed-dim" id="toastMessage">Yangi promokod tarmog'ga biriktirildi.</p>
+</div>
+</div>
+</div>
+<script>
+  function generateRandomCode() {
+    const prefixes = ['AUTUMN', 'CHUSTIY', 'BONUS', 'TAOM', 'GIFT', 'YANGI'];
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const number = Math.floor(100 + Math.random() * 900);
+    const input = document.getElementById('promoCodeInput');
+    if (input) {
+      input.value = prefix + number;
+      showToast("Yangi kod generatsiya qilindi: " + input.value);
+    }
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById('toastNotification');
+    const toastMsg = document.getElementById('toastMessage');
+    if (toast && toastMsg) {
+      toastMsg.innerText = msg;
+      toast.classList.remove('translate-y-24', 'opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('translate-y-24', 'opacity-0', 'pointer-events-none');
+      }, 3500);
+    }
+  }
+
+  document.getElementById('submitPromoBtn')?.addEventListener('click', () => {
+    const code = document.getElementById('promoCodeInput')?.value || 'YANGI';
+    showToast("Promokod '" + code + "' muvaffaqiyatli e'lon qilindi!");
+  });
+
+  document.getElementById('openPromoDrawerBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('promoCodeInput');
+    if (input) {
+      input.focus();
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    showToast("Promokod konstruktori faollashtirildi");
+  });
+
+  document.getElementById('openNewActionBtn')?.addEventListener('click', () => {
+    showToast("Aksiya yaratish ustaxonasi ochildi");
+  });
+
+  document.getElementById('btnStatistika')?.addEventListener('click', () => {
+    showToast("Statistika va tahlil hisoboti yuklanmoqda...");
+  });
+</script></main></div></body></html>

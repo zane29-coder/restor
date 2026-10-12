@@ -29,7 +29,7 @@ const USER_WITH_ACCESS = {
       role: { include: { permissions: { include: { permission: true } } } },
     },
   },
-  tenant: { select: { id: true, slug: true, status: true } },
+  tenant: { select: { id: true, slug: true, name: true, status: true } },
   courier: { select: { id: true } },
 } as const;
 
@@ -482,6 +482,7 @@ export class AuthService {
       id: user.id,
       tenantId: user.tenantId,
       tenantSlug: user.tenant?.slug ?? null,
+      tenantName: user.tenant?.name ?? null,
       phone: user.phone,
       email: user.email,
       fullName: user.fullName,

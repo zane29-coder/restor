@@ -6,6 +6,35 @@
     <meta name="theme-color" content="#FF6B00" />
     <!-- Admin data is never public; keep it out of search results. -->
     <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Inter for the interface. Sora only for the five letters of the logo, in
+      its own request: `text=` subsets EVERY family in a request, so sharing
+      one URL would cut Inter down to those five glyphs too.
+    -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@700&text=ESTOR&display=swap"
+    />
+    <!--
+      Applied before React mounts, so a dark-theme user never sees a white
+      flash while the bundle loads. Mirrors `lib/theme.tsx`.
+    -->
+    <script>
+      try {
+        var t = localStorage.getItem('restor.admin.theme');
+        if (t !== 'light' && t !== 'dark') {
+          t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
     <title>RESTOR — Admin</title>
   </head>
   <body>
