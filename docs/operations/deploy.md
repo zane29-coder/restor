@@ -4,6 +4,35 @@ For a server that is already running. First-time setup is
 [deploy-setup.md](deploy-setup.md); the machines themselves are
 [servers.md](servers.md).
 
+## Normal path: GitHub Actions
+
+Push or merge to `main`. `.github/workflows/ci-cd.yml` builds every package and
+app, typechecks every workspace, and runs the backend unit tests. Deployment
+starts only after all three pass.
+
+The deploy job uses a restricted SSH identity. It can request only this fixed
+operation:
+
+```text
+deploy <current-origin-main-sha>
+```
+
+The root-owned server entrypoint then:
+
+1. verifies that the SHA is exactly the current public `origin/main`;
+2. creates an isolated worktree under `/opt/restor-releases/<sha>`;
+3. links the existing server-only env files and storage directory;
+4. writes a PostgreSQL backup under
+   `/opt/restor/infrastructure/database/backups/`;
+5. runs `deploy-shared-host.sh`, including its health and nginx checks.
+
+The CI key cannot open a shell, transfer files, forward ports, or ask the
+server to deploy code that is not the current `main`. GitHub contains only the
+dedicated private deploy key and the pinned SSH host key; application secrets
+stay on the server.
+
+Use the manual path below only while CI/CD is unavailable or for recovery.
+
 Production is `169.58.84.241`, which **also runs eight other live sites**.
 Read the rule in `servers.md` before touching nginx.
 
