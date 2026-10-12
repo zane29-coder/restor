@@ -76,7 +76,8 @@ export class EmployeesResource {
     return this.http.post<Employee>('employees', payload);
   }
 
-  update(id: string, payload: Partial<CreateEmployeeRequest>): Promise<Employee> {
+  /** `isActive: true` re-activates a deactivated account. */
+  update(id: string, payload: Partial<CreateEmployeeRequest> & { isActive?: boolean }): Promise<Employee> {
     return this.http.patch<Employee>(`employees/${id}`, payload);
   }
 
