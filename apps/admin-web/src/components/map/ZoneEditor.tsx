@@ -3,6 +3,7 @@ import L from 'leaflet';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Branch, DeliveryZone, DeliveryZoneRequest } from '@restor/shared-types';
 import { IconPlus, IconPolygon, IconSave, IconTrash } from '@restor/ui';
+import { escapeHtml } from '@restor/shared-utils';
 import { api, RestorApiError } from '../../lib/api';
 import { som } from '../../lib/format';
 import { digits } from '../menu/CatalogManagers';
@@ -127,7 +128,7 @@ export function ZoneEditor({ branch, canEdit }: { branch: Branch; canEdit: boole
           dashArray: zone.isActive ? undefined : '6 6',
           interactive: !drawing,
         }).addTo(group);
-        poly.bindTooltip(`${zone.name} · ${zone.deliveryPrice ? som(zone.deliveryPrice) : 'bepul'}`, { sticky: true });
+        poly.bindTooltip(`${escapeHtml(zone.name)} · ${zone.deliveryPrice ? som(zone.deliveryPrice) : 'bepul'}`, { sticky: true });
         poly.on('click', () => setSelected(zone.key));
 
         if (isSel && canEdit && !drawing) {

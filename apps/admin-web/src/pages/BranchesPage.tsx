@@ -22,6 +22,7 @@ import {
   IconTable,
   IconWallet,
 } from '@restor/ui';
+import { escapeHtml } from '@restor/shared-utils';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { todaysHours } from '../lib/branch';
@@ -372,7 +373,7 @@ function NetworkMap({
         for (const z of zonesOf(b.id)) {
           if (z.polygon.length < 3) continue;
           L.polygon(z.polygon, { color: z.color, weight: 2, fillOpacity: z.isActive ? 0.15 : 0.04, dashArray: z.isActive ? undefined : '6 6' })
-            .bindTooltip(`${b.name}: ${z.name} · ${z.deliveryPrice ? som(z.deliveryPrice) : 'bepul'}`, { sticky: true })
+            .bindTooltip(`${escapeHtml(b.name)}: ${escapeHtml(z.name)} · ${z.deliveryPrice ? som(z.deliveryPrice) : 'bepul'}`, { sticky: true })
             .addTo(group);
           points.push(...z.polygon);
         }

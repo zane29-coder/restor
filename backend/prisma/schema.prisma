@@ -658,6 +658,10 @@ model Branch {
   /// against the day's takings on the dashboard; `null` means no goal set.
   dailyRevenueTarget Int?
 
+  /// Ready delivery orders go to the best free courier without a dispatcher.
+  /// Off by default: a dispatcher knows things the database does not.
+  autoDispatch Boolean @default(false)
+
   /// Short code for human-readable order numbers, e.g. `CH` → `CH-1054`.
   orderPrefix String? @db.VarChar(8)
 

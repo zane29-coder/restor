@@ -80,6 +80,7 @@ export function BranchForm({
     return base;
   });
   const [isActive, setIsActive] = useState(branch?.isActive ?? true);
+  const [autoDispatch, setAutoDispatch] = useState(branch?.autoDispatch ?? false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -123,7 +124,7 @@ export function BranchForm({
         acceptsDineIn,
         workingHours: hours,
       };
-      return branch ? api.branches.update(branch.id, { ...body, isActive }) : api.branches.create(body);
+      return branch ? api.branches.update(branch.id, { ...body, isActive, autoDispatch }) : api.branches.create(body);
     },
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: ['branches'] });
@@ -190,6 +191,13 @@ export function BranchForm({
             <Switch checked={acceptsPickup} onChange={setAcceptsPickup} label="Olib ketish" />
             <Switch checked={acceptsDineIn} onChange={setAcceptsDineIn} label="Zalda / QR stol" />
           </div>
+          {branch && acceptsDelivery && (
+            <Switch
+              checked={autoDispatch}
+              onChange={setAutoDispatch}
+              label="Avto-dispatch — tayyor buyurtma eng yaqin boʻsh kuryerga avtomatik beriladi"
+            />
+          )}
           <div className="form-grid">
             <div className="field" style={{ margin: 0 }}>
               <label htmlFor="b-prep">Oʻrtacha tayyorlash (daq)</label>

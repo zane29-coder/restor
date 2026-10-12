@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import type { Prisma } from '@prisma/client';
 import {
   CourierStatus,
@@ -16,7 +16,20 @@ import { distanceMeters, normalizePagination, paginated } from '@restor/shared-u
 import type { AssignDeliveryInput, CreateCourierInput, UpdateCourierInput } from '@restor/validation';
 import { AppException } from '../../common/errors/app-exception';
 import { BranchScope } from '../../common/guards/branch-scope.guard';
-import { getContext } from '../../common/context/request-context';
+import {
+  createSystemContext,
+  getContext,
+  runWithContext,
+} from '../../common/context/request-context';
+
+/**
+ * Runs auto-dispatch work as the system inside one tenant: no user, so the
+ * order timeline says "Tizim" rather than crediting whoever pressed "ready"
+ * or the courier whose status change triggered the sweep.
+ */
+function asSystem<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+  return runWithContext(createSystemContext({ tenantId, bypassTenantScope: false }), async () => await fn());
+}
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { PasswordService } from '../auth/password.service';
@@ -481,11 +494,156 @@ export class CouriersService {
       });
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Auto-dispatch                                                      */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Auto-dispatch, driven by order events.
+   *
+   * Two steps through the ordinary state machine, so the timeline reads like
+   * a dispatcher did it: READY → WAITING_COURIER here, and the resulting
+   * WAITING_COURIER event then assigns. Assigning on READY directly would skip
+   * a transition the machine does not allow, and handling both statuses in
+   * one pass would race the second event into a double assignment.
+   *
+   * Failures are swallowed with a warning: a dispatch hiccup must never fail
+   * the kitchen's "ready" press — the order simply waits for a human.
+   */
+  @OnEvent(DomainEvent.ORDER_STATUS_CHANGED, { async: true })
+  async onOrderStatusChanged(event: { tenantId: string; orderId: string; toStatus: OrderStatus }): Promise<void> {
+    if (event.toStatus !== OrderStatus.READY && event.toStatus !== OrderStatus.WAITING_COURIER) return;
+    try {
+      await asSystem(event.tenantId, () => this.autoStep(event.orderId, event.toStatus));
+    } catch (error) {
+      this.logger.warn({ orderId: event.orderId, error: String(error) }, 'Auto-dispatch skipped an order');
+    }
+  }
+
+  /** A courier coming free picks up the oldest delivery waiting at their branch. */
+  @OnEvent(DomainEvent.COURIER_STATUS_CHANGED, { async: true })
+  async onCourierStatusChanged(event: {
+    tenantId: string;
+    branchId: string | null;
+    toStatus: CourierStatus;
+  }): Promise<void> {
+    if (event.toStatus !== CourierStatus.AVAILABLE || !event.branchId) return;
+    try {
+      await asSystem(event.tenantId, () => this.sweep(event.branchId!, { onlyIfAuto: true, max: 1 }));
+    } catch (error) {
+      this.logger.warn({ branchId: event.branchId, error: String(error) }, 'Auto-dispatch sweep failed');
+    }
+  }
+
+  /**
+   * Assigns every delivery waiting for a courier in scope, oldest first —
+   * the dispatcher's "taqsimlash" button, regardless of the branch setting.
+   */
+  async dispatchWaiting(branchId?: string): Promise<{ assigned: number; waiting: number }> {
+    const allowed = this.branchScope.filterFor(branchId);
+    const branches = await this.prisma.db.branch.findMany({
+      where: { deletedAt: null, ...(allowed ? { id: allowed } : {}) },
+      select: { id: true },
+    });
+    let assigned = 0;
+    let waiting = 0;
+    for (const branch of branches) {
+      const result = await this.sweep(branch.id, { onlyIfAuto: false });
+      assigned += result.assigned;
+      waiting += result.waiting;
+    }
+    return { assigned, waiting };
+  }
+
+  private async autoStep(orderId: string, status: OrderStatus): Promise<void> {
+    const order = await this.prisma.db.order.findFirst({
+      where: { id: orderId },
+      select: { type: true, status: true, courierId: true, branch: { select: { autoDispatch: true } } },
+    });
+    if (!order || order.type !== OrderType.DELIVERY || order.courierId || !order.branch.autoDispatch) return;
+    if (order.status !== status) return; // already moved on
+
+    if (status === OrderStatus.READY) {
+      await this.orders.updateStatus(orderId, {
+        status: OrderStatus.WAITING_COURIER,
+        comment: 'Avto-dispatch',
+      });
+      return;
+    }
+
+    await this.assignBest(orderId);
+  }
+
+  /** Gives one order to the courier `pickCourier` chooses; false when nobody is free. */
+  private async assignBest(orderId: string): Promise<boolean> {
+    const choice = pickCourier(await this.suggestForOrder(orderId));
+    if (!choice) return false;
+    await this.assignToOrder(orderId, { courierId: choice.id, comment: 'Avto-dispatch' });
+    return true;
+  }
+
+  private async sweep(
+    branchId: string,
+    options: { onlyIfAuto: boolean; max?: number },
+  ): Promise<{ assigned: number; waiting: number }> {
+    if (options.onlyIfAuto) {
+      const branch = await this.prisma.db.branch.findFirst({ where: { id: branchId }, select: { autoDispatch: true } });
+      if (!branch?.autoDispatch) return { assigned: 0, waiting: 0 };
+    }
+
+    const orders = await this.prisma.db.order.findMany({
+      where: {
+        branchId,
+        type: OrderType.DELIVERY,
+        courierId: null,
+        status: { in: [OrderStatus.READY, OrderStatus.WAITING_COURIER] },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, status: true },
+    });
+
+    let assigned = 0;
+    for (const order of orders) {
+      if (options.max !== undefined && assigned >= options.max) break;
+      if (order.status === OrderStatus.READY) {
+        await this.orders
+          .updateStatus(order.id, { status: OrderStatus.WAITING_COURIER, comment: 'Dispetcher: taqsimlash' })
+          .catch(() => undefined);
+      }
+      if (await this.assignBest(order.id)) assigned++;
+      else break; // nobody free: the rest would fail the same way
+    }
+    return { assigned, waiting: orders.length - assigned };
+  }
+
   private requireTenant(): string {
     const tenantId = getContext()?.tenantId;
     if (!tenantId) throw AppException.badRequest('No restaurant is in scope');
     return tenantId;
   }
+}
+
+/**
+ * Which courier auto-dispatch hands a job to.
+ *
+ * Only someone marked AVAILABLE — a courier mid-delivery may be suggested to a
+ * human, who can judge whether they will be back in time, but is never given
+ * work by a machine. Among those, the least loaded, then the nearest; a
+ * courier with no known position sorts after one whose distance is known.
+ * Pure, so the choice is tested without a database.
+ */
+export function pickCourier<T extends { status: string; activeDeliveryCount?: number; distanceM?: number }>(
+  candidates: readonly T[],
+): T | null {
+  return (
+    [...candidates]
+      .filter((c) => c.status === CourierStatus.AVAILABLE)
+      .sort(
+        (a, b) =>
+          (a.activeDeliveryCount ?? 0) - (b.activeDeliveryCount ?? 0) ||
+          (a.distanceM ?? Infinity) - (b.distanceM ?? Infinity),
+      )[0] ?? null
+  );
 }
 
 /* -------------------------------------------------------------------------- */

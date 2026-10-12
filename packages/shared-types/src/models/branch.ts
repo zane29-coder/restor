@@ -27,6 +27,8 @@ export interface Branch extends BaseEntity {
   averagePrepMinutes: number;
   /** Daily revenue goal in minor units; `null` when the owner set none. */
   dailyRevenueTarget: number | null;
+  /** Ready deliveries go to the best free courier automatically. */
+  autoDispatch: boolean;
   timezone: string;
   isActive: boolean;
   acceptsDelivery: boolean;
@@ -72,6 +74,7 @@ export interface CreateBranchRequest {
 
 export type UpdateBranchRequest = Partial<CreateBranchRequest> & {
   isActive?: boolean;
+  autoDispatch?: boolean;
 };
 
 /**

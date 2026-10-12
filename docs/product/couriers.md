@@ -119,6 +119,29 @@ a stale "available" and assigning to someone who went offline ten minutes ago
 is the failure that avoids. Offline couriers are not offered in the dropdown —
 assigning to one produces a job nobody is looking at.
 
+### Auto-dispatch
+
+Per branch, `branches.autoDispatch`, off by default (Admin → Kuryerlar, or
+the branch's settings). When on:
+
+- a delivery order reaching `READY` is moved to `WAITING_COURIER` by the
+  system, and that event assigns it — two steps through the normal state
+  machine, so the timeline reads "Avto-dispatch … Tizim" and the two events
+  cannot race into a double assignment;
+- a courier switching to `AVAILABLE` in the app picks up the oldest delivery
+  waiting at their branch.
+
+The choice is `pickCourier` (pure, `auto-dispatch.spec.ts`): **only
+`AVAILABLE` couriers**, least loaded, then nearest. A courier mid-delivery may
+be suggested to a human but is never given work by the machine. Nobody free →
+the order waits for a dispatcher. Every failure is swallowed with a warning —
+dispatch must never fail the kitchen's "ready".
+
+`POST /couriers/dispatch?branchId` is the dispatcher's "Hozir taqsimlash":
+the same assignment for every waiting delivery in scope, regardless of the
+setting. Listeners run as a system context (no user), so status history
+credits "Tizim", not whoever pressed "ready".
+
 ## Permissions
 
 `couriers.view`, `couriers.create`, `couriers.update`, `couriers.track`,

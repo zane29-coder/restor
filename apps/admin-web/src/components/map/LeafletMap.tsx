@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import L from 'leaflet';
+import { escapeHtml } from '@restor/shared-utils';
 import 'leaflet/dist/leaflet.css';
 
 /** Tashkent city centre: where a map with nothing on it opens. */
@@ -58,7 +59,7 @@ export function dotIcon(color: string, label?: string, size = 16): L.DivIcon {
   return L.divIcon({
     className: 'map-dot',
     html: `<span style="background:${color};width:${size}px;height:${size}px"></span>${
-      label ? `<em>${label.replace(/[<>&]/g, '')}</em>` : ''
+      label ? `<em>${escapeHtml(label)}</em>` : ''
     }`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],

@@ -1653,6 +1653,25 @@ kbd {
   }
 }
 
+.dispatch-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .dispatch-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .dispatch-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ---------------- Kanban ---------------- */
 
 .kanban {

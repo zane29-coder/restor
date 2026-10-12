@@ -63,6 +63,13 @@ export class CouriersResource {
     return this.http.post<Order>(`orders/${orderId}/courier`, payload);
   }
 
+  /** Gives every delivery waiting for a courier to the best free one. */
+  dispatchWaiting(branchId?: string): Promise<{ assigned: number; waiting: number }> {
+    return this.http.post<{ assigned: number; waiting: number }>('couriers/dispatch', undefined, {
+      query: { branchId },
+    });
+  }
+
   /** Couriers ranked by current load, then distance. */
   suggestions(orderId: string): Promise<Array<Courier & { distanceM?: number }>> {
     return this.http.get<Array<Courier & { distanceM?: number }>>(

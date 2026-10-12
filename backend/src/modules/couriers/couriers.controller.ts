@@ -99,6 +99,18 @@ export class CouriersController {
     return this.couriers.suggestForOrder(orderId);
   }
 
+  /**
+   * Hands every delivery waiting for a courier to the best free one, oldest
+   * first — the dispatcher's one-press "taqsimlash", whatever the branch's
+   * auto-dispatch setting.
+   */
+  @Post('couriers/dispatch')
+  @RequirePermissions(Permission.ORDERS_ASSIGN_COURIER)
+  @ApiOperation({ summary: 'Assign all waiting deliveries to free couriers' })
+  dispatch(@Query('branchId') branchId?: string): Promise<{ assigned: number; waiting: number }> {
+    return this.couriers.dispatchWaiting(branchId || undefined);
+  }
+
   /* ----------------------------- Wallet ----------------------------- */
 
   @Get('couriers/:id/wallet')

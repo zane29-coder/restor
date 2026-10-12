@@ -84,6 +84,7 @@ export const updateBranchSchema = z.object({
   deliveryPricePerKm: moneySchema.positive().nullish(),
   averagePrepMinutes: z.number().int().positive().max(240).optional(),
   dailyRevenueTarget: moneySchema.positive().nullish(),
+  autoDispatch: z.boolean().optional(),
   timezone: timezoneSchema.optional(),
   acceptsDelivery: z.boolean().optional(),
   acceptsPickup: z.boolean().optional(),
