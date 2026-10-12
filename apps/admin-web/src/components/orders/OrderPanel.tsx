@@ -86,6 +86,13 @@ export function OrderPanel({
     queryFn: () => api.payments.listForOrder(orderId),
     enabled: can(Permission.PAYMENTS_VIEW),
   });
+  // The customer's standing note ("piyozsiz") belongs next to every order.
+  const customerId = order.data?.customerId;
+  const customer = useQuery({
+    queryKey: ['customer', customerId],
+    queryFn: () => api.customers.get(customerId!),
+    enabled: Boolean(customerId) && can(Permission.CUSTOMERS_VIEW),
+  });
   const courierId = order.data?.courierId;
   const courier = useQuery({
     queryKey: ['couriers', 'one', courierId],
@@ -271,6 +278,12 @@ export function OrderPanel({
                 {address.landmark && <div className="cell-sub">Moʻljal: {address.landmark}</div>}
                 {address.intercom && <div className="cell-sub">Domofon: {address.intercom}</div>}
               </div>
+            </div>
+          )}
+          {customer.data?.notes && (
+            <div className="banner banner--info" style={{ padding: 8, fontSize: 12.5 }}>
+              <IconNote size={15} />
+              <span><strong>Mijoz eslatmasi:</strong> {customer.data.notes}</span>
             </div>
           )}
           {(o.comment || o.courierComment || address?.comment) && (

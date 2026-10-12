@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   Permission,
   type Customer,
+  type CustomerSummary,
   type LoyaltyProgram,
   type LoyaltyTransaction,
   type Paginated,
@@ -36,6 +37,14 @@ export class CustomersController {
     @Query(zodBody(customerListQuerySchema)) query: CustomerListQueryInput,
   ): Promise<Paginated<Customer>> {
     return this.customers.list(query);
+  }
+
+  /** Declared before `customers/:id`, or "summary" would be read as an id. */
+  @Get('customers/summary')
+  @RequirePermissions(Permission.CUSTOMERS_VIEW)
+  @ApiOperation({ summary: 'Base size, returning share, LTV, points owed, segment sizes' })
+  summary(): Promise<CustomerSummary> {
+    return this.customers.summary();
   }
 
   @Get('customers/:id')

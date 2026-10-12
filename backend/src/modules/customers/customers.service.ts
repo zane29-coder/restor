@@ -7,6 +7,8 @@ import {
   OrderStatus,
   type Customer,
   type CustomerAddress,
+  type CustomerSegment,
+  type CustomerSummary,
   type LoyaltyAccount,
   type LoyaltyProgram,
   type LoyaltyTransaction,
@@ -30,6 +32,8 @@ export interface CustomerDetail extends Customer {
   loyalty?: LoyaltyAccount;
   addresses: CustomerAddress[];
 }
+
+const SEGMENTS: CustomerSegment[] = ['NEW', 'FREQUENT', 'VIP', 'TOP_SPENDER', 'INACTIVE_30D'];
 
 /**
  * Customers and loyalty (TZ §10).
@@ -62,9 +66,12 @@ export class CustomersService {
     limit?: number;
     search?: string;
     isBlocked?: boolean;
+    segment?: CustomerSegment;
+    sort?: 'recent' | 'spent' | 'orders';
   }): Promise<Paginated<Customer>> {
     const page = normalizePagination(query);
     const search = query.search?.trim();
+    const segmentWhere = query.segment ? await this.segmentWhere(query.segment) : {};
 
     // A phone is matched on its digits alone.
     //
@@ -85,6 +92,7 @@ export class CustomersService {
 
     const where = {
       deletedAt: null,
+      ...segmentWhere,
       ...(query.isBlocked !== undefined ? { isBlocked: query.isBlocked } : {}),
       ...(search
         ? {
@@ -100,16 +108,97 @@ export class CustomersService {
     const [rows, total] = await Promise.all([
       this.prisma.db.customer.findMany({
         where,
-        // Most recent customers first: the person a manager is looking for is
-        // usually the one who just called.
-        orderBy: [{ lastOrderAt: 'desc' }, { createdAt: 'desc' }],
+        // Most recent customers first by default: the person a manager is
+        // looking for is usually the one who just called.
+        orderBy:
+          query.sort === 'spent'
+            ? [{ totalSpent: 'desc' }, { id: 'asc' }]
+            : query.sort === 'orders'
+              ? [{ ordersCount: 'desc' }, { id: 'asc' }]
+              : [{ lastOrderAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
+        include: { loyaltyAccount: { select: { points: true } } },
         skip: page.skip,
         take: page.take,
       }),
       this.prisma.db.customer.count({ where }),
     ]);
 
-    return paginated(rows.map(toCustomer), total, page);
+    return paginated(
+      rows.map((row) => ({ ...toCustomer(row), loyaltyPoints: row.loyaltyAccount?.points ?? 0 })),
+      total,
+      page,
+    );
+  }
+
+  /**
+   * The base's shape at a glance: size, how many come back, what a customer
+   * is worth, the points still owed, and each segment's size.
+   *
+   * Counted with the same `segmentWhere` the list filters by, so a segment
+   * tab's number and the rows behind it always agree.
+   */
+  async summary(): Promise<CustomerSummary> {
+    const active = { deletedAt: null };
+    const monthAgo = new Date(Date.now() - 30 * 86_400_000);
+    const [total, buyers, returning, newThisMonth, spend, points, ...segments] = await Promise.all([
+      this.prisma.db.customer.count({ where: active }),
+      this.prisma.db.customer.count({ where: { ...active, ordersCount: { gte: 1 } } }),
+      this.prisma.db.customer.count({ where: { ...active, ordersCount: { gte: 2 } } }),
+      this.prisma.db.customer.count({ where: { ...active, createdAt: { gte: monthAgo } } }),
+      this.prisma.db.customer.aggregate({ where: { ...active, ordersCount: { gte: 1 } }, _avg: { totalSpent: true } }),
+      this.prisma.db.loyaltyAccount.aggregate({ _sum: { points: true } }),
+      ...SEGMENTS.map(async (segment) =>
+        this.prisma.db.customer.count({ where: { ...active, ...(await this.segmentWhere(segment)) } }),
+      ),
+    ]);
+
+    const vip = await this.segmentWhere('VIP');
+    return {
+      total,
+      buyers,
+      newThisMonth,
+      vipFrom: (vip as { totalSpent?: { gte: number } }).totalSpent?.gte ?? 0,
+      returningPercent: buyers > 0 ? Math.round((returning / buyers) * 1000) / 10 : null,
+      averageLifetimeValue: Math.round(spend._avg.totalSpent ?? 0),
+      pointsOutstanding: points._sum.points ?? 0,
+      segments: Object.fromEntries(SEGMENTS.map((s, i) => [s, segments[i] as number])) as Record<CustomerSegment, number>,
+    };
+  }
+
+  /**
+   * One definition per segment, shared by the list filter and the summary.
+   *
+   *  - NEW — at most one completed order: still deciding whether to return.
+   *  - FREQUENT — three or more: the regulars.
+   *  - VIP — the top tenth by lifetime spend (at least one order). Relative on
+   *    purpose: a fixed sum means nothing across a kebab stand and a banquet
+   *    hall on the same platform.
+   *  - TOP_SPENDER — the top hundredth, the handful worth a personal call.
+   *  - INACTIVE_30D — came back at least once, then nothing for 30 days: the
+   *    ones slipping away, worth a reminder before they are gone.
+   */
+  private async segmentWhere(segment: CustomerSegment) {
+    const monthAgo = new Date(Date.now() - 30 * 86_400_000);
+    switch (segment) {
+      case 'NEW':
+        return { ordersCount: { lte: 1 } };
+      case 'FREQUENT':
+        return { ordersCount: { gte: 3 } };
+      case 'INACTIVE_30D':
+        return { ordersCount: { gte: 2 }, lastOrderAt: { lt: monthAgo } };
+      case 'VIP':
+      case 'TOP_SPENDER': {
+        const share = segment === 'VIP' ? 0.1 : 0.01;
+        const buyers = await this.prisma.db.customer.count({ where: { deletedAt: null, ordersCount: { gte: 1 } } });
+        const cutoffRow = await this.prisma.db.customer.findFirst({
+          where: { deletedAt: null, ordersCount: { gte: 1 } },
+          orderBy: { totalSpent: 'desc' },
+          skip: Math.max(0, Math.ceil(buyers * share) - 1),
+          select: { totalSpent: true },
+        });
+        return { ordersCount: { gte: 1 }, totalSpent: { gte: Math.max(1, cutoffRow?.totalSpent ?? 1) } };
+      }
+    }
   }
 
   async get(id: string): Promise<CustomerDetail> {
@@ -163,7 +252,13 @@ export class CustomersService {
 
   async update(
     id: string,
-    input: { fullName?: string | null; email?: string | null; birthDate?: string | null; language?: string },
+    input: {
+      fullName?: string | null;
+      email?: string | null;
+      birthDate?: string | null;
+      language?: string;
+      notes?: string | null;
+    },
   ): Promise<CustomerDetail> {
     const before = await this.get(id);
 
@@ -176,6 +271,7 @@ export class CustomersService {
           ? { birthDate: input.birthDate ? new Date(input.birthDate) : null }
           : {}),
         ...(input.language !== undefined ? { language: input.language } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes || null } : {}),
       },
     });
 
@@ -538,6 +634,7 @@ function toCustomer(row: {
   birthDate: Date | null;
   language: string;
   isBlocked: boolean;
+  notes: string | null;
   ordersCount: number;
   totalSpent: number;
   averageCheck: number;
@@ -556,6 +653,7 @@ function toCustomer(row: {
     birthDate: row.birthDate?.toISOString().slice(0, 10) ?? null,
     language: row.language,
     isBlocked: row.isBlocked,
+    notes: row.notes,
     ordersCount: row.ordersCount,
     totalSpent: row.totalSpent,
     averageCheck: row.averageCheck,

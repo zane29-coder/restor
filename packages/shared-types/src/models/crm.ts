@@ -20,6 +20,8 @@ export interface Customer extends BaseEntity {
   birthDate: string | null;
   language: string;
   isBlocked: boolean;
+  /** Staff's standing note about this customer's preferences. */
+  notes: string | null;
 
   /** Denormalised aggregates, recomputed when an order reaches DELIVERED. */
   ordersCount: number;
@@ -30,6 +32,25 @@ export interface Customer extends BaseEntity {
   addresses?: CustomerAddress[];
   favoriteProducts?: Array<{ productId: string; name: string; orderCount: number }>;
   loyalty?: LoyaltyAccount;
+  /** Current points balance; filled on list rows, where `loyalty` is not. */
+  loyaltyPoints?: number;
+}
+
+/** The customer base at a glance, for the CRM header. */
+export interface CustomerSummary {
+  total: number;
+  /** Customers with at least one completed order. */
+  buyers: number;
+  newThisMonth: number;
+  /** Lifetime spend from which a customer counts as VIP (top tenth). */
+  vipFrom: number;
+  /** Share of buyers who ordered twice or more; `null` with no buyers. */
+  returningPercent: number | null;
+  /** Average lifetime spend of a buyer, minor units. */
+  averageLifetimeValue: number;
+  /** Points held by all customers — what the loyalty programme still owes. */
+  pointsOutstanding: number;
+  segments: Record<CustomerSegment, number>;
 }
 
 export interface CustomerAddress extends BaseEntity {

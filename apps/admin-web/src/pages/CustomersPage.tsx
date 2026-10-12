@@ -1,532 +1,558 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Permission, type Customer } from '@restor/shared-types';
-import { formatMoney, formatPhone } from '@restor/shared-utils';
-import { IconSearch } from '@restor/ui';
+import { Permission, type Customer, type CustomerSegment, type CustomerSummary } from '@restor/shared-types';
+import {
+  IconBan,
+  IconCheck,
+  IconDownload,
+  IconEdit,
+  IconMapPin,
+  IconNote,
+  IconPhone,
+  IconSearch,
+  IconStar,
+  IconTelegram,
+  IconTrendUp,
+  IconUsers,
+  IconWallet,
+} from '@restor/ui';
 import { api, RestorApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { count, dateOf, dayTimeOf, initialsOf, percent, phone, som } from '../lib/format';
 import { Drawer } from '../components/Drawer';
+import { LoyaltySettings } from '../components/customers/LoyaltySettings';
+import { StatusBadge } from '../components/StatusBadge';
 import { ErrorState, Loading, Notice } from '../components/States';
+import { Kpi, LivePill, PageHeader, Pager, Seg, SidePanel, downloadCsv } from '../components/ui';
+
+type SegmentFilter = 'ALL' | 'VIP' | 'FREQUENT' | 'NEW' | 'INACTIVE_30D';
+type Sort = 'recent' | 'spent' | 'orders';
+
+const SEGMENT_META: Record<string, { label: string; tone: string }> = {
+  VIP: { label: 'VIP', tone: 'tone-violet' },
+  FREQUENT: { label: 'Doimiy', tone: 'tone-success' },
+  NEW: { label: 'Yangi', tone: 'tone-info' },
+  INACTIVE_30D: { label: 'Yoʻqotilayotgan', tone: 'tone-danger' },
+};
+
+/** The most telling segment for one row, by the same rules the API filters on. */
+function segmentOf(c: Customer, summary: CustomerSummary | undefined): keyof typeof SEGMENT_META | null {
+  if (summary && c.ordersCount >= 1 && summary.vipFrom > 0 && c.totalSpent >= summary.vipFrom) return 'VIP';
+  if (c.ordersCount >= 2 && c.lastOrderAt && Date.now() - new Date(c.lastOrderAt).getTime() > 30 * 86_400_000) return 'INACTIVE_30D';
+  if (c.ordersCount >= 3) return 'FREQUENT';
+  if (c.ordersCount <= 1) return 'NEW';
+  return null;
+}
 
 /**
- * Customers and loyalty (TZ §10).
+ * Customers and loyalty (TZ §10, §31-33).
  *
- * Customer rows have accumulated since the first order — every phone order
- * creates or matches one — so this screen exposes data that was already there
- * rather than asking anyone to enter it.
- *
- * Search is the primary action, not browsing: a manager opens this while
- * someone is on the phone, and they have a number, not a position in a list.
+ * Search stays the primary action — a manager opens this while someone is on
+ * the phone, with a number in hand — but the segments make the base usable
+ * for more than lookups: who is slipping away, who the best guests are.
+ * Segment rules live in the API, so the tab counts and the rows agree.
  */
 export function CustomersPage() {
   const { can } = useAuth();
+  const queryClient = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const [text, setText] = useState('');
   const [search, setSearch] = useState('');
-  const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [segment, setSegment] = useState<SegmentFilter>('ALL');
+  const [sort, setSort] = useState<Sort>('recent');
+  const [blocked, setBlocked] = useState(false);
+  const [page, setPage] = useState(1);
+  const [loyaltyOpen, setLoyaltyOpen] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const limit = 20;
 
-  const customers = useQuery({
-    queryKey: ['customers', query],
-    queryFn: () => api.customers.list({ search: query || undefined, limit: 50 }),
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(text.trim()), 300);
+    return () => clearTimeout(t);
+  }, [text]);
+  useEffect(() => setPage(1), [search, segment, sort, blocked]);
+
+  const summary = useQuery({ queryKey: ['customers', 'summary'], queryFn: () => api.customers.summary() });
+  const program = useQuery({ queryKey: ['loyalty', 'program'], queryFn: () => api.customers.loyaltyProgram(), enabled: can(Permission.LOYALTY_VIEW) });
+  const query = {
+    search: search || undefined,
+    segment: segment === 'ALL' ? undefined : (segment as CustomerSegment),
+    sort,
+    isBlocked: blocked ? true : undefined,
+  };
+  const list = useQuery({
+    queryKey: ['customers', 'list', query, page],
+    queryFn: () => api.customers.list({ ...query, page, limit }),
+    placeholderData: (prev) => prev,
   });
 
-  if (customers.isLoading) return <Loading />;
-  if (customers.isError) {
-    return <ErrorState error={customers.error} onRetry={() => void customers.refetch()} />;
-  }
+  const openId = params.get('id');
+  const open = (id: string | null) => {
+    const next = new URLSearchParams(params);
+    if (id) next.set('id', id);
+    else next.delete('id');
+    setParams(next, { replace: true });
+  };
 
-  const items = customers.data?.items ?? [];
+  const exportAll = useMutation({
+    mutationFn: async () => {
+      const rows: Customer[] = [];
+      for (let p = 1; p <= 50; p++) {
+        const res = await api.customers.list({ ...query, page: p, limit: 100 });
+        rows.push(...res.items);
+        if (!res.pagination.hasNext) break;
+      }
+      return rows;
+    },
+    onSuccess: (rows) => exportCustomers(rows, summary.data),
+    onError: (e) => setNotice({ ok: false, text: e instanceof RestorApiError ? e.message : 'Eksport boʻlmadi' }),
+  });
+
+  const s = summary.data;
+  const rows = list.data?.items ?? [];
+  const total = list.data?.pagination.total ?? 0;
 
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div className="page">
       {notice && <Notice notice={notice} onClose={() => setNotice(null)} />}
+      <PageHeader
+        crumb="Mijozlar CRM"
+        title="Mijozlar CRM va sodiqlik"
+        badge={<LivePill label="Jonli baza" />}
+        subtitle="Mijozlar bazasi, segmentlar, sodiqlik ballari va xarid tarixi"
+        actions={
+          <>
+            {can(Permission.CUSTOMERS_EXPORT) && (
+              <button type="button" className="btn btn--ghost" disabled={exportAll.isPending} onClick={() => exportAll.mutate()}>
+                <IconDownload size={16} /> {exportAll.isPending ? 'Tayyorlanmoqda…' : 'Eksport (Excel)'}
+              </button>
+            )}
+            {can(Permission.LOYALTY_VIEW) && (
+              <button type="button" className="btn" onClick={() => setLoyaltyOpen(true)}>
+                <IconStar size={16} /> Sodiqlik dasturi
+              </button>
+            )}
+          </>
+        }
+      />
 
-      {can(Permission.LOYALTY_VIEW) && (
-        <LoyaltySettings
-          canManage={can(Permission.LOYALTY_MANAGE)}
-          onNotice={setNotice}
+      <div className="kpi-grid">
+        <Kpi label="Jami mijozlar" value={s ? count(s.total) : '…'} unit="nafar" Icon={IconUsers} tone="tone-primary" foot={<span className="kpi__foot-text"><IconTrendUp size={14} /> +{s ? count(s.newThisMonth) : '…'} soʻnggi 30 kunda</span>} />
+        <Kpi label="Qaytgan mijozlar" value={s ? percent(s.returningPercent) : '…'} Icon={IconCheck} tone="tone-success" foot={<span>Ikki va undan koʻp buyurtma bergan xaridorlar</span>} />
+        <Kpi label="Oʻrtacha LTV" value={s ? som(s.averageLifetimeValue) : '…'} Icon={IconWallet} tone="tone-warning" foot={<span>Bir mijozning umumiy xaridi</span>} />
+        <Kpi
+          label="Sodiqlik ballari"
+          value={s ? count(s.pointsOutstanding) : '…'}
+          unit="ball"
+          Icon={IconStar}
+          tone="tone-violet"
+          foot={<span>{program.data ? `≈ ${som((s?.pointsOutstanding ?? 0) * program.data.pointValue)} — dastur qarzi` : 'Mijozlardagi jami ball'}</span>}
         />
-      )}
+      </div>
 
-      <form
-        className="row"
-        onSubmit={(event: FormEvent) => {
-          event.preventDefault();
-          setQuery(search.trim());
-        }}
-      >
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Telefon, ism yoki Telegram username"
-          style={{
-            flex: 1,
-            padding: '9px 12px',
-            borderRadius: 8,
-            border: '1px solid var(--border)',
-            fontSize: 14,
-          }}
+      <div className="toolbar">
+        <div className="search-input">
+          <IconSearch size={16} />
+          <input type="search" placeholder="Ism, telefon yoki Telegram username…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Mijozlarni qidirish" />
+        </div>
+        <Seg
+          label="Segment"
+          quiet
+          value={segment}
+          onChange={setSegment}
+          options={[
+            { value: 'ALL', label: 'Barchasi', count: s?.total },
+            { value: 'VIP', label: 'VIP', count: s?.segments.VIP },
+            { value: 'FREQUENT', label: 'Doimiylar', count: s?.segments.FREQUENT },
+            { value: 'NEW', label: 'Yangilar', count: s?.segments.NEW },
+            { value: 'INACTIVE_30D', label: 'Yoʻqotilayotgan', count: s?.segments.INACTIVE_30D },
+          ]}
         />
-        <button type="submit" className="btn">
-          <IconSearch size={16} /> Qidirish
-        </button>
-        {query && (
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => {
-              setSearch('');
-              setQuery('');
-            }}
-          >
-            Tozalash
-          </button>
+        <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Saralash">
+          <option value="recent">Saralash: soʻnggi tashrif</option>
+          <option value="spent">Saralash: LTV yuqori</option>
+          <option value="orders">Saralash: buyurtmalar soni</option>
+        </select>
+        <label className="row" style={{ gap: 6, fontSize: 13 }}>
+          <input type="checkbox" checked={blocked} onChange={(e) => setBlocked(e.target.checked)} /> Faqat bloklanganlar
+        </label>
+      </div>
+
+      <div className={`split${openId ? '' : ' split--single'}`}>
+        <section className="card card--flush">
+          <div className="card__head">
+            <h2 className="card__title">Mijozlar reyestri</h2>
+            <span className="cell-sub">{count(total)} ta topildi</span>
+          </div>
+          {list.isLoading ? (
+            <Loading />
+          ) : list.isError ? (
+            <div style={{ padding: 16 }}><ErrorState error={list.error} onRetry={() => void list.refetch()} /></div>
+          ) : rows.length === 0 ? (
+            <p className="muted" style={{ padding: '56px 16px', textAlign: 'center' }}>{search ? 'Hech narsa topilmadi' : 'Bu segmentda mijoz yoʻq'}</p>
+          ) : (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Mijoz</th>
+                    <th>Segment</th>
+                    <th className="td-right">Buyurtmalar</th>
+                    <th className="td-right">Jami xarid (LTV)</th>
+                    <th className="td-right">Oʻrtacha chek</th>
+                    <th>Oxirgi tashrif</th>
+                    <th className="td-right">Ball</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c) => {
+                    const seg = segmentOf(c, s);
+                    return (
+                      <tr key={c.id} className={`row--clickable${c.id === openId ? ' row--selected' : ''}`} onClick={() => open(c.id)}>
+                        <td>
+                          <div className="cell-person">
+                            <span className="avatar">{initialsOf(c.fullName ?? c.phone)}</span>
+                            <div className="cell-stack">
+                              <span className="cell-main row" style={{ gap: 6 }}>
+                                {c.fullName ?? 'Ismsiz mijoz'}
+                                {c.isBlocked && <span className="pill tone-danger">bloklangan</span>}
+                              </span>
+                              <span className="cell-sub">{phone(c.phone)}{c.telegramUsername ? ` · @${c.telegramUsername}` : ''}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>{seg ? <span className={`pill ${SEGMENT_META[seg]!.tone}`}>{SEGMENT_META[seg]!.label}</span> : <span className="subtle">—</span>}</td>
+                        <td className="td-right num">{c.ordersCount} ta</td>
+                        <td className="td-right cell-main num">{som(c.totalSpent)}</td>
+                        <td className="td-right num">{som(c.averageCheck)}</td>
+                        <td className="cell-sub">{c.lastOrderAt ? dayTimeOf(c.lastOrderAt) : '—'}</td>
+                        <td className="td-right">{c.loyaltyPoints ? <span className="pill tone-violet">{count(c.loyaltyPoints)}</span> : <span className="subtle">0</span>}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="card__foot">
+            <span>Koʻrsatilmoqda: {total ? `${(page - 1) * limit + 1}–${Math.min(page * limit, total)}` : 0} / {count(total)}</span>
+            <Pager page={page} totalPages={list.data?.pagination.totalPages ?? 1} onChange={setPage} />
+          </div>
+        </section>
+
+        {openId && (
+          <CustomerPanel
+            key={openId}
+            id={openId}
+            summary={s}
+            onClose={() => open(null)}
+            onNotice={setNotice}
+            onChanged={() => void queryClient.invalidateQueries({ queryKey: ['customers'] })}
+          />
         )}
-      </form>
+      </div>
 
-      {items.length === 0 ? (
-        <div className="card">
-          <p className="muted" style={{ margin: 0 }}>
-            {query ? 'Hech narsa topilmadi.' : 'Hali mijoz yoʻq.'}
-          </p>
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Mijoz</th>
-                <th>Telefon</th>
-                <th>Buyurtma</th>
-                <th>Jami xarid</th>
-                <th>Oʻrtacha chek</th>
-                <th>Oxirgi</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((customer) => (
-                <tr key={customer.id}>
-                  <td>
-                    <strong>{customer.fullName ?? '—'}</strong>
-                    {customer.isBlocked && (
-                      <span
-                        className="badge"
-                        style={{ background: '#FEE2E2', color: '#991B1B', marginLeft: 8 }}
-                      >
-                        bloklangan
-                      </span>
-                    )}
-                    {customer.telegramUsername && (
-                      <div className="muted" style={{ fontSize: 12 }}>
-                        @{customer.telegramUsername}
-                      </div>
-                    )}
-                  </td>
-                  <td>{formatPhone(customer.phone)}</td>
-                  <td>{customer.ordersCount}</td>
-                  <td>{formatMoney(customer.totalSpent)}</td>
-                  <td>{formatMoney(customer.averageCheck)}</td>
-                  <td className="muted" style={{ fontSize: 13 }}>
-                    {customer.lastOrderAt
-                      ? new Date(customer.lastOrderAt).toLocaleDateString('uz-UZ')
-                      : '—'}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn--ghost"
-                      style={{ padding: '5px 10px', minHeight: 30, fontSize: 12 }}
-                      onClick={() =>
-                        setSelected(selected === customer.id ? null : customer.id)
-                      }
-                    >
-                      {selected === customer.id ? 'Yopish' : 'Batafsil'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {selected && (
-        <CustomerDetail
-          customerId={selected}
-          canUpdate={can(Permission.CUSTOMERS_UPDATE)}
-          onNotice={setNotice}
-          onClose={() => setSelected(null)}
-        />
+      {loyaltyOpen && (
+        <Drawer title="Sodiqlik dasturi" onClose={() => setLoyaltyOpen(false)}>
+          <LoyaltySettings canManage={can(Permission.LOYALTY_MANAGE)} onSaved={(text) => setNotice({ ok: true, text })} />
+        </Drawer>
       )}
     </div>
   );
 }
 
-/* -------------------------------------------------------------------------- */
-
-function CustomerDetail({
-  customerId,
-  canUpdate,
-  onNotice,
+function CustomerPanel({
+  id,
+  summary,
   onClose,
+  onNotice,
+  onChanged,
 }: {
-  customerId: string;
-  canUpdate: boolean;
-  onNotice: (n: { ok: boolean; text: string }) => void;
+  id: string;
+  summary: CustomerSummary | undefined;
   onClose: () => void;
+  onNotice: (n: { ok: boolean; text: string }) => void;
+  onChanged: () => void;
 }) {
+  const { can } = useAuth();
   const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [blocking, setBlocking] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  const customer = useQuery({
-    queryKey: ['customer', customerId],
-    queryFn: () => api.customers.get(customerId),
-  });
+  const customer = useQuery({ queryKey: ['customer', id], queryFn: () => api.customers.get(id) });
+  const orders = useQuery({ queryKey: ['customer', id, 'orders'], queryFn: () => api.customers.orders(id, { limit: 6 }) });
+  const points = useQuery({ queryKey: ['customer', id, 'loyalty'], queryFn: () => api.customers.loyaltyTransactions(id, { limit: 6 }), enabled: can(Permission.LOYALTY_VIEW) });
+  const program = useQuery({ queryKey: ['loyalty', 'program'], queryFn: () => api.customers.loyaltyProgram(), enabled: can(Permission.LOYALTY_VIEW) });
 
-  const orders = useQuery({
-    queryKey: ['customer', customerId, 'orders'],
-    queryFn: () => api.customers.orders(customerId, { limit: 10 }),
-  });
-
-  const points = useQuery({
-    queryKey: ['customer', customerId, 'loyalty'],
-    queryFn: () => api.customers.loyaltyTransactions(customerId, { limit: 10 }),
-  });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['customer', id] });
+    onChanged();
+  };
+  const fail = (e: unknown) => setError(e instanceof RestorApiError ? e.message : 'Amal bajarilmadi');
 
   const toggleBlock = useMutation({
-    mutationFn: (block: boolean) =>
-      block ? api.customers.block(customerId) : api.customers.unblock(customerId),
-    onSuccess: (_result, block) => {
+    mutationFn: (block: boolean) => (block ? api.customers.block(id, reason.trim() || undefined) : api.customers.unblock(id)),
+    onSuccess: (_r, block) => {
+      setBlocking(false);
+      setReason('');
+      setError(null);
       onNotice({ ok: true, text: block ? 'Mijoz bloklandi' : 'Blok olib tashlandi' });
-      void queryClient.invalidateQueries({ queryKey: ['customer', customerId] });
-      void queryClient.invalidateQueries({ queryKey: ['customers'] });
+      refresh();
     },
-    onError: (error) =>
-      onNotice({
-        ok: false,
-        text: error instanceof RestorApiError ? error.message : 'Amal bajarilmadi',
-      }),
+    onError: fail,
   });
 
   if (!customer.data) {
     return (
-      <Drawer title="Mijoz" onClose={onClose}>
-        {customer.isError ? (
-          <ErrorState error={customer.error} onRetry={() => void customer.refetch()} />
-        ) : (
-          <Loading />
-        )}
-      </Drawer>
+      <SidePanel title="Mijoz" onClose={onClose}>
+        {customer.isError ? <ErrorState error={customer.error} onRetry={() => void customer.refetch()} /> : <Loading />}
+      </SidePanel>
     );
   }
 
-  const detail = customer.data as Customer;
+  const c = customer.data;
+  const seg = segmentOf(c, summary);
+  const level = c.loyalty?.levelName;
+  const cashback = program.data
+    ? (program.data.levels.find((l) => l.id === c.loyalty?.levelId)?.cashbackPercent ?? program.data.cashbackPercent)
+    : null;
 
   return (
-    <Drawer title={detail.fullName ?? formatPhone(detail.phone)} onClose={onClose}>
-      {/* The page notice sits behind the drawer; show a failed block here too. */}
-      {toggleBlock.isError && (
-        <div className="alert alert--error">
-          {toggleBlock.error instanceof RestorApiError
-            ? toggleBlock.error.message
-            : 'Amal bajarilmadi'}
+    <SidePanel
+      title={c.fullName ?? phone(c.phone)}
+      sub={`Mijoz ${dateOf(c.createdAt)} dan beri`}
+      onClose={onClose}
+      footer={
+        <>
+          {error && <div className="alert alert--error" style={{ margin: 0 }}>{error}</div>}
+          {blocking && (
+            <div className="stack" style={{ gap: 6 }}>
+              <input placeholder="Bloklash sababi" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Bloklash sababi" />
+              <div className="row">
+                <button type="button" className="btn btn--sm btn--danger" disabled={toggleBlock.isPending} onClick={() => toggleBlock.mutate(true)}>Bloklash</button>
+                <button type="button" className="btn btn--sm btn--ghost" onClick={() => setBlocking(false)}>Bekor</button>
+              </div>
+            </div>
+          )}
+          {can(Permission.CUSTOMERS_UPDATE) && (
+            <button type="button" className="btn btn--block" onClick={() => setEditing(true)}>
+              <IconEdit size={16} /> Profil va eslatmani tahrirlash
+            </button>
+          )}
+          {can(Permission.CUSTOMERS_UPDATE) && !blocking && (
+            c.isBlocked ? (
+              <button type="button" className="btn btn--soft btn--block" disabled={toggleBlock.isPending} onClick={() => toggleBlock.mutate(false)}>
+                <IconCheck size={16} /> Blokni ochish
+              </button>
+            ) : (
+              <button type="button" className="btn btn--danger-soft btn--block" onClick={() => setBlocking(true)}>
+                <IconBan size={16} /> Bloklash
+              </button>
+            )
+          )}
+        </>
+      }
+    >
+      <div className="row" style={{ gap: 12, flexWrap: 'nowrap' }}>
+        <span className="avatar avatar--lg">{initialsOf(c.fullName ?? c.phone)}</span>
+        <div className="stack" style={{ gap: 4 }}>
+          <div className="row" style={{ gap: 6 }}>
+            {seg && <span className={`pill ${SEGMENT_META[seg]!.tone}`}>{SEGMENT_META[seg]!.label}</span>}
+            {c.isBlocked && <span className="pill tone-danger">Bloklangan</span>}
+          </div>
+          <div className="row" style={{ gap: 6 }}>
+            <a className="btn btn--sm btn--ghost" href={`tel:${c.phone}`}><IconPhone size={13} /> {phone(c.phone)}</a>
+            {c.telegramUsername && (
+              <a className="btn btn--sm btn--ghost" href={`https://t.me/${encodeURIComponent(c.telegramUsername)}`} target="_blank" rel="noreferrer">
+                <IconTelegram size={13} /> @{c.telegramUsername}
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <div className="soft-box stat-mini"><span className="stat-mini__label">Jami LTV</span><span className="stat-mini__value">{som(c.totalSpent)}</span></div>
+        <div className="soft-box stat-mini"><span className="stat-mini__label">Buyurtmalar</span><span className="stat-mini__value">{c.ordersCount} ta</span></div>
+        <div className="soft-box stat-mini"><span className="stat-mini__label">Oʻrtacha chek</span><span className="stat-mini__value">{som(c.averageCheck)}</span></div>
+      </div>
+
+      {c.loyalty && (
+        <div className="soft-box" style={{ background: 'linear-gradient(135deg, var(--sidebar-bg), #3b2a5c)', color: '#fff' }}>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <span className="row" style={{ gap: 6, fontWeight: 700 }}><IconStar size={16} /> {level ? `${level} daraja` : 'Sodiqlik dasturi'}</span>
+            {cashback !== null && <span className="pill" style={{ background: 'rgb(255 255 255 / 15%)' }}>{cashback}% keshbek</span>}
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 800, marginTop: 8 }} className="num">{count(c.loyalty.points)} ball</div>
+          <div style={{ opacity: 0.75, fontSize: 12 }}>
+            {program.data ? `≈ ${som(c.loyalty.points * program.data.pointValue)} · ` : ''}jami yigʻilgan: {count(c.loyalty.lifetimePoints)} · taklif kodi {c.loyalty.referralCode}
+          </div>
         </div>
       )}
 
-      <div className="row" style={{ marginBottom: 18 }}>
-        <span className="muted">{formatPhone(detail.phone)}</span>
-        <div className="spacer" />
-        {detail.loyalty && (
-          <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>
-            {detail.loyalty.points} ball
-          </span>
+      {c.notes && (
+        <div className="banner banner--warning" style={{ padding: 10 }}>
+          <IconNote size={16} />
+          <span><strong>Xizmat eslatmasi:</strong> {c.notes}</span>
+        </div>
+      )}
+
+      {c.favoriteProducts && c.favoriteProducts.length > 0 && (
+        <section className="detail-section">
+          <div className="detail-section__title">Sevimli taomlari</div>
+          <div className="row" style={{ gap: 6 }}>
+            {c.favoriteProducts.slice(0, 5).map((p) => <span key={p.productId} className="pill tone-neutral pill--lg">{p.name} · {p.orderCount}</span>)}
+          </div>
+        </section>
+      )}
+
+      {(c.addresses ?? []).length > 0 && (
+        <section className="detail-section">
+          <div className="detail-section__title">Manzillar</div>
+          {c.addresses!.map((a) => (
+            <div key={a.id} className="row" style={{ gap: 6, flexWrap: 'nowrap', alignItems: 'flex-start', fontSize: 13 }}>
+              <IconMapPin size={14} style={{ marginTop: 2, color: 'var(--text-muted)' }} />
+              <div>
+                {a.label && <strong>{a.label}: </strong>}
+                {a.address}
+                {a.landmark && <div className="cell-sub">Moʻljal: {a.landmark}</div>}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      <section className="detail-section">
+        <div className="detail-section__title"><span>Soʻnggi buyurtmalar</span><span>{c.ordersCount} ta</span></div>
+        {(orders.data?.items ?? []).length === 0 ? (
+          <p className="muted" style={{ fontSize: 13 }}>Buyurtma yoʻq</p>
+        ) : (
+          orders.data!.items.map((o) => (
+            <Link key={o.id} to={`/orders?id=${o.id}`} className="soft-box row" style={{ flexWrap: 'nowrap', padding: '8px 12px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="cell-main">#{o.displayNumber}</div>
+                <div className="cell-sub">{dayTimeOf(o.createdAt)}</div>
+              </div>
+              <div className="stack" style={{ gap: 2, justifyItems: 'end' }}>
+                <span className="cell-main num">{som(o.total)}</span>
+                <StatusBadge status={o.status} />
+              </div>
+            </Link>
+          ))
         )}
-        {canUpdate && (
-          <button
-            type="button"
-            className={detail.isBlocked ? 'btn btn--ghost' : 'btn btn--danger'}
-            disabled={toggleBlock.isPending}
-            onClick={() => toggleBlock.mutate(!detail.isBlocked)}
-          >
-            {detail.isBlocked ? 'Blokni ochish' : 'Bloklash'}
-          </button>
-        )}
+      </section>
+
+      {points.data && points.data.items.length > 0 && (
+        <section className="detail-section">
+          <div className="detail-section__title">Ball harakatlari</div>
+          {points.data.items.map((t) => (
+            <div key={t.id} className="row cell-sub" style={{ justifyContent: 'space-between' }}>
+              <span>{t.comment ?? LOYALTY_LABELS[t.type] ?? t.type} · {dateOf(t.createdAt)}</span>
+              <strong style={{ color: t.points >= 0 ? 'var(--success-ink)' : 'var(--danger-ink)' }}>{t.points >= 0 ? '+' : ''}{count(t.points)}</strong>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {editing && <EditCustomer customerId={c.id} initial={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); onNotice({ ok: true, text: 'Mijoz maʼlumotlari saqlandi' }); refresh(); }} />}
+    </SidePanel>
+  );
+}
+
+const LOYALTY_LABELS: Record<string, string> = {
+  EARN: 'Buyurtma uchun',
+  REDEEM: 'Sarflandi',
+  EXPIRE: 'Muddati tugadi',
+  ADJUSTMENT: 'Tuzatish',
+  REFERRAL_BONUS: 'Taklif bonusi',
+};
+
+function EditCustomer({
+  customerId,
+  initial,
+  onClose,
+  onSaved,
+}: {
+  customerId: string;
+  initial: Customer;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [fullName, setFullName] = useState(initial.fullName ?? '');
+  const [email, setEmail] = useState(initial.email ?? '');
+  const [birthDate, setBirthDate] = useState(initial.birthDate ?? '');
+  const [notes, setNotes] = useState(initial.notes ?? '');
+  const [error, setError] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () =>
+      api.customers.update(customerId, {
+        fullName: fullName.trim() || null,
+        email: email.trim() || null,
+        birthDate: birthDate || null,
+        notes: notes.trim() || null,
+      } as Partial<Customer>),
+    onSuccess: onSaved,
+    onError: (e) => setError(e instanceof RestorApiError ? e.message : 'Saqlanmadi'),
+  });
+
+  return (
+    <Drawer
+      title="Mijoz profili"
+      onClose={onClose}
+      footer={
+        <>
+          {error && <span className="field__error" style={{ flex: 1, alignSelf: 'center' }}>{error}</span>}
+          <button type="button" className="btn btn--ghost" onClick={onClose}>Bekor</button>
+          <button type="button" className="btn" disabled={save.isPending} onClick={() => save.mutate()}>Saqlash</button>
+        </>
+      }
+    >
+      <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>
+        Telefon raqami oʻzgartirilmaydi — u mijozni va uning buyurtmalar tarixini bogʻlab turadi.
+      </p>
+      <div className="field">
+        <label htmlFor="cu-name">Ism-familiya</label>
+        <input id="cu-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
       </div>
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: 20,
-        }}
-      >
-        <div>
-          <h4 style={sectionTitle}>OXIRGI BUYURTMALAR</h4>
-          {(orders.data?.items ?? []).length === 0 ? (
-            <p className="muted" style={{ fontSize: 13 }}>Buyurtma yoʻq.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {orders.data?.items.map((order) => (
-                <div key={order.id} className="row" style={{ justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13 }}>{order.displayNumber}</span>
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    {new Date(order.createdAt).toLocaleDateString('uz-UZ')}
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>
-                    {formatMoney(order.total)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+      <div className="form-grid">
+        <div className="field">
+          <label htmlFor="cu-email">Email</label>
+          <input id="cu-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
-
-        <div>
-          <h4 style={sectionTitle}>BALL HARAKATLARI</h4>
-          {(points.data?.items ?? []).length === 0 ? (
-            <p className="muted" style={{ fontSize: 13 }}>Hali ball yigʻilmagan.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {points.data?.items.map((entry) => (
-                <div key={entry.id} className="row" style={{ justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13 }}>{entry.comment ?? entry.type}</span>
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: entry.points >= 0 ? '#166534' : '#991B1B',
-                    }}
-                  >
-                    {entry.points >= 0 ? '+' : ''}
-                    {entry.points}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="field">
+          <label htmlFor="cu-birth">Tugʻilgan sana</label>
+          <input id="cu-birth" type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} />
         </div>
-
-        <div>
-          <h4 style={sectionTitle}>MANZILLAR</h4>
-          {(detail.addresses ?? []).length === 0 ? (
-            <p className="muted" style={{ fontSize: 13 }}>Manzil saqlanmagan.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 6 }}>
-              {detail.addresses?.map((address) => (
-                <div key={address.id} style={{ fontSize: 13 }}>
-                  {address.label && <strong>{address.label}: </strong>}
-                  {address.address}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      </div>
+      <div className="field">
+        <label htmlFor="cu-notes">Xizmat eslatmasi</label>
+        <textarea id="cu-notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Masalan: piyozsiz tayyorlansin, domofon ishlamaydi" />
+        <span className="field__hint">Xodimlar mijozni ochganda koʻradi</span>
       </div>
     </Drawer>
   );
 }
 
-/**
- * Cashback settings.
- *
- * The worked example under the fields is the point of this block: "5%" and
- * "one point = 1 soʻm" are two abstract numbers until you see that a 100 000
- * order returns 5 000 soʻm of value. Restaurants have given away far more
- * than they intended by not doing that multiplication.
- */
-function LoyaltySettings({
-  canManage,
-  onNotice,
-}: {
-  canManage: boolean;
-  onNotice: (n: { ok: boolean; text: string }) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const program = useQuery({
-    queryKey: ['loyalty', 'program'],
-    queryFn: () => api.customers.loyaltyProgram(),
-  });
-
-  const [cashback, setCashback] = useState('');
-  const [pointValue, setPointValue] = useState('');
-  const [maxRedeem, setMaxRedeem] = useState('');
-
-  const save = useMutation({
-    mutationFn: (payload: Parameters<typeof api.customers.updateLoyaltyProgram>[0]) =>
-      api.customers.updateLoyaltyProgram(payload),
-    onSuccess: () => {
-      onNotice({ ok: true, text: 'Sodiqlik dasturi saqlandi' });
-      void queryClient.invalidateQueries({ queryKey: ['loyalty'] });
-    },
-    onError: (error) =>
-      onNotice({
-        ok: false,
-        text: error instanceof RestorApiError ? error.message : 'Saqlanmadi',
-      }),
-  });
-
-  if (!program.data) return null;
-  const current = program.data;
-
-  const cashbackValue = cashback === '' ? current.cashbackPercent : digits(cashback);
-  const pointValueNum = pointValue === '' ? current.pointValue : digits(pointValue);
-  const maxRedeemValue = maxRedeem === '' ? current.maxRedeemPercent : digits(maxRedeem);
-
-  const example = Math.floor((100_000 * cashbackValue) / 100) * pointValueNum;
-
-  return (
-    <div className="card">
-      <div className="row">
-        <h3 style={{ fontSize: 15, margin: 0 }}>Sodiqlik dasturi</h3>
-        <span
-          className="badge"
-          style={{
-            background: current.isActive ? '#DCFCE7' : '#F3F4F6',
-            color: current.isActive ? '#166534' : '#6B7280',
-            marginLeft: 8,
-          }}
-        >
-          {current.isActive ? 'Yoqilgan' : 'Oʻchiq'}
-        </span>
-        <div className="spacer" />
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => setIsOpen((value) => !value)}
-        >
-          {isOpen ? 'Yopish' : 'Sozlash'}
-        </button>
-      </div>
-
-      {isOpen && (
-        <>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: 14,
-              marginTop: 16,
-            }}
-          >
-            <Field label="Keshbek (%)" hint="Buyurtmaning necha foizi ball boʻlib qaytadi">
-              <input
-                inputMode="numeric"
-                value={cashback}
-                onChange={(e) => setCashback(e.target.value)}
-                placeholder={String(current.cashbackPercent)}
-                disabled={!canManage}
-                style={fieldStyle}
-              />
-            </Field>
-
-            <Field label="1 ball qiymati (soʻm)" hint="Ball sarflanganda qancha chegirma beradi">
-              <input
-                inputMode="numeric"
-                value={pointValue}
-                onChange={(e) => setPointValue(e.target.value)}
-                placeholder={String(current.pointValue)}
-                disabled={!canManage}
-                style={fieldStyle}
-              />
-            </Field>
-
-            <Field label="Maksimal toʻlov (%)" hint="Hisobning necha foizini ball qoplaydi">
-              <input
-                inputMode="numeric"
-                value={maxRedeem}
-                onChange={(e) => setMaxRedeem(e.target.value)}
-                placeholder={String(current.maxRedeemPercent)}
-                disabled={!canManage}
-                style={fieldStyle}
-              />
-            </Field>
-          </div>
-
-          <div
-            style={{
-              marginTop: 14,
-              padding: 12,
-              borderRadius: 8,
-              background: 'var(--bg, #F9FAFB)',
-              border: '1px solid var(--border)',
-              fontSize: 13,
-            }}
-          >
-            <strong>{formatMoney(100_000)}</strong> lik buyurtma{' '}
-            <strong>{Math.floor((100_000 * cashbackValue) / 100)}</strong> ball beradi —
-            bu <strong>{formatMoney(example)}</strong> qiymatida.
-            {maxRedeemValue < 100 && (
-              <> Keyingi hisobning eng koʻpi {maxRedeemValue}% i ball bilan toʻlanadi.</>
-            )}
-          </div>
-
-          {canManage && (
-            <div className="row" style={{ gap: 10, marginTop: 14 }}>
-              <button
-                type="button"
-                className="btn"
-                disabled={save.isPending}
-                onClick={() =>
-                  save.mutate({
-                    cashbackPercent: cashbackValue,
-                    pointValue: pointValueNum,
-                    maxRedeemPercent: maxRedeemValue,
-                  })
-                }
-              >
-                Saqlash
-              </button>
-              <button
-                type="button"
-                className="btn btn--ghost"
-                disabled={save.isPending}
-                onClick={() => save.mutate({ isActive: !current.isActive })}
-              >
-                {current.isActive ? 'Dasturni oʻchirish' : 'Dasturni yoqish'}
-              </button>
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label style={{ display: 'grid', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 600 }}>{label}</span>
-      {children}
-      <span className="muted" style={{ fontSize: 12 }}>{hint}</span>
-    </label>
-  );
-}
-
-const sectionTitle = {
-  fontSize: 11,
-  letterSpacing: 0.8,
-  fontWeight: 800,
-  color: '#6B7280',
-  margin: '0 0 8px',
-} as const;
-
-const fieldStyle = {
-  padding: '9px 12px',
-  borderRadius: 8,
-  border: '1px solid var(--border)',
-  fontSize: 14,
-} as const;
-
-function digits(value: string): number {
-  return Number(value.replace(/\D/g, '')) || 0;
+function exportCustomers(rows: Customer[], summary: CustomerSummary | undefined) {
+  downloadCsv(`mijozlar_${new Date().toISOString().slice(0, 10)}`, [
+    ['Ism', 'Telefon', 'Telegram', 'Segment', 'Buyurtmalar', 'Jami xarid (soʻm)', 'Oʻrtacha chek (soʻm)', 'Oxirgi buyurtma', 'Ball', 'Bloklangan'],
+    ...rows.map((c) => {
+      const seg = segmentOf(c, summary);
+      return [
+        c.fullName ?? '',
+        c.phone,
+        c.telegramUsername ? `@${c.telegramUsername}` : '',
+        seg ? SEGMENT_META[seg]!.label : '',
+        c.ordersCount,
+        c.totalSpent,
+        c.averageCheck,
+        c.lastOrderAt ? dateOf(c.lastOrderAt) : '',
+        c.loyaltyPoints ?? 0,
+        c.isBlocked ? 'ha' : '',
+      ];
+    }),
+  ]);
 }

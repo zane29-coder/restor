@@ -946,6 +946,9 @@ model Customer {
   birthDate        DateTime? @db.Date
   language         String  @default("uz") @db.VarChar(10)
   isBlocked        Boolean @default(false)
+  /// Staff's standing note: "piyozsiz", "domofon ishlamaydi". Shown with the
+  /// customer's orders so nobody has to remember it.
+  notes            String? @db.VarChar(1000)
 
   /// Denormalised aggregates, recomputed when an order reaches DELIVERED.
   /// Kept on the row so the customer list does not aggregate orders per page.

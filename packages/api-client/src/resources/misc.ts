@@ -1,6 +1,8 @@
 import type {
   AuditLog,
   Customer,
+  CustomerSegment,
+  CustomerSummary,
   LoyaltyAccount,
   LoyaltyProgram,
   LoyaltyTransaction,
@@ -26,9 +28,19 @@ export class CustomersResource {
   constructor(private readonly http: HttpClient) {}
 
   list(
-    query?: PaginationQuery & { search?: string; isBlocked?: boolean },
+    query?: PaginationQuery & {
+      search?: string;
+      isBlocked?: boolean;
+      segment?: CustomerSegment;
+      sort?: 'recent' | 'spent' | 'orders';
+    },
   ): Promise<Paginated<Customer>> {
     return this.http.getPaginated<Customer>('customers', { query });
+  }
+
+  /** Base size, returning share, lifetime value, points owed, segment sizes. */
+  summary(): Promise<CustomerSummary> {
+    return this.http.get<CustomerSummary>('customers/summary');
   }
 
   /** Includes addresses and loyalty standing; the list does not. */
