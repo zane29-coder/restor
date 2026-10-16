@@ -142,7 +142,9 @@ export function MenuScreen({ active }: { active: boolean }) {
         </div>
       )}
 
-      {session.menuError ? (
+      {!session.branch ? (
+        <ErrorState message="Restoran hali buyurtma qabul qilishga tayyor emas. Filial maʼlumotlari sozlanmoqda." />
+      ) : session.menuError ? (
         <ErrorState message={session.menuError} onRetry={session.reloadMenu} />
       ) : !session.menu ? (
         <MenuSkeleton />

@@ -184,7 +184,7 @@ export function MenuPage() {
       <PageHeader
         crumb="Menyu"
         title="Menyu boshqaruvi"
-        badge={<span className="pill tone-success">{branches.length} ta filial bilan sinxron</span>}
+        badge={<span className={`pill ${branches.length ? 'tone-success' : 'tone-warning'}`}>{branches.length ? `${branches.length} ta filial bilan sinxron` : 'Filial sozlanmagan'}</span>}
         subtitle="Taomlar, kategoriyalar, qoʻshimchalar va filiallar boʻyicha stop-list"
         actions={
           <>
@@ -214,6 +214,12 @@ export function MenuPage() {
           </>
         }
       />
+
+      {branches.length === 0 && (
+        <div className="alert" role="status">
+          Telegram menyusi ochilishi uchun avval Filiallar bo‘limida faol filial yarating, keyin mahsulotlarni shu filialda sotuvga yoqing.
+        </div>
+      )}
 
       <div className="kpi-grid">
         <Kpi
@@ -410,7 +416,9 @@ export function MenuPage() {
                         </td>
                         <td className="cell-sub"><span className="row" style={{ gap: 4 }}><IconClock size={13} />{p.preparationTime} daq</span></td>
                         <td>
-                          {selling === scopeIds.length ? (
+                          {scopeIds.length === 0 ? (
+                            <span className="pill tone-warning">Filial sozlanmagan</span>
+                          ) : selling === scopeIds.length ? (
                             <span className="pill tone-success">{branchId ? 'Mavjud' : 'Barcha filiallarda'}</span>
                           ) : selling === 0 && off.length === scopeIds.length ? (
                             <span className="pill tone-neutral">{branchId ? 'Bu filialda sotilmaydi' : 'Hech qayerda sotilmaydi'}</span>

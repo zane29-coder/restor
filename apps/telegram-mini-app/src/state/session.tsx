@@ -188,6 +188,7 @@ function ReadySession({
   useEffect(() => {
     if (!branchId) return;
     let cancelled = false;
+    setMenu(null);
     setMenuError(null);
     api.catalog
       .branchMenu(branchId)

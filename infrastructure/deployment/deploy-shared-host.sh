@@ -59,9 +59,10 @@ ok 'Prerequisites OK'
 # The bind mount hides the image's chown. Keep uploads writable by the
 # non-root API (Dockerfile UID/GID 1001), including existing image folders.
 mkdir -p storage
-sudo chown -R 1001:1001 "$(realpath storage)"
-sudo find "$(realpath storage)" -type d -exec chmod 755 {} +
-sudo find "$(realpath storage)" -type f -exec chmod 644 {} +
+STORAGE_ROOT="$(realpath storage)"
+sudo chown -R 1001:1001 "$STORAGE_ROOT"
+sudo find "$STORAGE_ROOT" -type d -exec chmod 755 {} +
+sudo find "$STORAGE_ROOT" -type f -exec chmod 644 {} +
 
 # --- Web bundles -------------------------------------------------------------
 if [[ "$SKIP_WEB" == false ]]; then
@@ -97,7 +98,9 @@ if [[ "$SKIP_WEB" == false ]]; then
 
   # Product images live in the repo and are served straight off disk.
   mkdir -p storage
-  sudo ln -sfn "$REPO_ROOT/storage" "$WEB_ROOT/uploads"
+  # CI release directories are private (umask 077). Bypass the release
+  # symlink so nginx does not need access to any release or its secrets.
+  sudo ln -sfn "$STORAGE_ROOT" "$WEB_ROOT/uploads"
 
   sudo chown -R www-data:www-data "$WEB_ROOT" 2>/dev/null || true
   ok 'Web bundles published'

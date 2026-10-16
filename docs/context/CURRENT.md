@@ -20,6 +20,23 @@ host bind mount was owned by root while the API runs as UID/GID 1001. The
 storage owner was corrected on the server and the API write-access check
 passed. The deploy script now applies that ownership to the persistent mount.
 
+Follow-up: upload writes succeeded but image GETs returned 403. The nginx
+uploads symlink traversed `/opt/restor-releases/<sha>` (mode 0700 from the CI
+umask). Point it directly at canonical `/opt/restor/storage`; do not open the
+release directory to nginx. Fixed live and confirmed existing WebP and JPEG
+URLs return 200. The deploy script now resolves storage before linking it.
+
+Best Burger (`best-burger`) has products but no branch. The Mini App used to
+show an endless skeleton in this state. It now explains that the restaurant
+is not configured yet, and admin menu badges no longer say "all branches"
+when there are zero. A real branch and product availability must be configured
+before this tenant can accept orders; no branch details were invented.
+The admin/Mini App fixes were published directly for recovery, with the old
+web bundles backed up under `infrastructure/deployment/backups/menu-fix-*`.
+Verified the new asset hashes and messages on the live hosts. All workspace
+typechecks, both app builds and 366 backend tests passed. The new branch
+configuration and an actual Telegram checkout remain outstanding.
+
 Keep this file current. It is the first thing an agent reads to know what is
 real and what is not, and a stale entry here costs more than no entry.
 
