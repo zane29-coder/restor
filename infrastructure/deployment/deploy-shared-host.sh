@@ -56,6 +56,13 @@ grep -q 'CHANGE_ME' .env.server backend/.env.server 2>/dev/null \
   && fail 'Placeholder secrets are still present'
 ok 'Prerequisites OK'
 
+# The bind mount hides the image's chown. Keep uploads writable by the
+# non-root API (Dockerfile UID/GID 1001), including existing image folders.
+mkdir -p storage
+sudo chown -R 1001:1001 "$(realpath storage)"
+sudo find "$(realpath storage)" -type d -exec chmod 755 {} +
+sudo find "$(realpath storage)" -type f -exec chmod 644 {} +
+
 # --- Web bundles -------------------------------------------------------------
 if [[ "$SKIP_WEB" == false ]]; then
   log 'Installing dependencies'

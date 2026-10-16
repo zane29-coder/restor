@@ -1,6 +1,24 @@
 # Where the project stands
 
-Last updated: 2026-10-13.
+Last updated: 2026-10-16.
+
+## POS and image upload fixes — 2026-10-16
+
+Local changes: POS now retains the staff JWT when loading the branch menu
+(previously `skipAuth` left the request without tenant scope). Its workspace
+follows `google_stitch/pos.html`, with category rail, image cards, search,
+variant/modifier selection and a payment keypad. The pickup queue polls the
+existing branch-scoped orders API every ten seconds, includes Telegram orders,
+and settles the original order before handover. Frontend changes are not yet
+deployed or verified through a real Telegram checkout.
+Validation: all workspace typechecks, POS production build, 366 backend tests
+and six API client tests passed. The redesigned POS has not been visually
+verified in a browser.
+
+Production image upload failed with `EACCES` creating `storage/images`: the
+host bind mount was owned by root while the API runs as UID/GID 1001. The
+storage owner was corrected on the server and the API write-access check
+passed. The deploy script now applies that ownership to the persistent mount.
 
 Keep this file current. It is the first thing an agent reads to know what is
 real and what is not, and a stale entry here costs more than no entry.

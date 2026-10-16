@@ -101,9 +101,10 @@ export class CatalogResource {
 
   /**
    * The full menu for one branch, availability already applied.
-   * Public: no token needed, the tenant comes from the slug.
+   * Guests resolve the tenant by slug; staff sessions retain their JWT scope.
    */
   branchMenu(branchId: string): Promise<BranchMenu> {
-    return this.http.get<BranchMenu>(`menu/${branchId}`, { skipAuth: true });
+    // Public guests use the slug; signed-in tills use their verified JWT.
+    return this.http.get<BranchMenu>(`menu/${branchId}`);
   }
 }

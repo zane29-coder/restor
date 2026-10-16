@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   OrderSource,
   OrderType,
@@ -19,6 +19,8 @@ import { LoginScreen } from './LoginScreen';
 import { PaymentDialog, type TenderPart } from './PaymentDialog';
 import { CloseShiftDialog, OpenShiftScreen } from './ShiftPanel';
 import { Receipt } from './Receipt';
+import { PickupOrders } from './PickupOrders';
+import { ProductDialog, type ProductSelection } from './ProductDialog';
 
 interface CartLine {
   key: string;
@@ -27,6 +29,8 @@ interface CartLine {
   variantName: string | null;
   unitPrice: number;
   quantity: number;
+  modifierIds: string[];
+  comment: string;
 }
 
 /**
@@ -77,6 +81,12 @@ export function App() {
   const [branchId, setBranchId] = useState<string | null>(loadBranchId());
   const [menu, setMenu] = useState<BranchMenu | null>(null);
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const searchInput = useRef<HTMLInputElement>(null);
+  const [view, setView] = useState<'sale' | 'pickup'>('sale');
+  const [menuError, setMenuError] = useState<string | null>(null);
+  const [menuAttempt, setMenuAttempt] = useState(0);
+  const [selectedProduct, setSelectedProduct] = useState<MenuProduct | null>(null);
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderType>(OrderType.DINE_IN);
@@ -122,16 +132,35 @@ export function App() {
 
   useEffect(() => {
     if (!isAuthenticated || !branchId) return;
+    let active = true;
+    setMenu(null);
+    setMenuError(null);
     void api.catalog
       .branchMenu(branchId)
       .then((loaded) => {
+        if (!active) return;
         setMenu(loaded);
-        setCategoryId(loaded.categories[0]?.id ?? null);
+        setCategoryId(null);
       })
       .catch((caught) =>
-        setError(caught instanceof RestorApiError ? caught.message : 'Menyu yuklanmadi'),
+        active && setMenuError(caught instanceof RestorApiError ? caught.message : 'Menyu yuklanmadi'),
       );
-  }, [isAuthenticated, branchId]);
+    return () => { active = false; };
+  }, [isAuthenticated, branchId, menuAttempt]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey && event.key.toLowerCase() === 'k') || (event.key === '/' && !(event.target instanceof HTMLInputElement))) {
+        event.preventDefault(); searchInput.current?.focus();
+      }
+      if (event.key === 'Escape' && selectedProduct) setSelectedProduct(null);
+      if (event.key === 'F9' && view === 'sale' && cart.length > 0 && !isSubmitting && !receipt && !selectedProduct && !isClosing) {
+        event.preventDefault(); setIsPaying(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, cart.length, isSubmitting, receipt, selectedProduct, isClosing]);
 
   /**
    * The shift this till is selling into.
@@ -190,11 +219,17 @@ export function App() {
 
   /* ------------------------------- cart ------------------------------- */
 
-  function addToCart(product: MenuProduct) {
+  function addToCart(product: MenuProduct, selection?: ProductSelection) {
+    if (!selection && (product.variants.length > 0 || product.modifierGroups.length > 0)) {
+      setSelectedProduct(product);
+      return;
+    }
     // Default to the variant marked default, or the first one.
-    const variant = product.variants.find((entry) => entry.isDefault) ?? product.variants[0];
-    const unitPrice = Math.max(0, product.price + (variant?.priceDelta ?? 0));
-    const key = `${product.id}:${variant?.id ?? 'base'}`;
+    const variant = product.variants.find((entry) => entry.id === selection?.variantId);
+    const modifierIds = selection?.modifierIds ?? [];
+    const comment = selection?.comment ?? '';
+    const unitPrice = Math.max(0, product.price + (variant?.priceDelta ?? 0)) + product.modifierGroups.flatMap(group => group.modifiers).filter(modifier => modifierIds.includes(modifier.id)).reduce((sum, modifier) => sum + modifier.price, 0);
+    const key = JSON.stringify([product.id, variant?.id, [...modifierIds].sort(), comment]);
 
     setCart((current) => {
       const existing = current.find((line) => line.key === key);
@@ -212,6 +247,8 @@ export function App() {
           variantName: variant?.name ?? null,
           unitPrice,
           quantity: 1,
+          modifierIds,
+          comment,
         },
       ];
     });
@@ -261,7 +298,8 @@ export function App() {
         productId: line.product.id,
         ...(line.variantId ? { variantId: line.variantId } : {}),
         quantity: line.quantity,
-        modifierIds: [],
+        modifierIds: line.modifierIds,
+        ...(line.comment ? { comment: line.comment } : {}),
       })),
       // Dine-in needs no customer; delivery would collect one on a later screen.
       ...(orderType === OrderType.DINE_IN ? {} : { customer: {} }),
@@ -361,7 +399,10 @@ export function App() {
     );
   }
 
-  const category = menu?.categories.find((entry) => entry.id === categoryId);
+  const products = (menu?.categories ?? [])
+    .filter(entry => categoryId === null || entry.id === categoryId)
+    .flatMap(entry => entry.products)
+    .filter(product => product.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
 
   return (
     <div className="pos">
@@ -373,7 +414,6 @@ export function App() {
         <button
           type="button"
           className="pos__chip pos__chip--status"
-          style={{ border: 'none', color: '#fff' }}
           onClick={() => setIsClosing(true)}
           title="Smenani yopish"
         >
@@ -392,7 +432,6 @@ export function App() {
         <button
           type="button"
           className="pos__chip pos__chip--status"
-          style={{ border: 'none', color: '#fff' }}
           onClick={() => void api.auth.logout().then(() => setIsAuthenticated(false))}
         >
           <IconLogout size={15} />
@@ -403,9 +442,16 @@ export function App() {
       {error && <div className="pos__error">{error}</div>}
       {message && <div className="pos__banner">{message}</div>}
 
-      <div className="pos__body">
+      <nav className="pos__navigation" aria-label="Kassa bo‘limlari">
+        <button className={view === 'sale' ? 'active' : ''} onClick={() => setView('sale')}>Yangi buyurtma</button>
+        <button className={view === 'pickup' ? 'active' : ''} onClick={() => setView('pickup')}>Olib ketish buyurtmalari</button>
+      </nav>
+
+      {view === 'pickup' ? <PickupOrders key={branchId} branchId={branchId} branchName={branchName} /> : <div className="pos__body">
         <section className="menu">
           <div className="menu__tabs">
+            <div className="menu__label">Kategoriyalar</div>
+            <button type="button" className={`menu__tab${categoryId === null ? ' menu__tab--active' : ''}`} onClick={() => setCategoryId(null)}>Barcha taomlar <small>{menu?.categories.reduce((sum, entry) => sum + entry.products.length, 0) ?? 0}</small></button>
             {menu?.categories.map((entry) => (
               <button
                 key={entry.id}
@@ -414,19 +460,25 @@ export function App() {
                 onClick={() => setCategoryId(entry.id)}
               >
                 {entry.name}
+                <small>{entry.products.length}</small>
               </button>
             ))}
           </div>
 
+          <div className="menu__catalog">
+          <div className="menu__search"><input ref={searchInput} aria-label="Taom qidirish" placeholder="Taom nomi orqali qidiruv… (Ctrl + K)" value={search} onChange={event => setSearch(event.target.value)} /><span>{products.length} ta mahsulot</span></div>
+          {menuError && <div className="pos__error" role="alert">{menuError} <button onClick={() => setMenuAttempt(value => value + 1)}>Qayta urinish</button></div>}
           <div className="menu__grid">
-            {category?.products.map((product) => (
+            {products.map((product) => (
               <button
                 key={product.id}
                 type="button"
                 className="product"
                 onClick={() => addToCart(product)}
               >
+                <span className="product__image">{product.imageUrl ? <img src={product.imageUrl} alt="" loading="lazy" /> : <span className="product__placeholder">{product.name.slice(0, 1)}</span>}</span>
                 <span className="product__name">{product.name}</span>
+                <span className="product__description">{product.description}</span>
                 <span className="product__price">
                   {formatMoney(product.price, 'UZS', { withCurrency: false })}
                   {product.oldPrice && (
@@ -438,7 +490,9 @@ export function App() {
                 </span>
               </button>
             ))}
-            {!menu && <p className="empty">Menyu yuklanmoqda…</p>}
+            {!menu && !menuError && <p className="empty">Menyu yuklanmoqda…</p>}
+            {menu && products.length === 0 && <p className="empty">Mahsulot topilmadi</p>}
+          </div>
           </div>
         </section>
 
@@ -465,6 +519,8 @@ export function App() {
                   <div>
                     <div className="cart__name">{line.product.name}</div>
                     {line.variantName && <div className="cart__meta">{line.variantName}</div>}
+                    {line.product.modifierGroups.flatMap(group => group.modifiers).filter(modifier => line.modifierIds.includes(modifier.id)).map(modifier => <div className="cart__meta" key={modifier.id}>+ {modifier.name}</div>)}
+                    {line.comment && <div className="cart__meta">{line.comment}</div>}
                     <div className="cart__meta">
                       {formatMoney(line.unitPrice)} ×{line.quantity}
                     </div>
@@ -514,7 +570,7 @@ export function App() {
                 disabled={cart.length === 0 || isSubmitting}
                 onClick={() => setIsPaying(true)}
               >
-                TOʻLOVGA OʻTISH
+                TOʻLOVGA OʻTISH (F9)
               </button>
               <button
                 type="button"
@@ -528,7 +584,7 @@ export function App() {
             </div>
           </div>
         </aside>
-      </div>
+      </div>}
 
       {isPaying && (
         <PaymentDialog
@@ -540,6 +596,8 @@ export function App() {
           }}
         />
       )}
+
+      {selectedProduct && <ProductDialog product={selectedProduct} onCancel={() => setSelectedProduct(null)} onConfirm={selection => { addToCart(selectedProduct, selection); setSelectedProduct(null); }} />}
 
       {receipt && (
         <Receipt

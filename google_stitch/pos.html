@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+
+<html lang="uz">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>RESTOR POS — Professional Kassir Terminali</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"/>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              DEFAULT: '#FF6B00',
+              hover: '#E55F00',
+              light: '#FFF5EB',
+              border: '#FED7AA'
+            },
+            slate: {
+              850: '#151F32',
+              900: '#0F172A',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+<style>
+    /* Custom clean scrollbars for POS touch & desktop */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #F1F5F9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94A3B8;
+    }
+    .touch-callout-none {
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans h-screen w-screen overflow-hidden flex flex-col touch-callout-none antialiased select-none">
+<!-- ================= TOP COMPACT HEADER ================= -->
+<header class="h-14 bg-white border-b border-slate-200 px-4 flex items-center justify-between shrink-0 z-20">
+<!-- Brand & Branch / Terminal Context -->
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2">
+<div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center text-white shadow-sm font-black text-lg tracking-tighter">
+          R
+        </div>
+<div class="flex flex-col">
+<div class="flex items-center space-x-1.5">
+<span class="font-extrabold text-slate-900 tracking-tight text-base leading-none">RESTOR</span>
+<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-brand-light text-brand border border-brand-border uppercase tracking-wider">POS</span>
+</div>
+<span class="text-[10px] text-slate-400 font-medium leading-tight">Chustiy Foods LLC</span>
+</div>
+</div>
+<div class="h-5 w-px bg-slate-200"></div>
+<!-- Branch & Terminal Badge -->
+<div class="flex items-center space-x-2 text-xs">
+<div class="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md text-slate-700 font-medium">
+<svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Chilonzor filiali</span>
+</div>
+<div class="flex items-center space-x-1 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-md text-slate-600 font-mono text-[11px]">
+<span class="text-slate-400">Kassa:</span>
+<span class="font-bold text-slate-800">#02-TERM</span>
+</div>
+</div>
+</div>
+<!-- Center Operational Shift Pill -->
+<div class="hidden md:flex items-center space-x-2 text-xs bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full text-emerald-800">
+<span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="font-semibold">Smena faol (08:30 - 23:00)</span>
+<span class="text-emerald-500 font-mono text-[11px]">• 142-chek</span>
+</div>
+<!-- Right System & Cashier Context -->
+<div class="flex items-center space-x-3">
+<!-- Sync Status -->
+<div class="flex items-center space-x-1.5 text-xs text-slate-600 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200" title="Backend API ulangan, internet barqaror">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+<span class="text-[11px] font-medium hidden sm:inline">Onlayn (Sinxron)</span>
+</div>
+<!-- Quick Actions / Shortcuts Guide -->
+<button class="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition" onclick="document.getElementById('shortcuts-modal').classList.toggle('hidden')" title="Klaviatura tugmalari">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+<!-- Cashier User -->
+<div class="flex items-center space-x-2 pl-2 border-l border-slate-200">
+<div class="w-7 h-7 rounded-full bg-slate-800 text-white font-bold text-xs flex items-center justify-center">
+          NF
+        </div>
+<div class="flex flex-col text-left">
+<span class="text-xs font-bold text-slate-900 leading-none">Nigora F.</span>
+<span class="text-[10px] text-slate-500 leading-tight">Bosh Kassir</span>
+</div>
+</div>
+<!-- Exit / Lock POS -->
+<button class="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition ml-1" title="Terminaldan chiqish">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+</header>
+<!-- ================= THREE-PANEL POS WORKSPACE ================= -->
+<main class="flex-1 flex overflow-hidden">
+<!-- PANEL 1: CATEGORY SIDEBAR (approx 14-16%) -->
+<aside class="w-48 xl:w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">
+<div class="p-3 border-b border-slate-100 flex items-center justify-between">
+<span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Kategoriyalar</span>
+<span class="text-[11px] font-semibold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">8 ta</span>
+</div>
+<nav class="flex-1 overflow-y-auto p-2 space-y-1">
+<!-- Category Item Active -->
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold bg-brand text-white shadow-sm text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🌯</span>
+<span class="truncate">Lavash &amp; Döner</span>
+</div>
+<span class="bg-white/20 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">14</span>
+</button>
+<!-- Category Items -->
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🔥</span>
+<span class="truncate">Ko'p sotiladiganlar</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">9</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🍔</span>
+<span class="truncate">Burger &amp; Klabb</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">12</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🍕</span>
+<span class="truncate">Pitsa &amp; Pide</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">8</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🍗</span>
+<span class="truncate">Snacks &amp; Fri</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">11</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🥤</span>
+<span class="truncate">Ichimliklar</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">18</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🥗</span>
+<span class="truncate">Salatlar &amp; Souslar</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">10</span>
+</button>
+<button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-100 hover:text-slate-900 text-left transition">
+<div class="flex items-center space-x-2.5 truncate">
+<span class="text-base leading-none">🍰</span>
+<span class="truncate">Shirinliklar</span>
+</div>
+<span class="text-slate-400 text-[10px] font-medium bg-slate-100 px-1.5 py-0.5 rounded-full">6</span>
+</button>
+</nav>
+<!-- Bottom Quick Category Actions -->
+<div class="p-2 border-t border-slate-100 bg-slate-50">
+<button class="w-full py-2 px-3 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded-md hover:bg-slate-100 transition flex items-center justify-center space-x-1.5">
+<svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 6h16M4 12h16m-7 6h7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Barcha taomlar (88)</span>
+</button>
+</div>
+</aside>
+<!-- PANEL 2: PRODUCT CATALOG & SEARCH (approx 55%) -->
+<section class="flex-1 flex flex-col bg-slate-100 overflow-hidden min-w-0">
+<!-- Search & Catalog Filters Header -->
+<div class="p-3 bg-white border-b border-slate-200 flex items-center space-x-3 shrink-0">
+<!-- Search Input with Ctrl+K shortcut -->
+<div class="relative flex-1">
+<div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</div>
+<input class="w-full pl-9 pr-16 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition" id="productSearchInput" placeholder="Taom nomi, SKU kodi yoki shtrix-kod orqali tezkor qidiruv... (Ctrl + K)" type="text"/>
+<div class="absolute inset-y-0 right-0 pr-2 flex items-center">
+<kbd class="px-1.5 py-0.5 text-[10px] font-mono text-slate-400 bg-white border border-slate-200 rounded shadow-xs">Ctrl K</kbd>
+</div>
+</div>
+<!-- Stop-list / Filter quick toggle -->
+<div class="flex items-center space-x-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-medium text-slate-600">
+<button class="px-2.5 py-1 rounded bg-white font-semibold text-slate-800 shadow-xs">Mavjud (84)</button>
+<button class="px-2 py-1 rounded hover:bg-white/60 text-slate-500">Stop-list (4)</button>
+</div>
+</div>
+<!-- Products Grid -->
+<div class="flex-1 overflow-y-auto p-3">
+<div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+<!-- Product Card 1: Has Modifiers (Click opens modifier modal) -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]" onclick="document.getElementById('modifier-modal').classList.remove('hidden')">
+<div class="relative h-28 bg-slate-100 overflow-hidden">
+<img alt="Lavash" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute top-2 right-2 bg-brand text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">Variantli</span>
+<span class="absolute bottom-2 left-2 bg-black/60 backdrop-blur-xs text-white text-[10px] font-medium px-1.5 py-0.5 rounded">SKU: LV-9920</span>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Maxsus Chilonzor Lavash</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Mol go'shti, pishloq, sous</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">45 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-brand-light text-brand group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 2: Simple Click (Directly to cart) -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]">
+<div class="relative h-28 bg-slate-100 overflow-hidden">
+<img alt="Burger" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute top-2 left-2 bg-emerald-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">Top Hit</span>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Go'shtli Burger Max</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Kotlet 150g, aysberg, tomat</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">54 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-100 text-slate-700 group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 3: Mini Lavash -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]">
+<div class="relative h-28 bg-slate-100 overflow-hidden">
+<img alt="Lavash Mini" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Lavash Mini Standart</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Kichik hajm 250g</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">32 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-100 text-slate-700 group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 4: Kartoshka Fri -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]">
+<div class="relative h-28 bg-slate-100 overflow-hidden">
+<img alt="Fri" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Kartoshka Fri (Katta)</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Qarsildoq kartoshka, 200g</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">22 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-100 text-slate-700 group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 5: Coca-Cola -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]">
+<div class="relative h-28 bg-slate-100 overflow-hidden flex items-center justify-center">
+<img alt="Cola" class="h-full w-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Coca-Cola 0.5L (Muzdek)</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Muzdek qadoqda</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">10 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-100 text-slate-700 group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 6: Chustiy Osh -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]">
+<div class="relative h-28 bg-slate-100 overflow-hidden">
+<img alt="Osh" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute top-2 left-2 bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">Milliy</span>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Chustiy To'y Oshi Maxsus</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Devzira guruch, ot go'shti, 0.7kg</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">38 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-100 text-slate-700 group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 7: Pepperoni Pizza -->
+<div class="bg-white rounded-xl border border-slate-200 hover:border-brand/60 hover:shadow-md transition cursor-pointer flex flex-col overflow-hidden group relative active:scale-[0.98]">
+<div class="relative h-28 bg-slate-100 overflow-hidden">
+<img alt="Pizza" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-900 text-xs leading-snug line-clamp-1 group-hover:text-brand transition">Pepperoni Pitsa 32sm</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Motsarella, pikant pepperoni</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<span class="font-bold text-slate-900 text-xs font-mono">68 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-100 text-slate-700 group-hover:bg-brand group-hover:text-white flex items-center justify-center transition">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</span>
+</div>
+</div>
+</div>
+<!-- Product Card 8: Stop-list item (Disabled / Out of stock) -->
+<div class="bg-slate-50 rounded-xl border border-slate-200 opacity-60 cursor-not-allowed flex flex-col overflow-hidden relative">
+<div class="relative h-28 bg-slate-200 overflow-hidden grayscale">
+<img alt="Salad" class="w-full h-full object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<span class="absolute inset-0 bg-slate-900/40 flex items-center justify-center">
+<span class="bg-rose-600 text-white text-[11px] font-bold px-2 py-0.5 rounded shadow">Stop-list (Tugagan)</span>
+</span>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h4 class="font-bold text-slate-700 text-xs leading-snug line-clamp-1">Sezar Salati Maxsus</h4>
+<p class="text-[11px] text-slate-400 mt-0.5 line-clamp-1">Tovuq filesi, parmezan</p>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-200 flex items-center justify-between">
+<span class="font-bold text-slate-500 text-xs font-mono">35 000 <span class="text-[10px] font-normal">so'm</span></span>
+<span class="w-6 h-6 rounded-md bg-slate-200 text-slate-400 flex items-center justify-center">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- PANEL 3: ORDER CART & CHECKOUT (approx 28-30%) -->
+<aside class="w-80 xl:w-96 bg-white border-l border-slate-200 flex flex-col shrink-0 z-10 shadow-lg">
+<!-- Order Type Switcher -->
+<div class="p-3 border-b border-slate-200 bg-slate-50/70">
+<div class="grid grid-cols-3 gap-1 bg-slate-200/80 p-1 rounded-lg text-xs font-semibold">
+<button class="py-2 rounded-md bg-brand text-white shadow-xs flex flex-col items-center justify-center transition">
+<span class="text-xs">Zalda</span>
+<span class="text-[10px] font-normal opacity-90">Stol #04</span>
+</button>
+<button class="py-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-white/60 flex flex-col items-center justify-center transition">
+<span class="text-xs">Olib ketish</span>
+<span class="text-[10px] font-normal text-slate-400">Pickup</span>
+</button>
+<button class="py-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-white/60 flex flex-col items-center justify-center transition">
+<span class="text-xs">Yetkazish</span>
+<span class="text-[10px] font-normal text-slate-400">Kuryer</span>
+</button>
+</div>
+<!-- Dynamic Context for Order Type (Table Selector for Zalda) -->
+<div class="mt-2.5 flex items-center justify-between text-xs">
+<div class="flex items-center space-x-1.5 text-slate-600">
+<svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="font-medium text-slate-700">Asosiy Zal:</span>
+<span class="font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded">Stol #04</span>
+</div>
+<button class="text-brand hover:underline font-semibold text-[11px]">O'zgartirish</button>
+</div>
+</div>
+<!-- Cart Header & Items Counter -->
+<div class="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-xs">
+<span class="font-bold text-slate-700">Buyurtma tarkibi <span class="text-slate-400 font-normal">(3 pozitsiya)</span></span>
+<button class="text-rose-600 hover:text-rose-700 text-[11px] font-medium hover:underline flex items-center space-x-1" onclick="confirmClearCart()">
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Savatni tozalash</span>
+</button>
+</div>
+<!-- Cart Items List (Independent Scrollable) -->
+<div class="flex-1 overflow-y-auto divide-y divide-slate-100 p-3 space-y-2">
+<!-- Cart Item 1: With Modifiers -->
+<div class="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs hover:border-slate-300 transition">
+<div class="flex items-start justify-between">
+<div class="flex-1 pr-2">
+<h5 class="text-xs font-bold text-slate-900 leading-tight">Maxsus Chilonzor Lavash</h5>
+<!-- Selected Modifiers badge tags -->
+<div class="mt-1 flex flex-wrap gap-1">
+<span class="text-[10px] bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.2 rounded font-medium">Achchiq</span>
+<span class="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.2 rounded font-medium">+ Pishloq (+5 000)</span>
+</div>
+<div class="text-[11px] font-mono text-slate-500 mt-1">50 000 so'm / dona</div>
+</div>
+<!-- Delete Button -->
+<button class="text-slate-300 hover:text-rose-600 transition p-1">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<!-- Quantity Stepper & Subtotal -->
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<div class="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+<button class="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs shadow-2xs">−</button>
+<span class="w-6 text-center text-xs font-bold font-mono text-slate-900">2</span>
+<button class="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs shadow-2xs">+</button>
+</div>
+<div class="text-right">
+<span class="font-bold text-xs font-mono text-slate-900">100 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+</div>
+</div>
+</div>
+<!-- Cart Item 2: Standard Item -->
+<div class="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs hover:border-slate-300 transition">
+<div class="flex items-start justify-between">
+<div class="flex-1 pr-2">
+<h5 class="text-xs font-bold text-slate-900 leading-tight">Kartoshka Fri (Katta)</h5>
+<div class="text-[11px] font-mono text-slate-500 mt-1">22 000 so'm / dona</div>
+</div>
+<button class="text-slate-300 hover:text-rose-600 transition p-1">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<div class="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+<button class="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs shadow-2xs">−</button>
+<span class="w-6 text-center text-xs font-bold font-mono text-slate-900">1</span>
+<button class="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs shadow-2xs">+</button>
+</div>
+<div class="text-right">
+<span class="font-bold text-xs font-mono text-slate-900">22 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+</div>
+</div>
+</div>
+<!-- Cart Item 3: Beverage -->
+<div class="bg-white p-2.5 rounded-lg border border-slate-200/80 shadow-2xs hover:border-slate-300 transition">
+<div class="flex items-start justify-between">
+<div class="flex-1 pr-2">
+<h5 class="text-xs font-bold text-slate-900 leading-tight">Coca-Cola 0.5L (Muzdek)</h5>
+<div class="text-[11px] font-mono text-slate-500 mt-1">10 000 so'm / dona</div>
+</div>
+<button class="text-slate-300 hover:text-rose-600 transition p-1">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<div class="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between">
+<div class="flex items-center space-x-2 bg-slate-50 border border-slate-200 rounded-lg p-0.5">
+<button class="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs shadow-2xs">−</button>
+<span class="w-6 text-center text-xs font-bold font-mono text-slate-900">2</span>
+<button class="w-6 h-6 rounded bg-white text-slate-700 hover:bg-slate-100 flex items-center justify-center font-bold text-xs shadow-2xs">+</button>
+</div>
+<div class="text-right">
+<span class="font-bold text-xs font-mono text-slate-900">20 000 <span class="text-[10px] font-normal text-slate-500">so'm</span></span>
+</div>
+</div>
+</div>
+</div>
+<!-- Customer Loyalty & Discount Bar -->
+<div class="p-2.5 bg-slate-50 border-t border-slate-200">
+<button class="w-full flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 hover:border-brand/40 transition text-left">
+<div class="flex items-center space-x-2">
+<div class="w-6 h-6 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center text-[10px] font-bold">
+              ★
+            </div>
+<div>
+<div class="text-xs font-semibold text-slate-800">Sardor R. (VIP Mijoz)</div>
+<div class="text-[10px] text-slate-500 font-mono">Keshbek: 145 000 ball (7%)</div>
+</div>
+</div>
+<span class="text-[11px] font-bold text-brand">Qo'llash</span>
+</button>
+</div>
+<!-- Sticky Bottom Summary & Checkout Primary Action -->
+<div class="p-4 bg-white border-t border-slate-200 shrink-0 space-y-3">
+<!-- Price Breakdown -->
+<div class="space-y-1.5 text-xs">
+<div class="flex justify-between text-slate-500">
+<span>Mahsulotlar summasi:</span>
+<span class="font-mono text-slate-800">142 000 so'm</span>
+</div>
+<div class="flex justify-between text-emerald-600">
+<span>Chegirma / Promokod:</span>
+<span class="font-mono font-semibold">-0 so'm</span>
+</div>
+<div class="flex justify-between items-baseline pt-2 border-t border-slate-200">
+<span class="text-sm font-bold text-slate-900">Jami to'lov:</span>
+<span class="text-xl font-extrabold font-mono text-brand tracking-tight">142 000 <span class="text-xs font-semibold text-slate-600">so'm</span></span>
+</div>
+</div>
+<!-- Actions: Primary Checkout + Secondary Suspend/Hold -->
+<div class="grid grid-cols-4 gap-2 pt-1">
+<!-- Hold / Keshirish -->
+<button class="col-span-1 py-3 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex flex-col items-center justify-center" title="Buyurtmani vaqtincha saqlab turish (Hold)">
+<svg class="w-4 h-4 mb-0.5 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span class="text-[10px]">Saqlash</span>
+</button>
+<!-- Main Checkout Button (Opens Payment Modal) -->
+<button class="col-span-3 py-3 px-4 bg-brand hover:bg-brand-hover active:scale-[0.99] text-white rounded-xl font-extrabold text-sm shadow-md shadow-brand/20 transition flex items-center justify-center space-x-2" onclick="document.getElementById('payment-modal').classList.remove('hidden')">
+<span>TO'LOVGA O'TISH (F9)</span>
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M14 5l7 7m0 0l-7 7m7-7H3" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</button>
+</div>
+</div>
+</aside>
+</main>
+<!-- ================= MODAL 1: PRODUCT MODIFIERS ================= -->
+<div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden" id="modifier-modal">
+<div class="bg-white rounded-2xl w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in duration-200">
+<!-- Modal Header -->
+<div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+<div class="flex items-center space-x-3">
+<img alt="Lavash" class="w-10 h-10 rounded-lg object-cover" src="https://www.gstatic.com/labs-code/stitch/stitch-placeholder-300x300.svg"/>
+<div>
+<h3 class="font-bold text-slate-900 text-sm">Maxsus Chilonzor Lavash</h3>
+<span class="text-xs font-mono font-semibold text-brand">Boshlang'ich narx: 45 000 so'm</span>
+</div>
+</div>
+<button class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition" onclick="document.getElementById('modifier-modal').classList.add('hidden')">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<!-- Modal Body / Modifiers Options -->
+<div class="p-4 overflow-y-auto space-y-4 flex-1">
+<!-- Group 1: Required Single Choice (Achchiqlik darajasi) -->
+<div>
+<div class="flex items-center justify-between mb-2">
+<span class="text-xs font-bold text-slate-900 uppercase tracking-wide">Achchiqlik darajasi <span class="text-rose-500 font-bold">*Majburiy</span></span>
+<span class="text-[11px] text-slate-400">1 tasini tanlang</span>
+</div>
+<div class="grid grid-cols-2 gap-2">
+<label class="flex items-center justify-between p-3 rounded-xl border-2 border-brand bg-brand-light/30 cursor-pointer">
+<div class="flex items-center space-x-2">
+<input checked="" class="w-4 h-4 text-brand focus:ring-brand" name="spice" type="radio"/>
+<span class="text-xs font-bold text-slate-900">🌶️ Achchiq (Spicy)</span>
+</div>
+<span class="text-[11px] font-mono text-slate-500">0 so'm</span>
+</label>
+<label class="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-white cursor-pointer">
+<div class="flex items-center space-x-2">
+<input class="w-4 h-4 text-brand focus:ring-brand" name="spice" type="radio"/>
+<span class="text-xs font-medium text-slate-800">Achchiq emas</span>
+</div>
+<span class="text-[11px] font-mono text-slate-500">0 so'm</span>
+</label>
+</div>
+</div>
+<!-- Group 2: Optional Add-ons (Qo'shimchalar) -->
+<div>
+<div class="flex items-center justify-between mb-2">
+<span class="text-xs font-bold text-slate-900 uppercase tracking-wide">Qo'shimchalar (Toppings)</span>
+<span class="text-[11px] text-slate-400">Ixtiyoriy</span>
+</div>
+<div class="space-y-2">
+<label class="flex items-center justify-between p-3 rounded-xl border-2 border-brand bg-brand-light/30 cursor-pointer">
+<div class="flex items-center space-x-2.5">
+<input checked="" class="w-4 h-4 text-brand rounded focus:ring-brand" type="checkbox"/>
+<span class="text-xs font-bold text-slate-900">Qo'shimcha pishloq (Gouda)</span>
+</div>
+<span class="text-xs font-bold font-mono text-brand">+5 000 so'm</span>
+</label>
+<label class="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-white cursor-pointer">
+<div class="flex items-center space-x-2.5">
+<input class="w-4 h-4 text-brand rounded focus:ring-brand" type="checkbox"/>
+<span class="text-xs font-medium text-slate-800">Qo'shimcha mol go'shti (50g)</span>
+</div>
+<span class="text-xs font-bold font-mono text-slate-700">+12 000 so'm</span>
+</label>
+<label class="flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-white cursor-pointer">
+<div class="flex items-center space-x-2.5">
+<input class="w-4 h-4 text-brand rounded focus:ring-brand" type="checkbox"/>
+<span class="text-xs font-medium text-slate-800">Jalapeno achchiq qalampir</span>
+</div>
+<span class="text-xs font-bold font-mono text-slate-700">+4 000 so'm</span>
+</label>
+</div>
+</div>
+<!-- Special Instructions / Notes -->
+<div>
+<label class="block text-xs font-bold text-slate-900 uppercase tracking-wide mb-1">Oshxona uchun izoh (KDS)</label>
+<input class="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand" placeholder="Masalan: Piyozsiz tayyorlansin, sousi kamroq..." type="text"/>
+</div>
+</div>
+<!-- Modal Footer -->
+<div class="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+<div class="flex flex-col">
+<span class="text-[11px] text-slate-400">Yig'ilgan summa:</span>
+<span class="text-base font-extrabold font-mono text-slate-900">50 000 so'm</span>
+</div>
+<div class="flex space-x-2">
+<button class="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-100" onclick="document.getElementById('modifier-modal').classList.add('hidden')">Bekor qilish</button>
+<button class="px-5 py-2.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-extrabold shadow-sm" onclick="document.getElementById('modifier-modal').classList.add('hidden')">Savatga qo'shish</button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= MODAL 2: FULL POS PAYMENT INTERFACE ================= -->
+<div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden" id="payment-modal">
+<div class="bg-white rounded-2xl w-full max-w-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+<!-- Payment Modal Header -->
+<div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+<div>
+<h3 class="font-extrabold text-slate-900 text-base">To'lovni qabul qilish</h3>
+<span class="text-xs text-slate-500 font-mono">Buyurtma #2084 • Asosiy Zal, Stol #04</span>
+</div>
+<button class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition" onclick="document.getElementById('payment-modal').classList.add('hidden')">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Left: Payment Methods & Amount -->
+<div class="space-y-4">
+<!-- Total to Pay Badge -->
+<div class="bg-slate-900 text-white p-4 rounded-xl flex flex-col justify-between">
+<span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Jami to'lanishi kerak:</span>
+<span class="text-2xl font-black font-mono text-brand mt-1 tracking-tight">142 000 <span class="text-sm font-semibold text-white">so'm</span></span>
+</div>
+<!-- Payment Methods Tabs -->
+<div>
+<label class="block text-xs font-bold text-slate-900 uppercase tracking-wide mb-2">To'lov turi</label>
+<div class="grid grid-cols-2 gap-2 text-xs font-bold">
+<button class="p-3 rounded-xl border-2 border-brand bg-brand-light/30 text-brand flex items-center space-x-2">
+<span class="text-base">💵</span>
+<span>Naqd pul</span>
+</button>
+<button class="p-3 rounded-xl border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center space-x-2">
+<span class="text-base">💳</span>
+<span>Bank kartasi (Uzcard/Humo)</span>
+</button>
+<button class="p-3 rounded-xl border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center space-x-2">
+<span class="text-base">📱</span>
+<span>Payme QR</span>
+</button>
+<button class="p-3 rounded-xl border border-slate-200 hover:border-slate-300 text-slate-700 flex items-center space-x-2">
+<span class="text-base">🔵</span>
+<span>Click QR</span>
+</button>
+</div>
+</div>
+<!-- Quick Cash Amount Shortcuts -->
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Tezkor kupyuralar</label>
+<div class="grid grid-cols-3 gap-1.5">
+<button class="py-2 bg-slate-100 hover:bg-slate-200 font-mono text-xs font-bold rounded-lg text-slate-700">142 000 (Aniq)</button>
+<button class="py-2 bg-slate-100 hover:bg-slate-200 font-mono text-xs font-bold rounded-lg text-slate-700">150 000</button>
+<button class="py-2 bg-slate-100 hover:bg-slate-200 font-mono text-xs font-bold rounded-lg text-slate-700">200 000</button>
+</div>
+</div>
+</div>
+<!-- Right: Touch Screen Numeric Keypad & Change (Qaytim) -->
+<div class="flex flex-col justify-between bg-slate-50 p-4 rounded-xl border border-slate-200">
+<div>
+<!-- Received Amount Input -->
+<label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">Mijoz bergan summa</label>
+<div class="relative">
+<input class="w-full p-2.5 bg-white border border-slate-300 rounded-lg text-lg font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand text-right pr-14" type="text" value="150 000"/>
+<span class="absolute right-3 top-3 text-xs font-medium text-slate-400">so'm</span>
+</div>
+<!-- Automatic Change Calculation -->
+<div class="mt-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
+<span class="text-xs font-bold text-emerald-800">Qaytim (Change):</span>
+<span class="text-base font-black font-mono text-emerald-700">8 000 so'm</span>
+</div>
+</div>
+<!-- Numeric Touch Keypad -->
+<div class="grid grid-cols-3 gap-1.5 my-3">
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">1</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">2</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">3</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">4</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">5</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">6</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">7</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">8</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">9</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-sm hover:bg-slate-100 active:bg-slate-200 shadow-2xs text-slate-500">00</button>
+<button class="h-10 bg-white border border-slate-200 rounded-lg font-mono font-bold text-base hover:bg-slate-100 active:bg-slate-200 shadow-2xs">0</button>
+<button class="h-10 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg font-mono font-bold text-sm hover:bg-rose-100 active:bg-rose-200 shadow-2xs flex items-center justify-center">⌫</button>
+</div>
+<!-- Confirm Payment Button -->
+<button class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-extrabold text-sm shadow-md transition flex items-center justify-center space-x-2" onclick="document.getElementById('payment-modal').classList.add('hidden'); document.getElementById('success-modal').classList.remove('hidden')">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+<span>TO'LOVNI TASDIQLASH VA CHEK</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- ================= MODAL 3: ORDER SUCCESS & RECEIPT ================= -->
+<div class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden" id="success-modal">
+<div class="bg-white rounded-2xl w-full max-w-sm shadow-2xl border border-slate-200 p-6 flex flex-col items-center text-center animate-in zoom-in-95 duration-150">
+<div class="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-3">
+<svg class="w-8 h-8" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path></svg>
+</div>
+<h3 class="font-extrabold text-slate-900 text-lg">To'lov muvaffaqiyatli!</h3>
+<p class="text-xs text-slate-500 mt-1">Buyurtma #2084 qabul qilindi va oshxona KDS ekraniga yuborildi.</p>
+<div class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 my-4 text-xs space-y-1.5 font-mono text-left">
+<div class="flex justify-between text-slate-500">
+<span>Chek raqami:</span>
+<span class="font-bold text-slate-800">#CHK-002084</span>
+</div>
+<div class="flex justify-between text-slate-500">
+<span>To'lov usuli:</span>
+<span class="font-bold text-slate-800">Naqd pul</span>
+</div>
+<div class="flex justify-between text-slate-500">
+<span>Qabul qilingan summa:</span>
+<span class="font-bold text-brand">142 000 so'm</span>
+</div>
+<div class="flex justify-between text-slate-500">
+<span>Qaytim:</span>
+<span class="font-bold text-emerald-600">8 000 so'm</span>
+</div>
+</div>
+<div class="w-full space-y-2">
+<button class="w-full py-2.5 bg-brand hover:bg-brand-hover text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5" onclick="document.getElementById('success-modal').classList.add('hidden')">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Chekni chop etish</span>
+</button>
+<button class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition" onclick="document.getElementById('success-modal').classList.add('hidden')">
+          Yangi buyurtmaga o'tish
+        </button>
+</div>
+</div>
+</div>
+<!-- Keyboard Shortcuts & Context Help Modal -->
+<div class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 hidden" id="shortcuts-modal">
+<div class="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-slate-200 p-5">
+<div class="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
+<h4 class="font-bold text-slate-900 text-sm">Tezkor Klaviatura Tugmalari (Hotkeys)</h4>
+<button class="text-slate-400 hover:text-slate-700" onclick="document.getElementById('shortcuts-modal').classList.add('hidden')">✕</button>
+</div>
+<div class="space-y-2 text-xs">
+<div class="flex justify-between py-1 border-b border-slate-50"><span class="text-slate-600">Qidiruvga o'tish</span><kbd class="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold">Ctrl + K yoki /</kbd></div>
+<div class="flex justify-between py-1 border-b border-slate-50"><span class="text-slate-600">To'lovga o'tish</span><kbd class="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold">F9 yoki Enter</kbd></div>
+<div class="flex justify-between py-1 border-b border-slate-50"><span class="text-slate-600">Savatni tozalash</span><kbd class="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold">Shift + Del</kbd></div>
+<div class="flex justify-between py-1 border-b border-slate-50"><span class="text-slate-600">Modalni yopish / Bekor qilish</span><kbd class="px-2 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono font-bold">Esc</kbd></div>
+</div>
+</div>
+</div>
+<script>
+    // Keyboard navigation handlers
+    document.addEventListener('keydown', function(e) {
+      if ((e.ctrlKey && e.key === 'k') || (e.key === '/' && document.activeElement.tagName !== 'INPUT')) {
+        e.preventDefault();
+        document.getElementById('productSearchInput').focus();
+      }
+      if (e.key === 'Escape') {
+        document.getElementById('modifier-modal').classList.add('hidden');
+        document.getElementById('payment-modal').classList.add('hidden');
+        document.getElementById('success-modal').classList.add('hidden');
+        document.getElementById('shortcuts-modal').classList.add('hidden');
+      }
+    });
+
+    function confirmClearCart() {
+      if (confirm("Haqiqatan ham joriy savatni tozalab, buyurtmani bekor qilmoqchimisiz?")) {
+        // Clear cart logic
+      }
+    }
+  </script>
+</body>
+</html>

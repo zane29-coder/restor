@@ -132,7 +132,7 @@ export function PaymentDialog({
                 className="pay-quick__btn"
                 onClick={() => setTendered(String(total))}
               >
-                Taniq
+                Aniq
               </button>
               {QUICK_NOTES.filter((note) => note >= total).slice(0, 3).map((note) => (
                 <button
@@ -144,6 +144,10 @@ export function PaymentDialog({
                   {formatMoney(note, 'UZS', { withCurrency: false })}
                 </button>
               ))}
+            </div>
+
+            <div className="pay-keypad" aria-label="Raqamli klaviatura">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map(key => <button key={key} type="button" disabled={isSubmitting} aria-label={key === '⌫' ? 'Oxirgi raqamni o‘chirish' : key} onClick={() => setTendered(value => key === '⌫' ? value.slice(0, -1) : `${value}${key}`)}>{key}</button>)}
             </div>
 
             {tenderedAmount > 0 && tenderedAmount < total && (
