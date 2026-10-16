@@ -54,7 +54,7 @@ async function readSingleFile(req: RawBodyRequest<Request>): Promise<{
   const boundaryMatch = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
 
   if (!contentType.startsWith('multipart/form-data') || !boundaryMatch) {
-    throw AppException.badRequest('Expected a multipart/form-data upload');
+    throw AppException.badRequest('Rasm formati noto‘g‘ri yuborildi. Qayta tanlab yuboring.');
   }
 
   const boundary = `--${boundaryMatch[1] ?? boundaryMatch[2]}`;
@@ -78,7 +78,7 @@ async function readSingleFile(req: RawBodyRequest<Request>): Promise<{
     return { buffer: content, originalName: filename, mimeType };
   }
 
-  throw AppException.badRequest('No "file" field was present in the upload');
+  throw AppException.badRequest('Yuborilgan so‘rovda rasm fayli topilmadi. Qayta urinib ko‘ring.');
 }
 
 function collectBody(req: RawBodyRequest<Request>): Promise<Buffer> {

@@ -110,12 +110,12 @@ export class StorageService {
     if (buffer.byteLength > max) {
       throw new AppException(
         ErrorCode.FILE_TOO_LARGE,
-        `The file exceeds the ${Math.round(max / (1024 * 1024))} MB limit`,
+        `Rasm hajmi ${Math.round(max / (1024 * 1024))} MB limitdan oshdi`,
         413,
       );
     }
     if (buffer.byteLength === 0) {
-      throw AppException.badRequest('The uploaded file is empty');
+      throw AppException.badRequest('Tanlangan rasm fayli bo\u02bbsh');
     }
   }
 
@@ -126,7 +126,7 @@ export class StorageService {
     if (!detected || !ALLOWED_IMAGE_TYPES[detected]) {
       throw new AppException(
         ErrorCode.UNSUPPORTED_FILE_TYPE,
-        'Only JPEG, PNG, WebP and AVIF images are accepted',
+        'Faqat JPEG, PNG, WebP yoki AVIF formatidagi rasmlar qabul qilinadi',
         415,
       );
     }

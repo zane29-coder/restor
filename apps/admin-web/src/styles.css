@@ -1537,6 +1537,76 @@ kbd {
   color: var(--text-muted);
 }
 
+.variant-editor {
+  margin: 4px 0 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.variant-editor__hint {
+  margin: -2px 0 2px;
+  line-height: 1.45;
+}
+
+.variant-editor__empty {
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-low);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.variant-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(130px, 0.85fr) auto 36px;
+  align-items: end;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-low);
+}
+
+.variant-row legend {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.variant-row .field {
+  margin-bottom: 0;
+}
+
+.variant-row__default {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.variant-row__default input {
+  width: auto;
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .variant-row {
+    grid-template-columns: minmax(0, 1fr) 36px;
+  }
+
+  .variant-row__name,
+  .variant-row__price {
+    grid-column: 1 / -1;
+  }
+}
+
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;

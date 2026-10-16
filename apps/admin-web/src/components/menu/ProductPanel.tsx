@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ErrorCode,
   Permission,
   PortionUnit,
   type BranchSummary,
@@ -14,6 +15,7 @@ import {
   IconImage,
   IconPause,
   IconPlay,
+  IconPlus,
   IconSave,
   IconSliders,
   IconTrash,
@@ -36,7 +38,15 @@ interface Draft {
   preparationTime: string;
   portionSize: string;
   portionUnit: PortionUnit | '';
+  variants: VariantDraft[];
   isActive: boolean;
+}
+
+interface VariantDraft {
+  id?: string;
+  name: string;
+  priceDelta: string;
+  isDefault: boolean;
 }
 
 function draftOf(product: Product | null, fallbackCategory: string): Draft {
@@ -49,8 +59,24 @@ function draftOf(product: Product | null, fallbackCategory: string): Draft {
     preparationTime: String(product?.preparationTime ?? 10),
     portionSize: product?.portionSize != null ? String(product.portionSize) : '',
     portionUnit: product?.portionUnit ?? '',
+    variants: product?.variants.map((variant) => ({
+      id: variant.id,
+      name: variant.name,
+      priceDelta: String(variant.priceDelta),
+      isDefault: variant.isDefault,
+    })) ?? [],
     isActive: product?.isActive ?? true,
   };
+}
+
+function signedDigits(value: string): number {
+  const amount = Number(value.replace(/\D/g, '')) || 0;
+  return value.trimStart().startsWith('-') ? -amount : amount;
+}
+
+function signedInput(value: string): string {
+  const amount = value.replace(/\D/g, '');
+  return `${value.trimStart().startsWith('-') ? '-' : ''}${amount}`;
 }
 
 /**
@@ -128,7 +154,23 @@ export function ProductPanel({
             ? 'Chegirma narxi asosiy narxdan past boʻlishi kerak'
             : (portion === null) !== (draft.portionUnit === '')
               ? 'Porsiya miqdori va birligini birga kiriting'
+              : draft.variants.some((variant) => variant.name.trim().length === 0)
+                ? 'Har bir variant nomini kiriting'
+                : draft.variants.some((variant) => {
+                      const delta = signedDigits(variant.priceDelta);
+                      return delta < -2_147_483_648 || delta > 2_147_483_647;
+                    })
+                  ? 'Variant narx farqi -2 147 483 648 dan 2 147 483 647 gacha bo‘lishi mumkin'
               : null;
+
+  const variantsPayload = () =>
+    draft.variants.map((variant, index) => ({
+      ...(variant.id ? { id: variant.id } : {}),
+      name: variant.name.trim(),
+      priceDelta: signedDigits(variant.priceDelta),
+      isDefault: variant.isDefault,
+      sortOrder: index,
+    }));
 
   const payload = () => ({
     name: draft.name.trim(),
@@ -143,9 +185,14 @@ export function ProductPanel({
   const save = useMutation({
     mutationFn: async () => {
       if (isCreate) {
-        return api.catalog.createProduct({ ...payload(), price });
+        const variants = variantsPayload().map(({ id: _id, ...variant }) => variant);
+        return api.catalog.createProduct({ ...payload(), price, variants });
       }
-      return api.catalog.updateProduct(product.id, { ...payload(), isActive: draft.isActive });
+      return api.catalog.updateProduct(product.id, {
+        ...payload(),
+        isActive: draft.isActive,
+        ...(canPrice ? { variants: variantsPayload() } : {}),
+      });
     },
     onSuccess: (result) => {
       setError(null);
@@ -254,7 +301,7 @@ export function ProductPanel({
       }
     >
       {!isCreate && (
-        <ImageBlock product={product} canEdit={can(Permission.PRODUCTS_UPDATE)} onChanged={invalidate} onError={setError} />
+        <ImageBlock product={product} canEdit={can(Permission.PRODUCTS_UPDATE)} onChanged={invalidate} />
       )}
 
       {!isCreate && (
@@ -294,14 +341,14 @@ export function ProductPanel({
         </>
       )}
 
-      <form id="product-form" onSubmit={submit} className="stack" style={{ gap: 0 }}>
+      <form id="product-form" onSubmit={submit} className="stack" style={{ gap: 0 }} noValidate>
         <div className="field">
           <label htmlFor="pf-name">Taom nomi</label>
           <input id="pf-name" value={draft.name} disabled={!canEdit} onChange={(e) => set('name', e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="pf-desc">Tavsif va tarkibi</label>
-          <textarea id="pf-desc" rows={2} value={draft.description} disabled={!canEdit} onChange={(e) => set('description', e.target.value)} />
+          <textarea id="pf-desc" rows={3} value={draft.description} disabled={!canEdit} onChange={(e) => set('description', e.target.value)} style={{ resize: 'none' }} />
         </div>
         <div className="form-grid">
           <div className="field">
@@ -338,6 +385,11 @@ export function ProductPanel({
             </div>
           </div>
         </div>
+        <VariantEditor
+          variants={draft.variants}
+          disabled={!canEdit || !canPrice}
+          onChange={(variants) => set('variants', variants)}
+        />
         {!isCreate && (
           <Switch
             checked={draft.isActive}
@@ -413,6 +465,149 @@ export function ProductPanel({
   );
 }
 
+function VariantEditor({
+  variants,
+  disabled,
+  onChange,
+}: {
+  variants: VariantDraft[];
+  disabled: boolean;
+  onChange: (variants: VariantDraft[]) => void;
+}) {
+  const update = (index: number, patch: Partial<VariantDraft>) =>
+    onChange(variants.map((variant, i) => (i === index ? { ...variant, ...patch } : variant)));
+
+  const makeDefault = (index: number) =>
+    onChange(variants.map((variant, i) => ({ ...variant, isDefault: i === index })));
+
+  const remove = (index: number) => {
+    const removedWasDefault = variants[index]?.isDefault;
+    const next = variants.filter((_, i) => i !== index);
+    if (removedWasDefault && next[0]) next[0] = { ...next[0], isDefault: true };
+    onChange(next);
+  };
+
+  const add = () =>
+    onChange([...variants, { name: '', priceDelta: '0', isDefault: variants.length === 0 }]);
+
+  return (
+    <section className="detail-section variant-editor" aria-labelledby="variant-editor-title">
+      <div className="detail-section__title">
+        <span id="variant-editor-title">O‘lcham va variantlar ({variants.length} ta)</span>
+        {!disabled && (
+          <button
+            type="button"
+            className="btn btn--sm btn--ghost"
+            disabled={variants.length >= 20}
+            onClick={add}
+          >
+            <IconPlus size={14} /> Variant qo‘shish
+          </button>
+        )}
+      </div>
+      <p className="field__hint variant-editor__hint">
+        Masalan, Kichik va Katta. Narx farqi asosiy narxga qo‘shiladi; arzonroq variant uchun minus kiriting.
+      </p>
+      {variants.length === 0 ? (
+        <div className="variant-editor__empty">Variant yo‘q — mahsulot bitta asosiy narxda sotiladi.</div>
+      ) : (
+        <div className="stack" style={{ gap: 8 }}>
+          {variants.map((variant, index) => {
+            const key = variant.id ?? `new-${index}`;
+            return (
+              <fieldset key={key} className="variant-row" disabled={disabled}>
+                <legend>{index + 1}-variant</legend>
+                <div className="field variant-row__name">
+                  <label htmlFor={`variant-name-${key}`}>Nomi</label>
+                  <input
+                    id={`variant-name-${key}`}
+                    value={variant.name}
+                    maxLength={80}
+                    placeholder={index === 0 ? 'Kichik' : 'Katta'}
+                    onChange={(event) => update(index, { name: event.target.value })}
+                  />
+                </div>
+                <div className="field variant-row__price">
+                  <label htmlFor={`variant-price-${key}`}>Narx farqi</label>
+                  <input
+                    id={`variant-price-${key}`}
+                    value={variant.priceDelta}
+                    inputMode="text"
+                    placeholder="+5 000 yoki -5 000"
+                    onChange={(event) => update(index, { priceDelta: signedInput(event.target.value) })}
+                  />
+                </div>
+                <label className="variant-row__default">
+                  <input
+                    type="radio"
+                    name="default-product-variant"
+                    checked={variant.isDefault}
+                    onChange={() => makeDefault(index)}
+                  />
+                  Asosiy
+                </label>
+                {!disabled && (
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--danger"
+                    aria-label={`${variant.name || `${index + 1}-variant`}ni olib tashlash`}
+                    onClick={() => remove(index)}
+                  >
+                    <IconTrash size={16} />
+                  </button>
+                )}
+              </fieldset>
+            );
+          })}
+        </div>
+      )}
+      {disabled && <span className="field__hint">Variant narxlarini o‘zgartirish huquqingiz yo‘q.</span>}
+    </section>
+  );
+}
+
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function imageFailureReason(caught: unknown): string {
+  if (!(caught instanceof RestorApiError)) return 'Kutilmagan xatolik yuz berdi. Qayta urinib ko‘ring.';
+
+  if (caught.status === 413) {
+    return caught.code === ErrorCode.FILE_TOO_LARGE
+      ? caught.message
+      : 'Rasm hajmi server limitidan oshdi. Kichikroq fayl tanlang.';
+  }
+  if (caught.status === 415) {
+    return caught.code === ErrorCode.UNSUPPORTED_FILE_TYPE
+      ? caught.message
+      : 'Rasm formati serverda qo‘llab-quvvatlanmaydi. JPEG, PNG, WebP yoki AVIF tanlang.';
+  }
+  if (caught.status === 401) return 'Tizimga kirish muddati tugagan. Qayta kiring va yana urinib ko‘ring.';
+  if (caught.status === 403) return 'Rasm yuklash uchun sizda ruxsat yo‘q.';
+  if (caught.status === 400) {
+    return caught.code === ErrorCode.BAD_REQUEST
+      ? caught.message
+      : 'Server rasm faylini o‘qiy olmadi. Boshqa rasm tanlang.';
+  }
+
+  switch (caught.code) {
+    case ErrorCode.FILE_TOO_LARGE:
+      return caught.message;
+    case ErrorCode.UNSUPPORTED_FILE_TYPE:
+      return caught.message;
+    case 'NETWORK_ERROR':
+      return 'Internet aloqasi uzildi. Ulanishni tekshirib, qayta urinib ko‘ring.';
+    case 'TIMEOUT':
+      return 'Rasmni yuborish vaqti tugadi. Ulanishni tekshirib, qayta urinib ko‘ring.';
+    case ErrorCode.FORBIDDEN:
+    case ErrorCode.PERMISSION_DENIED:
+      return 'Rasmni o‘zgartirish uchun sizda ruxsat yo‘q.';
+    default:
+      if (caught.status >= 500) return 'Rasm saqlash xizmati javob bermadi. Keyinroq qayta urinib ko‘ring.';
+      return `Server rasmni rad etdi (${caught.code}). Boshqa fayl tanlab ko‘ring.`;
+  }
+}
+
 /**
  * Product photo.
  *
@@ -425,68 +620,80 @@ function ImageBlock({
   product,
   canEdit,
   onChanged,
-  onError,
 }: {
   product: Product;
   canEdit: boolean;
   onChanged: () => void;
-  onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function upload(file: File) {
     // 5 MB: a phone photo straight from the camera is often 8-12 MB, and
     // sending that for a menu thumbnail wastes the kitchen's data plan.
-    if (file.size > 5 * 1024 * 1024) return onError('Rasm 5 MB dan kichik boʻlishi kerak');
+    if (file.size === 0) return setUploadError('Tanlangan rasm fayli bo‘sh. Boshqa fayl tanlang.');
+    if (file.size > MAX_IMAGE_BYTES) {
+      return setUploadError(`Rasm hajmi ${(file.size / (1024 * 1024)).toFixed(1)} MB. Limit 5 MB.`);
+    }
+    if (file.type && !IMAGE_TYPES.has(file.type)) {
+      return setUploadError(`“${file.type}” formati qabul qilinmaydi. JPEG, PNG, WebP yoki AVIF tanlang.`);
+    }
+
+    setUploadError(null);
     setBusy(true);
     try {
       const uploaded = await api.catalog.uploadImage(file, file.name);
-      await api.catalog.updateProduct(product.id, { imageUrl: uploaded.url });
-      onChanged();
+      try {
+        await api.catalog.updateProduct(product.id, { imageUrl: uploaded.url });
+        onChanged();
+      } catch (caught) {
+        setUploadError(`Rasm yuklandi, lekin mahsulotga biriktirilmadi. ${imageFailureReason(caught)}`);
+      }
     } catch (caught) {
-      onError(caught instanceof RestorApiError ? caught.message : 'Rasm yuklanmadi');
+      setUploadError(imageFailureReason(caught));
     } finally {
       setBusy(false);
     }
   }
 
   async function clear() {
+    setUploadError(null);
     setBusy(true);
     try {
       await api.catalog.updateProduct(product.id, { imageUrl: null });
       onChanged();
     } catch (caught) {
-      onError(caught instanceof RestorApiError ? caught.message : 'Oʻchirilmadi');
+      setUploadError(`Rasm olib tashlanmadi. ${imageFailureReason(caught)}`);
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    // A fixed height rather than aspect-ratio: inside the panel's grid an
-    // aspect-ratio box collapsed its row and the fields below slid under it.
-    <div style={{ position: 'relative', height: 190, borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--surface-low)' }}>
-      {product.imageUrl ? (
-        <img src={product.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-      ) : (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--text-subtle)' }}>
-          <IconImage size={34} strokeWidth={1.4} />
-          <span style={{ fontSize: 12 }}>Rasm yoʻq</span>
-        </div>
-      )}
-      {canEdit && (
-        <div className="row" style={{ position: 'absolute', right: 10, bottom: 10, gap: 6 }}>
-          {product.imageUrl && (
-            <button type="button" className="btn btn--sm btn--ghost" disabled={busy} onClick={() => void clear()}>
-              Olib tashlash
-            </button>
-          )}
-          <label className="btn btn--sm btn--dark" style={{ cursor: 'pointer' }}>
-            <IconImage size={14} />
-            {busy ? 'Yuklanmoqda…' : product.imageUrl ? 'Almashtirish' : 'Rasm yuklash'}
+    <section className="stack" style={{ gap: 8 }} aria-label="Mahsulot rasmi">
+      {/* Fixed height prevents the panel grid row collapsing while the image loads. */}
+      <div style={{ position: 'relative', height: 190, borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--surface-low)' }}>
+        {product.imageUrl ? (
+          <img src={product.imageUrl} alt={`${product.name} rasmi`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, color: 'var(--text-subtle)' }}>
+            <IconImage size={34} strokeWidth={1.4} />
+            <span style={{ fontSize: 12 }}>Rasm yo‘q</span>
+          </div>
+        )}
+        {canEdit && (
+          <div className="row" style={{ position: 'absolute', right: 10, bottom: 10, gap: 6 }}>
+            {product.imageUrl && (
+              <button type="button" className="btn btn--sm btn--ghost" disabled={busy} onClick={() => void clear()}>
+                Olib tashlash
+              </button>
+            )}
             <input
+              ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/avif"
+              aria-label="Mahsulot rasmini tanlash"
               hidden
               disabled={busy}
               onChange={(event) => {
@@ -496,10 +703,22 @@ function ImageBlock({
                 event.target.value = '';
               }}
             />
-          </label>
-        </div>
-      )}
-    </div>
+            <button
+              type="button"
+              className="btn btn--sm btn--dark"
+              disabled={busy}
+              aria-busy={busy}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <IconImage size={14} />
+              {busy ? 'Yuklanmoqda…' : product.imageUrl ? 'Almashtirish' : 'Rasm yuklash'}
+            </button>
+          </div>
+        )}
+      </div>
+      <span className="field__hint">JPEG, PNG, WebP yoki AVIF · ko‘pi bilan 5 MB</span>
+      {uploadError && <div className="alert alert--error" role="alert">{uploadError}</div>}
+    </section>
   );
 }
 

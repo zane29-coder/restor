@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import {
   AuditAction,
   ErrorCode,
+  Permission,
   type Paginated,
   type Product,
 } from '@restor/shared-types';
@@ -154,6 +155,8 @@ export class ProductsService {
   async update(id: string, input: UpdateProductInput): Promise<Product> {
     const before = await this.findRow(id);
 
+    this.assertUpdatePermissions(input);
+
     if (input.categoryId) await this.assertCategoryExists(input.categoryId);
     if (input.modifierGroupIds) await this.assertModifierGroupsExist(input.modifierGroupIds);
 
@@ -179,6 +182,40 @@ export class ProductsService {
     }
 
     const row = await this.prisma.transaction(async (tx) => {
+      if (input.variants) {
+        const knownIds = new Set(before.variants.map((variant) => variant.id));
+        const unknownId = input.variants.find((variant) => variant.id && !knownIds.has(variant.id));
+        if (unknownId) {
+          throw AppException.validation('Variant bu mahsulotga tegishli emas', {
+            variants: ['Noto\u02bbg\u02bbri variant identifikatori'],
+          });
+        }
+
+        // Keep old rows for historical order links, then reactivate the rows
+        // that remain in the submitted active list.
+        await tx.productVariant.updateMany({
+          where: { productId: id, isActive: true },
+          data: { isActive: false },
+        });
+
+        for (const variant of input.variants) {
+          const data = {
+            name: variant.name,
+            priceDelta: variant.priceDelta,
+            sku: variant.sku ?? null,
+            isDefault: variant.isDefault,
+            sortOrder: variant.sortOrder,
+            isActive: true,
+          };
+
+          if (variant.id) {
+            await tx.productVariant.update({ where: { id: variant.id }, data });
+          } else {
+            await tx.productVariant.create({ data: { productId: id, ...data } });
+          }
+        }
+      }
+
       if (input.modifierGroupIds) {
         await tx.productModifierGroup.deleteMany({ where: { productId: id } });
         await tx.productModifierGroup.createMany({
@@ -213,13 +250,33 @@ export class ProductsService {
 
     // Price changes get their own audit action: they are the single most
     // sensitive edit in the menu (TZ §37).
-    if (input.price !== undefined && input.price !== before.price) {
+    if (
+      (input.price !== undefined && input.price !== before.price) ||
+      input.discountPrice !== undefined ||
+      input.variants !== undefined
+    ) {
       await this.audit.record({
         action: AuditAction.PRICE_CHANGED,
         entity: 'Product',
         entityId: id,
-        oldValue: { price: before.price },
-        newValue: { price: input.price },
+        oldValue: {
+          price: before.price,
+          discountPrice: before.discountPrice,
+          variants: before.variants.map(({ id: variantId, name, priceDelta }) => ({
+            id: variantId,
+            name,
+            priceDelta,
+          })),
+        },
+        newValue: {
+          price: row.price,
+          discountPrice: row.discountPrice,
+          variants: row.variants.map(({ id: variantId, name, priceDelta }) => ({
+            id: variantId,
+            name,
+            priceDelta,
+          })),
+        },
       });
     }
 
@@ -232,6 +289,21 @@ export class ProductsService {
     );
 
     return toProduct(row);
+  }
+
+  /** Field-level enforcement for the shared PATCH endpoint. */
+  private assertUpdatePermissions(input: UpdateProductInput): void {
+    const permissions = getContext()?.permissions ?? [];
+    const priceKeys = new Set(['price', 'discountPrice', 'variants']);
+    const changesPrice = Object.keys(input).some((key) => priceKeys.has(key));
+    const changesProduct = Object.keys(input).some((key) => !priceKeys.has(key));
+
+    if (changesProduct && !permissions.includes(Permission.PRODUCTS_UPDATE)) {
+      throw AppException.forbidden('Mahsulot ma\u02bclumotlarini o\u02bbzgartirish huquqi yo\u02bbq');
+    }
+    if (changesPrice && !permissions.includes(Permission.PRODUCTS_PRICE_UPDATE)) {
+      throw AppException.forbidden('Mahsulot narxini o\u02bbzgartirish huquqi yo\u02bbq');
+    }
   }
 
   /**

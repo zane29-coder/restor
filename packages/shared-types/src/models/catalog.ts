@@ -194,8 +194,13 @@ export interface CreateProductRequest {
   branchIds?: string[];
 }
 
-export type UpdateProductRequest = Partial<CreateProductRequest> & {
+export type UpdateProductRequest = Partial<Omit<CreateProductRequest, 'variants'>> & {
   isActive?: boolean;
+  /**
+   * The complete active variant list. Existing ids are preserved; variants
+   * omitted from the list are deactivated so historical order links survive.
+   */
+  variants?: UpdateProductVariantRequest[];
 };
 
 export interface CreateProductVariantRequest {
@@ -206,6 +211,11 @@ export interface CreateProductVariantRequest {
   isDefault?: boolean;
   sortOrder?: number;
 }
+
+export type UpdateProductVariantRequest = Omit<CreateProductVariantRequest, 'productId'> & {
+  /** Omit for a newly added variant. */
+  id?: string;
+};
 
 export interface CreateModifierGroupRequest {
   name: string;

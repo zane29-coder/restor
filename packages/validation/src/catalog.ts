@@ -33,10 +33,14 @@ export const updateCategorySchema = createCategorySchema.partial().extend({
 export const productVariantSchema = z.object({
   name: z.string().trim().min(1).max(80),
   /** Signed: a Small size may be cheaper than the base price. */
-  priceDelta: z.number().int().max(Number.MAX_SAFE_INTEGER),
+  priceDelta: z.number().int().min(-2_147_483_648).max(2_147_483_647),
   sku: z.string().trim().max(64).optional(),
   isDefault: z.boolean().default(false),
   sortOrder: z.number().int().min(0).max(999).default(0),
+});
+
+const updateProductVariantSchema = productVariantSchema.extend({
+  id: uuidSchema.optional(),
 });
 
 export const createProductSchema = z
@@ -82,12 +86,17 @@ export const updateProductSchema = z
     portionUnit: portionUnitSchema,
     sortOrder: z.number().int().min(0).max(9999).optional(),
     isActive: z.boolean().optional(),
+    variants: z.array(updateProductVariantSchema).max(20).optional(),
     modifierGroupIds: z.array(uuidSchema).max(20).optional(),
   })
   .refine(portionPaired, {
     message: 'Porsiya miqdori va birligini birga kiriting',
     path: ['portionUnit'],
-  });
+  })
+  .refine(
+    (v) => !v.variants || v.variants.filter((variant) => variant.isDefault).length <= 1,
+    { message: 'Faqat bitta variant asosiy bo\u02bblishi mumkin', path: ['variants'] },
+  );
 
 export const modifierSchema = z.object({
   name: z.string().trim().min(1).max(80),
