@@ -92,6 +92,7 @@ apps/courier-mobile/expo-env.d.ts
 # ---- Desktop wrappers (POS) ----
 apps/pos/desktop/target/
 apps/pos/desktop/gen/
+release/desktop/
 
 # ---- Editors / OS ----
 .vscode/*

@@ -2,6 +2,21 @@
 
 Last updated: 2026-10-16.
 
+## Windows desktop installers — 2026-10-16
+
+`apps/desktop` builds separate RESTOR POS and RESTOR Admin NSIS installers for
+Windows 10/11 x64. These load the existing production HTTPS sites in sandboxed
+Electron windows with separate persistent profiles. They do not bundle a local
+server or offline web assets: initial launch requires internet. The POS's
+existing in-session offline queue stays in its profile across restarts.
+
+Build instructions and smoke checks are in `apps/desktop/README.md`. Installers
+are under `release/desktop/{pos,admin}` (gitignored). They are unsigned; no code
+signing certificate is configured. Three navigation/permission policy tests
+pass; both unpacked apps rendered the production login screen, with screenshots
+and sandbox checks under `release/desktop/verification`. Physical receipt
+printers, fiscal devices and a full sale have not been tested through the wrapper.
+
 ## POS and image upload fixes — 2026-10-16
 
 Local changes: POS now retains the staff JWT when loading the branch menu

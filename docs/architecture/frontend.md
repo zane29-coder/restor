@@ -65,6 +65,14 @@ because the backend is idempotent on `clientUuid`.
 Printing is `window.print()` against a print stylesheet. A thermal printer on
 that counter is reached through the OS print queue like any other.
 
+## Windows installers
+
+`apps/desktop` builds separate Electron/NSIS wrappers for the deployed POS
+and Admin sites, targeting Windows 10/11 x64. It is intentionally outside the
+npm workspaces. See `apps/desktop/README.md` for building, smoke checks, printer
+setup and the internet requirement. The wrappers retain separate profiles and
+do not bundle the API, tenant data, credentials or offline web assets.
+
 ## kitchen-display
 
 Read-mostly ticket board, polled. Touch targets are large because it is used

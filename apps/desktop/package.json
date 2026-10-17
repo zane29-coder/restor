@@ -1,0 +1,16 @@
+{
+  "name": "restor-desktop-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows installers for RESTOR POS and Admin",
+  "author": "RESTOR",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "node build.cjs",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "44.8.0",
+    "electron-builder": "26.15.3"
+  }
+}
